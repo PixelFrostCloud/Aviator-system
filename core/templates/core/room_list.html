@@ -1,0 +1,43 @@
+{% extends 'core/base.html' %}
+{% block title %}Rooms | Aviator{% endblock %}
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Multiplayer Rooms</p>
+        <h1>Join or create a room</h1>
+        <p class="lead">Invite players, start the flight, and compete in a shared aviator session.</p>
+    </div>
+    <div class="panel-card">
+        <h2>Create a new room</h2>
+        <form method="post" action="{% url 'create_room' %}" class="form-card">
+            {% csrf_token %}
+            {{ create_form.name }}
+            {{ create_form.max_players }}
+            <button class="button button-primary">Create room</button>
+        </form>
+    </div>
+</section>
+<section class="dashboard-grid">
+    <div class="dashboard-panel">
+        <div class="stats-card">
+            <h2>Available rooms</h2>
+            <ul class="session-list">
+                {% for room in rooms %}
+                    <li>
+                        <div>
+                            <strong>{{ room.name }}</strong>
+                            <p>Host: {{ room.host.username }}</p>
+                        </div>
+                        <div class="session-actions">
+                            <span>{{ room.players.count }} / {{ room.max_players }}</span>
+                            <a class="button button-secondary" href="{% url 'room_detail' room_id=room.id %}">Join</a>
+                        </div>
+                    </li>
+                {% empty %}
+                    <li class="empty-state">No rooms available right now. Create one to get started.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</section>
+{% endblock %}

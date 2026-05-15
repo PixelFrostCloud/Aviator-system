@@ -1,0 +1,3272 @@
+:root {
+  --bg: #0f172a;
+  --panel: #111827;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --primary: #6366f1;
+  --primary-contrast: #ffffff;
+  --secondary: #22c55e;
+  --danger: #ef4444;
+  --surface: #1f2937;
+  --border: rgba(148, 163, 184, 0.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background: radial-gradient(circle at top, rgba(99, 102, 241, 0.18), transparent 32%),
+    linear-gradient(180deg, #020617 0%, #0f172a 100%);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+img {
+  max-width: 100%;
+}
+
+.container {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+}
+
+.site-header {
+  padding: 1.2rem 0;
+}
+
+.header-grid {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  color: var(--primary);
+}
+
+.nav-links {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.nav-links a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.nav-links a:hover {
+  color: var(--text);
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 2rem;
+  padding: 3rem 0 4rem;
+}
+
+.eyebrow {
+  color: var(--secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  font-size: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(2.5rem, 3vw, 4rem);
+  line-height: 1.05;
+}
+
+.lead {
+  margin: 1.2rem 0 2rem;
+  font-size: 1.05rem;
+  color: var(--muted);
+  max-width: 44rem;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.button {
+  border: none;
+  border-radius: 0.85rem;
+  padding: 0.95rem 1.4rem;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+}
+
+.button-primary {
+  background: linear-gradient(135deg, var(--primary), #818cf8);
+  color: var(--primary-contrast);
+  box-shadow: 0 18px 48px rgba(99, 102, 241, 0.18);
+}
+
+.button-secondary {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.16);
+  color: var(--text);
+}
+
+.hero-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.panel-card {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  padding: 1.8rem;
+  min-height: 180px;
+}
+
+.panel-card-secondary {
+  background: rgba(31, 41, 55, 0.92);
+}
+
+.panel-panel,
+.auth-panel,
+.profile-card,
+.stats-card,
+.play-card,
+.dashboard-hero {
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  padding: 2rem;
+}
+
+.auth-panel,
+.profile-card,
+.stats-card {
+  max-width: 520px;
+  margin: 3rem auto;
+}
+
+.auth-panel h1,
+.profile-card h1,
+.play-card h2 {
+  margin-bottom: 1rem;
+}
+
+.form-card,
+.form-inline {
+  display: grid;
+  gap: 1rem;
+}
+
+.form-inline {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+label {
+  display: grid;
+  gap: 0.65rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='email'],
+input[type='number'] {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1rem;
+  padding: 0.95rem 1rem;
+  background: rgba(15, 23, 42, 0.8);
+  color: var(--text);
+}
+
+input:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.8);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.form-foot,
+.profile-note {
+  margin-top: 0.9rem;
+  color: var(--muted);
+}
+
+.form-foot a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.alerts {
+  margin-bottom: 1.5rem;
+}
+
+.alert {
+  padding: 1rem 1.2rem;
+  border-radius: 1rem;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.alert.success {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.alert.error,
+.alert.warning {
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+  padding: 2rem 0 4rem;
+}
+
+.dashboard-panel,
+.dashboard-sidebar {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.dashboard-hero {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dashboard-hero strong {
+  color: var(--secondary);
+}
+
+.play-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--primary);
+  font-size: 0.85rem;
+}
+
+.game-panel {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.hidden {
+  display: none;
+}
+
+.game-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.game-status strong {
+  font-size: 2rem;
+}
+
+.progress-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+
+.progress-bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), #818cf8);
+  transition: width 0.3s ease;
+}
+
+.game-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.game-message {
+  color: var(--muted);
+  margin: 0;
+}
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.session-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.session-tag {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.session-tag.win {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--secondary);
+}
+
+.session-tag.loss {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger);
+}
+
+.empty-state {
+  color: var(--muted);
+  padding: 1rem;
+}
+
+.profile-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.profile-grid dt {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.profile-grid dd {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.field-errors {
+  margin-top: 0.5rem;
+}
+
+.field-errors .error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  display: block;
+  margin-top: 0.25rem;
+}
+
+input.error {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+/* Aviator Game Styles */
+.game-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.balance-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.balance-label {
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.balance-amount {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+.multiplier-display {
+  text-align: center;
+}
+
+.multiplier-value {
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--primary);
+  text-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+}
+
+.game-status {
+  text-align: right;
+}
+
+#game-status {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.game-area {
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 2rem;
+  text-align: center;
+}
+
+.plane-container {
+  position: relative;
+  height: 200px;
+  margin-bottom: 2rem;
+  overflow: hidden;
+}
+
+.plane-path {
+  position: relative;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.2), rgba(99, 102, 241, 0.8));
+  border-radius: 2px;
+  margin-top: 100px;
+}
+
+.plane {
+  position: absolute;
+  top: -30px;
+  left: 0;
+  font-size: 2rem;
+  transition: left 0.1s linear;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+
+.progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--primary), #818cf8);
+  transition: width 0.1s linear;
+}
+
+.betting-panel {
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.bet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.bet-inputs {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.bet-inputs label {
+  flex: 1;
+  min-width: 150px;
+}
+
+.bet-inputs input {
+  width: 100%;
+}
+
+.button-success {
+  background: linear-gradient(135deg, var(--secondary), #10b981);
+  color: white;
+  box-shadow: 0 18px 48px rgba(16, 185, 129, 0.18);
+}
+
+.button-success:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.aviator-play-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.aviator-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 0;
+}
+
+.aviator-topbar .logo {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #ff1b3a;
+  text-decoration: none;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.balance-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  color: #dbeafe;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.balance-pill span {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.balance-pill strong {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.icon-button {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.play-screen {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 1.5rem;
+  padding: 1.5rem 0 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.bets-panel,
+.game-panel {
+  min-height: 0;
+}
+
+.bets-panel {
+  display: grid;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.game-panel {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.bets-panel,
+.game-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.bets-panel {
+  max-width: 320px;
+}
+
+.bets-tabs {
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  padding: 0.4rem;
+}
+
+.tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  padding: 0.95rem 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.tab.active {
+  color: var(--text);
+  background: rgba(255,255,255,0.08);
+}
+
+.bets-summary-card,
+.stage-card,
+.bet-card,
+.bets-table-header,
+.bets-footer,
+.ticker-strip,
+.multi-bet-grid,
+.bets-list {
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 1.5rem;
+}
+
+.bets-list {
+  max-height: calc(100vh - 500px);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.bets-summary-card {
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.bets-summary-left {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.avatars {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.bets-count,
+.bets-total span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.bets-count {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.bets-total strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.05rem;
+  color: #fff;
+}
+
+.bets-table-header,
+.bet-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 0.9fr 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.bets-table-header {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+.bet-row {
+  background: rgba(255,255,255,0.05);
+  margin: 0 0 0.45rem;
+  border-radius: 1rem;
+}
+
+.bet-row span,
+.bet-row .bet-player {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.bet-row.empty {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  color: var(--muted);
+}
+
+.bets-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.ticker-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: rgba(255,255,255,0.04);
+  border-radius: 1.5rem;
+}
+
+.ticker-item {
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.ticker-item.muted {
+  opacity: 0.65;
+}
+
+.stage-card {
+  border-radius: 1.75rem;
+  overflow: hidden;
+}
+
+.stage-screen {
+  position: relative;
+  min-height: 360px;
+  background: radial-gradient(circle at 20% 20%, rgba(255, 26, 52, 0.18), transparent 25%),
+    radial-gradient(circle at 80% 15%, rgba(255, 255, 255, 0.05), transparent 25%),
+    linear-gradient(180deg, #09090a 0%, #111317 100%);
+}
+
+.stage-graphic {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 2rem;
+  opacity: 0.85;
+}
+
+.stage-plane {
+  font-size: 4rem;
+  transform: translateX(-10%);
+  color: #ff1b3a;
+}
+
+.stage-logo-row {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  display: grid;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.stage-brand-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.stage-brand-divider {
+  width: 32px;
+  height: 4px;
+  background: linear-gradient(90deg, #ff1b3a, #ffa3b1);
+  border-radius: 999px;
+}
+
+.stage-brand-small {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.8rem;
+}
+
+.spribe-badge {
+  display: inline-grid;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.25rem;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  border-radius: 1rem;
+  color: #d9f99d;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+.spribe-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.22);
+  font-weight: 700;
+}
+
+.spribe-status {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.multi-bet-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.bet-card {
+  padding: 1.2rem;
+  border-radius: 1.5rem;
+  background: rgba(255,255,255,0.04);
+  display: grid;
+  gap: 1rem;
+}
+
+.bet-card-header {
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(255,255,255,0.05);
+  border-radius: 999px;
+  padding: 0.35rem;
+}
+
+.bet-mode {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.75rem 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.bet-mode.active {
+  color: #fff;
+  background: rgba(255,255,255,0.12);
+}
+
+.bet-amount {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  background: rgba(255,255,255,0.06);
+  border-radius: 1.2rem;
+}
+
+.amount-toggle {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.bet-amount strong {
+  font-size: 1.5rem;
+  color: #fff;
+}
+
+.quick-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.quick-buttons button {
+  border: none;
+  padding: 0.85rem 0;
+  border-radius: 0.85rem;
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.86rem;
+}
+
+.bet-submit {
+  width: 100%;
+  border: none;
+  border-radius: 1.25rem;
+  padding: 1rem 0;
+  background: #22c55e;
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 1100px) {
+  .play-screen {
+    grid-template-columns: 1fr;
+  }
+
+  .multi-bet-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .aviator-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topbar-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .bets-tabs {
+    flex-wrap: wrap;
+  }
+
+  .bets-table-header,
+  .bet-row {
+    grid-template-columns: 1fr;
+    text-align: left;
+  }
+
+  .bet-row.empty {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 1200px) {
+  .play-layout,
+  .play-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .play-grid {
+    padding: 1rem 0 3rem;
+  }
+
+  .game-stage-header,
+  .round-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .bet-controls {
+    flex-direction: column;
+  }
+}
+
+.game-history {
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 1.5rem;
+}
+
+.game-history h3 {
+  margin: 0 0 1rem 0;
+  color: var(--text);
+}
+
+.session-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: rgba(31, 41, 55, 0.5);
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.session-item.winner {
+  border-left: 4px solid var(--secondary);
+}
+
+.session-item.loser {
+  border-left: 4px solid var(--danger);
+}
+
+.session-item span {
+  color: var(--muted);
+}
+
+.session-item strong {
+  color: var(--text);
+}
+
+.action-buttons {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.action-buttons .button {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .game-header {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  .bet-inputs {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bet-inputs .button {
+    width: 100%;
+  }
+
+  .plane-container {
+    height: 150px;
+  }
+
+  .multiplier-value {
+    font-size: 2.5rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero,
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .form-inline {
+    grid-template-columns: 1fr;
+  }
+
+  .site-header,
+  .container {
+    padding: 0 1rem;
+  }
+
+  .nav-links {
+    justify-content: flex-end;
+  }
+}
+
+/* Professional Aviator play surface */
+body:has(.aviator-play-page) {
+  background: #171819;
+  color: #f8fafc;
+  overflow: hidden;
+  width: 100vw;
+  height: 100dvh;
+}
+
+body:has(.aviator-play-page) .site-header,
+body:has(.aviator-play-page) .footer {
+  display: none;
+}
+
+body:has(.aviator-play-page) main.container {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  margin: 0;
+}
+
+.aviator-play-page {
+  --viewport-h: 100dvh;
+  --topbar-h: clamp(32px, 5.7dvh, 40px);
+  --shell-gap: clamp(3px, 0.55dvw, 6px);
+  --side-w: clamp(196px, 21dvw, 236px);
+  --chat-w: clamp(190px, 19dvw, 236px);
+  --round-h: clamp(24px, 4dvh, 28px);
+  --dock-h: clamp(104px, 18dvh, 126px);
+  --panel-tab-h: clamp(24px, 4dvh, 28px);
+  --row-h: clamp(23px, 4.55dvh, 31px);
+  width: 100vw;
+  height: var(--viewport-h);
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.015), transparent 140px),
+    #171819;
+  color: #f4f7fb;
+  font-family: Inter, Arial, sans-serif;
+  overflow: hidden;
+  display: block;
+}
+
+.aviator-topbar {
+  height: var(--topbar-h);
+  padding: 0 0 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: normal;
+  background: #1d1f20;
+  border-bottom: 1px solid #282b2d;
+}
+
+.help-chip {
+  border: 1px solid #835000;
+  background: linear-gradient(180deg, #f5b833, #c77700);
+  color: #171100;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 0 999px 999px 0;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 10px;
+}
+
+.balance-pill {
+  border: 0;
+  background: transparent;
+  gap: 4px;
+  padding: 0;
+}
+
+.balance-pill strong {
+  color: #20d134;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.balance-pill span {
+  color: #c7ced8;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.wallet-link {
+  color: #b9c1cb;
+  text-decoration: none;
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 4px;
+}
+
+.wallet-link:hover {
+  background: #272a2d;
+  color: #fff;
+}
+
+.menu-button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.menu-button span {
+  width: 16px;
+  height: 2px;
+  background: #aeb6c0;
+  display: block;
+}
+
+.aviator-shell {
+  height: calc(var(--viewport-h) - var(--topbar-h));
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr) var(--chat-w);
+  gap: var(--shell-gap);
+  padding: 0 0 var(--shell-gap);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.live-bets-panel {
+  background: #161718;
+  border-right: 1px solid #2d3032;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.panel-tabs {
+  height: var(--panel-tab-h);
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  background: #101112;
+  border-bottom: 1px solid #25282a;
+}
+
+.panel-tab {
+  border: 0;
+  background: #161718;
+  color: #9299a2;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.panel-tab.active {
+  color: #dfe6ee;
+  background: #202224;
+  box-shadow: inset 0 -2px 0 #2a2d30;
+}
+
+.previous-hand {
+  justify-self: end;
+  margin: 0;
+  border: 1px solid #3a3e42;
+  background: #232528;
+  color: #aab2bc;
+  height: 20px;
+  border-radius: 999px;
+  padding: 0 10px 0 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.total-bets-line {
+  height: clamp(28px, 5dvh, 36px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 8px;
+  color: #b8c0ca;
+  font-size: 10px;
+}
+
+.total-bets-line strong span {
+  color: #33d264;
+}
+
+.clock-dot {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #77808b;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.ledger-head,
+.ledger-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) 48px 42px 50px;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ledger-head {
+  height: var(--panel-tab-h);
+  padding: 0 10px;
+  color: #858d97;
+  font-size: 10px;
+  border-top: 1px solid #222528;
+  border-bottom: 1px solid #222528;
+}
+
+.ledger-list {
+  overflow: auto;
+  padding: 0 5px 8px;
+}
+
+.right-chat-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  background: #151719;
+  border-left: 1px solid #2d3032;
+  overflow: hidden;
+}
+
+.chat-header {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px;
+  color: #e5e9ef;
+  font-size: 11px;
+  background: #202224;
+  border-bottom: 1px solid #2c3034;
+}
+
+.chat-header span {
+  color: #46ce55;
+  font-size: 10px;
+}
+
+.chat-promo {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 7px 9px;
+  background: #09882c;
+  color: #dcffe5;
+  font-size: 11px;
+}
+
+.chat-list {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+  padding: 7px;
+}
+
+.chat-item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: #1b1e20;
+  color: #d8dee6;
+  font-size: 10px;
+}
+
+.chat-item > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.chat-item strong {
+  color: #d89510;
+  font-size: 10px;
+}
+
+.chat-item span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.chat-item.muted {
+  color: #858d97;
+}
+
+.chat-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+  padding: 7px;
+  background: #101112;
+  border-top: 1px solid #282c2f;
+}
+
+.chat-form input[type='text'] {
+  min-width: 0;
+  height: 26px;
+  border-radius: 5px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.chat-form button {
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: #303338;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ledger-row {
+  height: var(--row-h);
+  margin-top: 2px;
+  padding: 0 6px;
+  color: #f2f6fb;
+  background: #141516;
+  border: 1px solid #222527;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.ledger-user {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.player-avatar {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #101112;
+  font-size: 10px;
+  font-weight: 800;
+  background:
+    radial-gradient(circle at 35% 30%, #fff 0 12%, transparent 13%),
+    linear-gradient(135deg, #f5c342, #ef4e7b 45%, #28d1ff);
+}
+
+.ledger-row span:nth-child(3) {
+  justify-self: center;
+  color: #43bfff;
+  background: #113041;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  min-height: 15px;
+}
+
+.ledger-row span:nth-child(4) {
+  justify-self: end;
+}
+
+.ledger-row.won {
+  background: #0a3d00;
+  border-color: #1dad16;
+}
+
+.ledger-row.won span:nth-child(3) {
+  background: #082b1c;
+}
+
+.ledger-row.muted span:nth-child(3) {
+  background: transparent;
+}
+
+.aviator-main {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: var(--round-h) minmax(0, 1fr) var(--dock-h);
+  gap: var(--shell-gap);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.round-strip {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 8px;
+  background: #1c1e20;
+  border-bottom: 1px solid #2b2e31;
+}
+
+.round-pill {
+  flex: 0 0 auto;
+  color: #6da0ff;
+  font-size: 10px;
+  line-height: 18px;
+  min-width: 43px;
+  text-align: center;
+  text-shadow: 0 0 8px rgba(49, 120, 255, 0.45);
+}
+
+.round-pill.mid {
+  color: #a755ff;
+}
+
+.round-pill.hot {
+  color: #e028d8;
+}
+
+.round-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.round-actions button {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #3b4045;
+  border-radius: 999px;
+  background: #282b2e;
+}
+
+.flight-stage {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #2c3033;
+  border-radius: 18px 18px 8px 8px;
+  background:
+    radial-gradient(circle at 45% 48%, rgba(15, 128, 173, 0.55), rgba(3, 11, 14, 0) 24%),
+    repeating-conic-gradient(from -24deg at 0% 100%, rgba(255,255,255,0.055) 0deg 7deg, rgba(0,0,0,0) 7deg 15deg),
+    linear-gradient(110deg, #010304 0%, #071218 44%, #111a1d 100%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.035);
+}
+
+.fun-mode {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #d89510, #b77300);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  border-radius: 18px 18px 0 0;
+}
+
+.stage-grid {
+  position: absolute;
+  inset: 20px 0 0;
+  background:
+    linear-gradient(90deg, transparent 0 99%, rgba(255,255,255,0.05) 100%),
+    linear-gradient(0deg, transparent 0 99%, rgba(255,255,255,0.035) 100%);
+  background-size: clamp(56px, 8dvw, 98px) 100%, 100% clamp(44px, 11dvh, 78px);
+  opacity: 0.25;
+}
+
+.height-markers {
+  position: absolute;
+  left: 12px;
+  top: 52px;
+  bottom: 34px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.height-markers span,
+.ground-markers span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #1dbfff;
+  box-shadow: 0 0 8px rgba(29,191,255,0.8);
+}
+
+.ground-markers {
+  position: absolute;
+  left: 25px;
+  right: 25px;
+  bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.flight-fill {
+  --progress: 0;
+  position: absolute;
+  left: 28px;
+  bottom: 27px;
+  width: min(72%, calc(var(--progress) * 1%));
+  height: min(65%, calc(var(--progress) * 0.68%));
+  background: linear-gradient(45deg, rgba(220, 0, 45, 0.72), rgba(220, 0, 45, 0.16));
+  clip-path: polygon(0 100%, 100% 0, 100% 100%);
+  opacity: 0.9;
+  transition: width 80ms linear, height 80ms linear;
+}
+
+.flight-curve {
+  --progress: 0;
+  position: absolute;
+  left: 28px;
+  bottom: 28px;
+  width: min(72%, calc(var(--progress) * 1%));
+  height: min(66%, calc(var(--progress) * 0.7%));
+  border-bottom: 4px solid #f01d3d;
+  border-right: 4px solid #f01d3d;
+  border-radius: 0 100% 0 0;
+  filter: drop-shadow(0 0 8px rgba(240, 29, 61, 0.55));
+  transform: skewY(-10deg);
+  transform-origin: left bottom;
+  transition: width 80ms linear, height 80ms linear;
+}
+
+.plane-silhouette {
+  --progress: 0;
+  position: absolute;
+  left: min(78%, calc(29px + var(--progress) * 0.72%));
+  bottom: min(72%, calc(32px + var(--progress) * 0.62%));
+  width: clamp(54px, 7.3dvw, 84px);
+  height: clamp(25px, 3.3dvw, 38px);
+  transform: rotate(18deg);
+  filter: drop-shadow(0 0 8px rgba(240, 29, 61, 0.65));
+  transition: left 80ms linear, bottom 80ms linear;
+}
+
+.plane-body,
+.plane-wing,
+.plane-tail {
+  position: absolute;
+  display: block;
+  background: #f31840;
+}
+
+.plane-body {
+  width: 92%;
+  height: 26%;
+  left: 4%;
+  top: 39%;
+  border-radius: 100% 12px 12px 100%;
+}
+
+.plane-wing {
+  width: 45%;
+  height: 29%;
+  left: 31%;
+  top: 24%;
+  transform: skewX(-32deg) rotate(-18deg);
+}
+
+.plane-tail {
+  width: 27%;
+  height: 45%;
+  left: 2%;
+  top: 11%;
+  transform: skewX(30deg);
+}
+
+.stage-multiplier {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: clamp(34px, min(8dvw, 15dvh), 94px);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-shadow: 0 3px 20px rgba(0,0,0,0.45);
+}
+
+.round-countdown {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+}
+
+.round-countdown span {
+  color: rgba(255,255,255,0.74);
+  font-size: clamp(12px, 2.2dvh, 16px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.round-countdown strong {
+  width: clamp(58px, 12dvh, 92px);
+  height: clamp(58px, 12dvh, 92px);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.42);
+  border: 4px solid #d89510;
+  color: #fff;
+  font-size: clamp(28px, 8dvh, 54px);
+  box-shadow: 0 0 28px rgba(216,149,16,0.35);
+}
+
+.flight-stage.is-betting .stage-multiplier {
+  opacity: 0.18;
+}
+
+.flight-stage.is-betting .round-countdown {
+  display: grid;
+}
+
+.stage-message {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(24px, 7dvh, 52px);
+  transform: translateX(-50%);
+  margin: 0;
+  color: rgba(255,255,255,0.72);
+  font-size: 13px;
+}
+
+.fairness-strip {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 8px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(255,255,255,0.68);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.fairness-strip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fairness-strip strong {
+  flex: 0 0 auto;
+  color: #d89510;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.betting-dock {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--shell-gap);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bet-slip {
+  background: #1c1e20;
+  border: 1px solid #2b2f32;
+  border-radius: 8px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+  padding: clamp(5px, 1.1dvh, 8px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bet-slip-tabs {
+  justify-self: center;
+  width: min(178px, 80%);
+  height: clamp(18px, 3.25dvh, 22px);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 2px;
+  background: #111214;
+  border-radius: 999px;
+  margin-bottom: clamp(4px, 1.2dvh, 8px);
+}
+
+.bet-slip-tabs button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #a0a7b0;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.bet-slip-tabs button.active {
+  color: #fff;
+  background: #303338;
+}
+
+.bet-slip-body {
+  display: grid;
+  grid-template-columns: minmax(92px, 116px) minmax(128px, 216px);
+  justify-content: center;
+  align-items: center;
+  gap: clamp(6px, 1dvw, 10px);
+  position: relative;
+}
+
+.amount-column {
+  display: grid;
+  gap: 5px;
+}
+
+.amount-stepper {
+  height: clamp(26px, 4.8dvh, 32px);
+  display: grid;
+  grid-template-columns: 24px 1fr 24px;
+  align-items: center;
+  background: #0e0f10;
+  border-radius: 999px;
+  padding: 2px;
+}
+
+.amount-stepper button {
+  border: 1px solid #383d42;
+  border-radius: 50%;
+  height: 22px;
+  width: 22px;
+  background: #191b1e;
+  color: #d7dde5;
+  cursor: pointer;
+}
+
+.stake-input {
+  min-width: 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  text-align: center;
+  font-size: clamp(12px, 2.4dvh, 16px);
+  font-weight: 800;
+  border-radius: 0;
+}
+
+.stake-input:focus {
+  box-shadow: none;
+}
+
+.quick-stakes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+}
+
+.quick-stakes button {
+  height: clamp(14px, 2.7dvh, 17px);
+  border: 0;
+  border-radius: 999px;
+  background: #141617;
+  color: #767f89;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.quick-stakes button:hover {
+  color: #fff;
+  background: #282c30;
+}
+
+.bet-action {
+  min-height: 0;
+  height: clamp(54px, calc(var(--dock-h) - 44px), 68px);
+  border: 1px solid rgba(255,255,255,0.32);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #20b90f, #18a107);
+  color: #fff;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
+}
+
+.bet-action span {
+  font-size: clamp(12px, 2.45dvh, 16px);
+}
+
+.bet-action strong {
+  font-size: clamp(13px, 2.65dvh, 18px);
+  font-weight: 500;
+}
+
+.cashout-bet {
+  display: none;
+  background: linear-gradient(180deg, #f2a314, #d37800);
+}
+
+.bet-slip.is-running .start-bet {
+  display: none;
+}
+
+.bet-slip.is-running .cashout-bet {
+  display: grid;
+}
+
+.bet-slip.is-queued .start-bet {
+  background: linear-gradient(180deg, #d89510, #b77300);
+}
+
+.bet-slip.is-auto .bet-mode-toggle[data-mode='auto'] {
+  background: #303338;
+  color: #fff;
+}
+
+.bet-slip.is-auto .bet-mode-toggle[data-mode='manual'] {
+  background: transparent;
+  color: #a0a7b0;
+}
+
+.auto-controls {
+  display: none;
+}
+
+.bet-slip.is-auto .auto-controls {
+  display: block;
+}
+
+.auto-controls label {
+  display: grid;
+  grid-template-columns: 1fr 58px;
+  align-items: center;
+  gap: 5px;
+  color: #858d97;
+  font-size: 10px;
+}
+
+.auto-controls input {
+  width: 100%;
+  height: 20px;
+  border: 1px solid #2e3440;
+  border-radius: 999px;
+  padding: 0 6px;
+  background: #0e0f10;
+  color: #f8fafc;
+  font-size: 10px;
+  text-align: center;
+}
+
+.bet-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  body:has(.aviator-play-page) {
+    overflow: hidden;
+  }
+
+  .aviator-play-page {
+    --topbar-h: clamp(32px, 5.3dvh, 38px);
+    --side-w: 100%;
+    --dock-h: clamp(112px, 22dvh, 150px);
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  .aviator-shell {
+    height: calc(100dvh - var(--topbar-h));
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) clamp(112px, 24dvh, 176px);
+  }
+
+  .live-bets-panel {
+    order: 2;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .right-chat-panel {
+    display: none;
+  }
+
+  .aviator-main {
+    grid-template-rows: var(--round-h) minmax(0, 1fr) var(--dock-h);
+  }
+
+  .betting-dock {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .aviator-topbar {
+    height: var(--topbar-h);
+    min-height: 0;
+  }
+
+  .wallet-link {
+    display: none;
+  }
+
+  .aviator-main {
+    --dock-h: clamp(160px, 30dvh, 204px);
+    grid-template-rows: var(--round-h) minmax(0, 1fr) var(--dock-h);
+  }
+
+  .betting-dock {
+    grid-template-columns: 1fr;
+  }
+
+  .bet-slip-body {
+    grid-template-columns: minmax(92px, 116px) minmax(122px, 1fr);
+  }
+
+  .bet-action {
+    height: clamp(48px, 9dvh, 58px);
+  }
+
+  .stage-message {
+    width: calc(100% - 32px);
+    text-align: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .aviator-play-page {
+    --dock-h: clamp(174px, 33dvh, 220px);
+  }
+
+  .aviator-shell {
+    grid-template-rows: minmax(0, 1fr) clamp(94px, 20dvh, 138px);
+  }
+
+  .bet-slip-body {
+    grid-template-columns: minmax(78px, 96px) minmax(112px, 1fr);
+    gap: 5px;
+  }
+
+  .amount-stepper {
+    grid-template-columns: 20px 1fr 20px;
+  }
+
+  .amount-stepper button {
+    width: 18px;
+    height: 18px;
+  }
+
+  .quick-stakes {
+    gap: 3px;
+  }
+
+  .stage-multiplier {
+    font-size: clamp(30px, 13dvw, 48px);
+  }
+}
+
+@media (max-height: 620px) {
+  .aviator-play-page {
+    --topbar-h: 32px;
+    --round-h: 22px;
+    --dock-h: clamp(88px, 20dvh, 112px);
+    --panel-tab-h: 22px;
+    --row-h: clamp(20px, 4.4dvh, 25px);
+  }
+
+  .previous-hand {
+    margin-top: 4px;
+    margin-bottom: 4px;
+  }
+
+  .fun-mode {
+    height: 16px;
+    font-size: 10px;
+  }
+
+  .stage-grid {
+    inset: 16px 0 0;
+  }
+
+  .stage-message {
+    display: none;
+  }
+}
+
+/* Final Aviator table layout guard: keep the Spribe-style three-column table intact. */
+body:has(.aviator-play-page) {
+  width: 100vw !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
+}
+
+.aviator-play-page {
+  --left-table-w: clamp(204px, 17.9vw, 344px);
+  --right-chat-w: clamp(214px, 12.4vw, 248px);
+  --topbar-h: 40px;
+  --round-h: 32px;
+  --dock-h: clamp(132px, 17.3vh, 168px);
+  width: 100vw !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: block !important;
+}
+
+.aviator-topbar {
+  height: var(--topbar-h) !important;
+  padding: 0 !important;
+}
+
+.aviator-shell {
+  height: calc(100dvh - var(--topbar-h)) !important;
+  display: grid !important;
+  grid-template-columns: var(--left-table-w) minmax(0, 1fr) var(--right-chat-w) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  gap: 6px !important;
+  padding: 0 0 6px !important;
+  overflow: hidden !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+.live-bets-panel,
+.aviator-main,
+.right-chat-panel {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.live-bets-panel {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  grid-template-rows: 32px 38px 28px minmax(0, 1fr) !important;
+  max-width: none !important;
+}
+
+.aviator-main {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  grid-template-rows: var(--round-h) minmax(0, 1fr) var(--dock-h) !important;
+  gap: 6px !important;
+}
+
+.right-chat-panel {
+  grid-column: 3 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  grid-template-rows: 32px auto minmax(0, 1fr) auto !important;
+  background: #151719 !important;
+  border-left: 1px solid #2d3032 !important;
+}
+
+.panel-tabs {
+  height: 32px !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.total-bets-line {
+  height: 38px !important;
+  padding: 0 8px !important;
+  font-size: clamp(10px, 0.72vw, 13px) !important;
+}
+
+.previous-hand {
+  max-width: 128px !important;
+  height: 22px !important;
+  white-space: nowrap !important;
+}
+
+.ledger-head,
+.ledger-row {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: minmax(78px, 1fr) minmax(46px, 0.58fr) minmax(42px, 0.48fr) minmax(52px, 0.62fr) !important;
+  gap: 5px !important;
+  align-items: center !important;
+}
+
+.ledger-head {
+  height: 28px !important;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+}
+
+.ledger-list {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 0 6px 7px !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #59606a #111314 !important;
+}
+
+.ledger-list::-webkit-scrollbar,
+.chat-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ledger-list::-webkit-scrollbar-track,
+.chat-list::-webkit-scrollbar-track {
+  background: #111314;
+  border-radius: 999px;
+}
+
+.ledger-list::-webkit-scrollbar-thumb,
+.chat-list::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #6b737e, #3e454e);
+  border: 2px solid #111314;
+  border-radius: 999px;
+}
+
+.ledger-list::-webkit-scrollbar-thumb:hover,
+.chat-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #8c95a1, #505863);
+}
+
+.ledger-empty {
+  padding: 14px 8px;
+  color: #858d97;
+  font-size: 12px;
+  text-align: center;
+}
+
+.ledger-row {
+  height: clamp(30px, 4.05vh, 40px) !important;
+  margin-top: 3px !important;
+  padding: 0 8px !important;
+  font-size: clamp(11px, 0.74vw, 14px) !important;
+}
+
+.ledger-row > span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.ledger-row > span:nth-child(2),
+.ledger-row > span:nth-child(3),
+.ledger-row > span:nth-child(4) {
+  justify-self: end !important;
+}
+
+.ledger-row > span:nth-child(3) {
+  justify-self: center !important;
+  padding: 2px 7px !important;
+  border-radius: 999px !important;
+}
+
+.ledger-user {
+  justify-self: start !important;
+  max-width: 100% !important;
+}
+
+.player-avatar {
+  width: clamp(18px, 1.45vw, 26px) !important;
+  height: clamp(18px, 1.45vw, 26px) !important;
+}
+
+.flight-stage {
+  min-height: 0 !important;
+  border-radius: 18px 18px 8px 8px !important;
+}
+
+.stage-multiplier {
+  font-size: clamp(54px, min(7.2vw, 14vh), 128px) !important;
+}
+
+.plane-silhouette {
+  width: clamp(76px, 6.6vw, 128px) !important;
+  height: clamp(34px, 3vw, 56px) !important;
+}
+
+.betting-dock {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.bet-slip {
+  min-height: 0 !important;
+  padding: 8px !important;
+}
+
+.bet-slip-body {
+  grid-template-columns: minmax(128px, 180px) minmax(176px, 326px) !important;
+  gap: 12px !important;
+}
+
+.bet-action {
+  height: clamp(72px, 10vh, 102px) !important;
+  border-radius: 14px !important;
+}
+
+.right-chat-panel .chat-header {
+  height: 32px !important;
+  display: flex !important;
+}
+
+.right-chat-panel .chat-promo {
+  display: flex !important;
+  font-size: 11px !important;
+}
+
+.right-chat-panel .chat-list {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  padding: 7px !important;
+}
+
+.right-chat-panel .chat-item {
+  display: grid !important;
+  grid-template-columns: 24px minmax(0, 1fr) !important;
+  font-size: 11px !important;
+}
+
+.right-chat-panel .chat-form {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 48px !important;
+  padding: 7px !important;
+}
+
+.right-chat-panel .chat-form input[type='text'] {
+  width: 100% !important;
+  height: 30px !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+}
+
+.right-chat-panel .chat-form button {
+  height: 30px !important;
+}
+
+@media (max-width: 1120px) {
+  .aviator-play-page {
+    --left-table-w: clamp(190px, 24vw, 246px);
+    --right-chat-w: 0px;
+  }
+
+  .aviator-shell {
+    grid-template-columns: var(--left-table-w) minmax(0, 1fr) !important;
+  }
+
+  .right-chat-panel {
+    display: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body:has(.aviator-play-page) {
+    overflow: auto !important;
+    height: auto !important;
+  }
+
+  .aviator-play-page {
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow: visible !important;
+  }
+
+  .aviator-shell {
+    height: auto !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto !important;
+    overflow: visible !important;
+  }
+
+  .aviator-main {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    grid-template-rows: 28px 52dvh auto !important;
+  }
+
+  .live-bets-panel {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    height: 280px !important;
+  }
+
+  .betting-dock {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.aviator-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0,0,0,0.32);
+  backdrop-filter: blur(1px);
+}
+
+.aviator-menu-drawer {
+  position: fixed;
+  z-index: 90;
+  top: 41px;
+  right: clamp(14px, 5vw, 52px);
+  width: min(480px, calc(100vw - 28px));
+  max-height: calc(100dvh - 54px);
+  overflow: hidden auto;
+  border-radius: 8px 8px 26px 26px;
+  background: rgba(30, 31, 33, 0.98);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 26px 70px rgba(0,0,0,0.48);
+  color: #f5f6f8;
+  transform: translateY(-10px) scale(0.98);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.aviator-menu-drawer.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.menu-profile {
+  min-height: 126px;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 18px 16px;
+  background: #2a2c31;
+  position: relative;
+}
+
+.menu-avatar {
+  grid-row: 1 / span 2;
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f4c95d, #38bdf8);
+  color: #111;
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.menu-profile strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 24px;
+  line-height: 1.02;
+}
+
+.menu-profile a {
+  justify-self: start;
+  border: 1px solid #454852;
+  border-radius: 999px;
+  padding: 9px 18px;
+  color: #aeb5c1;
+  text-decoration: none;
+}
+
+.menu-close {
+  position: absolute;
+  top: 20px;
+  right: 16px;
+  width: 36px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: #3a3d44;
+  color: #c5cbd4;
+  cursor: pointer;
+}
+
+.menu-section,
+.menu-links {
+  display: grid;
+}
+
+.menu-toggle-row,
+.menu-links a {
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  border: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: transparent;
+  color: #f5f6f8;
+  text-align: left;
+  font-size: 23px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.menu-links a {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.menu-icon {
+  color: #9ca3af;
+  font-size: 22px;
+  text-align: center;
+}
+
+.setting-switch {
+  width: 54px;
+  height: 34px;
+  border-radius: 999px;
+  background: #101113;
+  position: relative;
+}
+
+.setting-switch::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #8c8f94;
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.menu-toggle-row.is-on .setting-switch::after {
+  transform: translateX(20px);
+  background: #22c55e;
+}
+
+.menu-links a:hover,
+.menu-toggle-row:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+body.aviator-animation-off .flight-fill,
+body.aviator-animation-off .flight-curve,
+body.aviator-animation-off .plane-silhouette {
+  transition: none !important;
+}
+
+@media (max-width: 760px) {
+  .aviator-menu-drawer {
+    top: 40px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+
+  .menu-toggle-row,
+  .menu-links a {
+    min-height: 56px;
+    font-size: 18px;
+  }
+
+  .menu-profile strong {
+    font-size: 18px;
+  }
+}
+
+/* Compact Spribe-style menu popover */
+.aviator-menu-backdrop {
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.aviator-menu-drawer {
+  top: calc(var(--topbar-h, 40px) + 2px) !important;
+  right: 10px !important;
+  width: min(344px, calc(100vw - 20px)) !important;
+  max-height: calc(100dvh - var(--topbar-h, 40px) - 12px) !important;
+  border-radius: 8px 8px 18px 18px !important;
+  background: rgba(29, 30, 32, 0.98) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,0.42) !important;
+  transform-origin: top right !important;
+}
+
+.aviator-menu-drawer::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  right: 16px;
+  width: 14px;
+  height: 14px;
+  transform: rotate(45deg);
+  background: #292b30;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.menu-profile {
+  min-height: 76px !important;
+  grid-template-columns: 42px minmax(0, 1fr) 88px !important;
+  gap: 4px 10px !important;
+  padding: 10px 12px !important;
+  background: #292b30 !important;
+}
+
+.menu-avatar {
+  width: 42px !important;
+  height: 42px !important;
+  font-size: 18px !important;
+}
+
+.menu-profile strong {
+  max-height: 38px !important;
+  overflow: hidden !important;
+  font-size: 15px !important;
+  line-height: 1.08 !important;
+}
+
+.menu-profile a {
+  justify-self: stretch !important;
+  padding: 7px 8px !important;
+  font-size: 12px !important;
+  text-align: center !important;
+  border-color: #444750 !important;
+}
+
+.menu-close {
+  top: 8px !important;
+  right: 8px !important;
+  width: 28px !important;
+  height: 20px !important;
+  font-size: 12px !important;
+}
+
+.menu-toggle-row,
+.menu-links a {
+  min-height: 44px !important;
+  grid-template-columns: 24px minmax(0, 1fr) auto !important;
+  gap: 10px !important;
+  padding: 0 14px !important;
+  font-size: 15px !important;
+  line-height: 1.1 !important;
+}
+
+.menu-links a {
+  grid-template-columns: 24px minmax(0, 1fr) !important;
+}
+
+.menu-icon {
+  font-size: 16px !important;
+}
+
+.setting-switch {
+  width: 38px !important;
+  height: 24px !important;
+}
+
+.setting-switch::after {
+  top: 4px !important;
+  left: 4px !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.menu-toggle-row.is-on .setting-switch::after {
+  transform: translateX(14px) !important;
+}
+
+.aviator-menu-drawer::-webkit-scrollbar {
+  width: 7px;
+}
+
+.aviator-menu-drawer::-webkit-scrollbar-track {
+  background: #171819;
+}
+
+.aviator-menu-drawer::-webkit-scrollbar-thumb {
+  background: #4a5058;
+  border-radius: 999px;
+}
+
+@media (max-height: 620px) {
+  .aviator-menu-drawer {
+    width: min(320px, calc(100vw - 20px)) !important;
+  }
+
+  .menu-profile {
+    min-height: 62px !important;
+    padding: 8px 10px !important;
+  }
+
+  .menu-avatar {
+    width: 34px !important;
+    height: 34px !important;
+    font-size: 15px !important;
+  }
+
+  .menu-profile strong {
+    font-size: 13px !important;
+    max-height: 28px !important;
+  }
+
+  .menu-profile a {
+    padding: 5px 7px !important;
+    font-size: 11px !important;
+  }
+
+  .menu-toggle-row,
+  .menu-links a {
+    min-height: 36px !important;
+    font-size: 13px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .aviator-menu-drawer {
+    left: auto !important;
+    right: 8px !important;
+    width: min(320px, calc(100vw - 16px)) !important;
+  }
+}
+
+/* In-game menu modals */
+body.aviator-modal-lock {
+  overflow: hidden;
+}
+
+.aviator-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: none;
+}
+
+.aviator-game-modal {
+  position: fixed;
+  top: clamp(42px, 5.2vh, 72px);
+  left: 50%;
+  z-index: 110;
+  width: min(750px, calc(100vw - 28px));
+  max-height: calc(100dvh - 76px);
+  overflow: hidden auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #1b1c1e;
+  color: #f1f3f5;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.62);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -10px) scale(0.985);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.aviator-game-modal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.aviator-game-modal > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px 0 18px;
+  background: #303237;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.aviator-game-modal h2,
+.aviator-game-modal h3,
+.aviator-game-modal p {
+  margin: 0;
+}
+
+.aviator-game-modal h2 {
+  color: #f8fafc;
+  font-size: clamp(18px, 1.55vw, 26px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.aviator-game-modal > header button,
+.modal-row-title button {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  color: #9aa0a9;
+  background: transparent;
+  cursor: pointer;
+}
+
+.aviator-game-modal > header button {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.aviator-game-modal > header button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modal-body {
+  padding: 28px 16px 30px;
+}
+
+.modal-body.compact {
+  padding: 46px 24px 44px;
+}
+
+.cash-option {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px;
+  border: 1px solid #1fc600;
+  border-radius: 9px;
+  background: #1a1b1d;
+  color: #e7e9ee;
+  font-size: 22px;
+}
+
+.cash-option span {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #24e300;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 5px #111214;
+}
+
+.modal-row-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 20px 4px 0;
+  font-size: 22px;
+}
+
+.modal-row-title button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #4c5059;
+  border-radius: 999px;
+  font-size: 16px;
+  background: #2c2e33;
+}
+
+.empty-ticket {
+  min-height: 210px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  text-align: center;
+  color: #f5f7fb;
+}
+
+.ticket-icon {
+  width: 148px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  border: 6px solid #888f9b;
+  border-radius: 14px;
+  color: #888f9b;
+  font-size: 60px;
+  line-height: 1;
+}
+
+.limit-line {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 14px;
+  border: 1px solid #35383e;
+  border-bottom: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.limit-line:first-child {
+  border-radius: 10px 10px 0 0;
+}
+
+.limit-line:last-child {
+  border-bottom: 1px solid #35383e;
+  border-radius: 0 0 10px 10px;
+}
+
+.limit-line strong {
+  min-width: 74px;
+  padding: 3px 14px;
+  border: 1px solid #38d000;
+  border-radius: 999px;
+  background: #184900;
+  color: #f5fff1;
+  text-align: right;
+}
+
+.modal-table {
+  min-height: 86px;
+}
+
+.modal-table-head,
+.modal-table-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(95px, 0.8fr) minmax(56px, 0.4fr) minmax(120px, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.modal-table-head {
+  height: 76px;
+  color: #9ca3af;
+  font-size: 16px;
+  background: #1b1c1e;
+}
+
+.modal-table-row {
+  min-height: 42px;
+  color: #e8ebf0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.modal-empty {
+  padding: 22px 16px 30px;
+  color: #9ca3af;
+}
+
+.aviator-how-modal {
+  width: min(1200px, calc(100vw - 72px));
+  background: #f7a719;
+  color: #4e370c;
+  border: 0;
+}
+
+.aviator-how-modal > header {
+  background: #f0a000;
+  color: #714608;
+  border-bottom-color: rgba(94, 55, 0, 0.24);
+}
+
+.aviator-how-modal > header h2 {
+  color: #7a4a08;
+}
+
+.aviator-how-modal > header button {
+  color: #94610c;
+}
+
+.aviator-how-steps {
+  display: grid;
+  gap: 20px;
+  padding: 42px 24px 34px;
+}
+
+.aviator-how-steps div {
+  display: grid;
+  grid-template-columns: 56px 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.aviator-how-steps strong {
+  color: #6d450c;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.pink-token {
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f00042;
+  color: white;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+
+.aviator-how-steps p {
+  font-size: clamp(18px, 1.45vw, 24px);
+  line-height: 1.25;
+}
+
+.modal-footer-link {
+  width: 100%;
+  height: 68px;
+  border: 0;
+  background: #ed9800;
+  color: #68440a;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.aviator-game-modal.wide {
+  top: clamp(18px, 3vh, 48px);
+  width: min(1710px, calc(100vw - 96px));
+  max-height: calc(100dvh - 44px);
+}
+
+.modal-body.rules,
+.modal-body.fairness {
+  padding: 28px 18px 34px;
+  color: #d5d7dc;
+  font-size: clamp(16px, 1.2vw, 22px);
+  line-height: 1.36;
+}
+
+.modal-body.rules h3 {
+  margin-top: 34px;
+  color: #f2f4f7;
+  font-size: 26px;
+}
+
+.rules-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 58px;
+  margin: 28px 58px 30px;
+}
+
+.rules-grid > div {
+  min-width: 0;
+}
+
+.rules-grid strong {
+  display: block;
+  margin-bottom: 18px;
+  color: #fff;
+  font-size: 36px;
+}
+
+.rule-preview {
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #4a4d54;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 0 100%, rgba(16, 148, 205, 0.22), transparent 45%),
+    repeating-conic-gradient(from 260deg at 0 100%, #070809 0deg 8deg, #151719 8deg 16deg);
+  color: #fff;
+  font-size: 54px;
+  font-weight: 900;
+}
+
+.bet-preview,
+.cash-preview {
+  color: #e9fff0;
+  background: #126500;
+  font-size: 28px;
+  text-align: center;
+}
+
+.rules-grid p {
+  margin-top: 16px;
+  font-weight: 700;
+}
+
+.rules-grid b,
+.modal-body.rules a,
+.modal-body.rules li::marker {
+  color: #ff174d;
+}
+
+.modal-body.rules ul {
+  margin: 22px 0 0;
+  padding-left: 28px;
+}
+
+.modal-body.rules li {
+  margin: 9px 0;
+}
+
+.modal-body.fairness {
+  display: grid;
+  gap: 20px;
+}
+
+.modal-body.fairness > p {
+  color: #aeb3bb;
+}
+
+.fair-card {
+  display: grid;
+  gap: 12px;
+  padding: 20px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: #1c1d1f;
+}
+
+.fair-card strong {
+  color: #f4f6fa;
+  font-size: 20px;
+}
+
+.seed-pill {
+  max-width: 100%;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  padding: 10px 30px;
+  border-radius: 999px;
+  background: #030303;
+  color: #fff;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.modal-body.fairness footer {
+  margin: 8px -18px -34px;
+  padding: 24px;
+  background: #303237;
+  color: #aeb3bb;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .aviator-game-modal,
+  .aviator-game-modal.wide,
+  .aviator-how-modal {
+    top: 52px;
+    width: calc(100vw - 18px);
+    max-height: calc(100dvh - 64px);
+  }
+
+  .aviator-how-steps div {
+    grid-template-columns: 44px 50px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .pink-token {
+    width: 50px;
+    height: 50px;
+    font-size: 12px;
+  }
+
+  .rules-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    margin: 24px 0;
+  }
+
+  .rule-preview {
+    min-height: 128px;
+  }
+}
+
+@media (max-width: 560px) {
+  .aviator-game-modal > header {
+    min-height: 46px;
+    padding-left: 12px;
+  }
+
+  .aviator-game-modal h2 {
+    font-size: 17px;
+  }
+
+  .modal-body,
+  .modal-body.compact,
+  .modal-body.rules,
+  .modal-body.fairness {
+    padding: 18px 12px 24px;
+  }
+
+  .cash-option,
+  .limit-line,
+  .modal-row-title,
+  .modal-footer-link {
+    font-size: 16px;
+  }
+
+  .limit-line {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 10px 12px;
+  }
+
+  .modal-table-head,
+  .modal-table-row {
+    grid-template-columns: 1.1fr 0.8fr 0.4fr 0.8fr;
+    gap: 8px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+}

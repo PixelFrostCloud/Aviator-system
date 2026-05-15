@@ -1,0 +1,66 @@
+{% extends 'core/base.html' %}
+{% block title %}Analytics | Aviator{% endblock %}
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Admin analytics</p>
+        <h1>Platform performance overview</h1>
+        <p class="lead">Monitor deposits, withdrawals, user growth, and multiplayer activity all from a single dashboard.</p>
+    </div>
+</section>
+<section class="dashboard-grid">
+    <div class="dashboard-panel">
+        <div class="stats-card">
+            <h2>Core metrics</h2>
+            <ul class="session-list">
+                <li><span>Total users</span><strong>{{ total_users }}</strong></li>
+                <li><span>Total balance</span><strong>{{ total_balance|floatformat:2 }} UGX</strong></li>
+                <li><span>Total deposits</span><strong>{{ total_deposits|floatformat:2 }} UGX</strong></li>
+                <li><span>Total withdrawals</span><strong>{{ total_withdrawals|floatformat:2 }} UGX</strong></li>
+                <li><span>Total bets</span><strong>{{ total_bets|floatformat:2 }} UGX</strong></li>
+                <li><span>Total games</span><strong>{{ total_games }}</strong></li>
+                <li><span>Pending deposits</span><strong>{{ pending_deposits }}</strong></li>
+                <li><span>Pending withdrawals</span><strong>{{ pending_withdrawals }}</strong></li>
+                <li><span>KYC not started</span><strong>{{ kyc_pending }}</strong></li>
+                <li><span>KYC review queue</span><strong>{{ kyc_reviews }}</strong></li>
+                <li><span>Open risk alerts</span><strong>{{ open_risk_alerts }}</strong></li>
+            </ul>
+        </div>
+        <div class="stats-card">
+            <h2>URA / GGR report</h2>
+            <form class="form-card" method="post">
+                {% csrf_token %}
+                {{ report_form.report_type }}
+                {{ report_form.period_start }}
+                {{ report_form.period_end }}
+                {% if report_form.errors %}
+                    <div class="field-errors">{{ report_form.errors }}</div>
+                {% endif %}
+                <button class="button button-primary" type="submit">Generate report</button>
+            </form>
+        </div>
+    </div>
+    <aside class="dashboard-sidebar">
+        <div class="stats-card">
+            <h2>Room health</h2>
+            <p>Open rooms: <strong>{{ active_rooms }}</strong></p>
+            <p>Running rooms: <strong>{{ running_rooms }}</strong></p>
+            <p>Total rooms: <strong>{{ room_count }}</strong></p>
+        </div>
+        <div class="stats-card">
+            <h2>Latest reports</h2>
+            <ul class="session-list">
+                {% for report in latest_reports %}
+                    <li>
+                        <span>{{ report.period_start|date:'M d' }} - {{ report.period_end|date:'M d' }}</span>
+                        <strong>{{ report.gross_gaming_revenue|floatformat:2 }} UGX</strong>
+                        <span>URA {{ report.ura_ggr_tax|floatformat:2 }}</span>
+                    </li>
+                {% empty %}
+                    <li class="empty-state">No reports generated yet.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </aside>
+</section>
+{% endblock %}

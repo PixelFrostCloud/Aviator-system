@@ -1,0 +1,65 @@
+{% extends 'core/base.html' %}
+{% block title %}Register | Aviator{% endblock %}
+{% block content %}
+<section class="panel-panel">
+    <div class="auth-panel">
+        <h1>Create your account</h1>
+        <form method="post" class="form-card">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+                <div class="alert alert-error">
+                    {% for error in form.non_field_errors %}
+                        <p>{{ error }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <label>
+                Username
+                {{ form.username }}
+                {% if form.username.errors %}
+                    <div class="field-errors">
+                        {% for error in form.username.errors %}
+                            <small class="error">{{ error }}</small>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </label>
+            <label>
+                Email
+                {{ form.email }}
+                {% if form.email.errors %}
+                    <div class="field-errors">
+                        {% for error in form.email.errors %}
+                            <small class="error">{{ error }}</small>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </label>
+            <label>
+                Password
+                {{ form.password1 }}
+                {% if form.password1.errors %}
+                    <div class="field-errors">
+                        {% for error in form.password1.errors %}
+                            <small class="error">{{ error }}</small>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </label>
+            <label>
+                Confirm Password
+                {{ form.password2 }}
+                {% if form.password2.errors %}
+                    <div class="field-errors">
+                        {% for error in form.password2.errors %}
+                            <small class="error">{{ error }}</small>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </label>
+            <button class="button button-primary">Register</button>
+        </form>
+        <p class="form-foot">Already have an account? <a href="{% url 'login' %}">Login</a></p>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends 'core/base.html' %}
+{% block title %}Dashboard | Aviator{% endblock %}
+{% block content %}
+<section class="dashboard-grid">
+    <div class="dashboard-panel">
+        <div class="dashboard-hero">
+            <h1>Welcome back, {{ request.user.username }}.</h1>
+            <p>Balance: <strong>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong></p>
+        </div>
+        <div class="play-card">
+            <div class="play-card-header">
+                <h2>Start a round</h2>
+                <span class="tag">Ready to play</span>
+            </div>
+            <form id="play-form" class="form-inline" method="post">
+                {% csrf_token %}
+                <input type="number" name="stake" step="0.01" min="1" placeholder="Stake" value="10" required>
+                <button class="button button-primary" type="submit">Launch</button>
+            </form>
+            <div id="game-panel" class="game-panel hidden">
+                <div class="game-status">
+                    <span>Flight multiplier</span>
+                    <strong id="multiplier">1.00x</strong>
+                </div>
+                <div class="progress-bar"><span id="flight-progress"></span></div>
+                <div class="game-actions">
+                    <button id="cashout-button" class="button button-secondary" disabled>Cash Out</button>
+                    <p id="game-message">Start the round to begin.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <aside class="dashboard-sidebar">
+        <div class="stats-card">
+            <h2>Recent sessions</h2>
+            <ul class="session-list">
+                {% for session in sessions %}
+                    <li>
+                        <span>{{ session.created_at|date:'M d, H:i' }}</span>
+                        <strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong>
+                        <span class="session-tag {% if session.is_winner %}win{% else %}loss{% endif %}">{{ session.is_winner|yesno:'Won,Lost' }}</span>
+                    </li>
+                {% empty %}
+                    <li class="empty-state">No sessions yet. Launch your first round.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="stats-card">
+            <h2>Player summary</h2>
+            <p>Current balance: <strong>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong></p>
+            <p>Account created on: {{ profile.created_at|date:'M d, Y' }}</p>
+            <a class="button button-secondary" href="{% url 'wallet' %}">Deposit / Withdraw</a>
+        </div>
+        <div class="stats-card">
+            <h2>Open rooms</h2>
+            <ul class="session-list">
+                {% for room in rooms %}
+                    <li>
+                        <span>{{ room.name }}</span>
+                        <strong>{{ room.players.count }} / {{ room.max_players }}</strong>
+                        <span class="session-tag">{{ room.status|title }}</span>
+                    </li>
+                {% empty %}
+                    <li class="empty-state">No active rooms available yet.</li>
+                {% endfor %}
+            </ul>
+            <a class="button button-secondary" href="{% url 'room_list' %}">Browse rooms</a>
+        </div>
+    </aside>
+</section>
+<script>
+    window.aviatorConfig = {
+        playUrl: '{% url "play" %}',
+        csrfToken: '{{ csrf_token }}',
+    };
+</script>
+{% endblock %}

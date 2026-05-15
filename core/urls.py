@@ -1,0 +1,26 @@
+from django.urls import path
+from django.contrib.auth import views as auth_views
+from . import views
+
+urlpatterns = [
+    path('', views.home, name='home'),
+    path('register/', views.register, name='register'),
+    path('login/', auth_views.LoginView.as_view(template_name='core/login.html'), name='login'),
+    path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('dashboard/', views.dashboard, name='dashboard'),
+    path('wallet/', views.wallet, name='wallet'),
+    path('admin-analytics/', views.admin_dashboard, name='admin_dashboard'),
+    path('rooms/', views.room_list, name='room_list'),
+    path('rooms/create/', views.create_room, name='create_room'),
+    path('rooms/<int:room_id>/', views.room_detail, name='room_detail'),
+    path('rooms/<int:room_id>/action/', views.room_action, name='room_action'),
+    path('rooms/<int:room_id>/status/', views.room_status, name='room_status'),
+    path('play/', views.play, name='play'),
+    path('profile/', views.profile_view, name='profile'),
+    path('bet-history/', views.bet_history, name='bet_history'),
+    path('game-limits/', views.game_limits, name='game_limits'),
+    path('free-bets/', views.free_bets, name='free_bets'),
+    path('how-to-play/', views.how_to_play, name='how_to_play'),
+    path('game-rules/', views.game_rules, name='game_rules'),
+    path('provably-fair/', views.provably_fair, name='provably_fair'),
+]

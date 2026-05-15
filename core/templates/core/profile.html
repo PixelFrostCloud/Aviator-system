@@ -1,0 +1,102 @@
+{% extends 'core/base.html' %}
+{% block title %}Profile | Aviator{% endblock %}
+{% block content %}
+<section class="panel-panel">
+    <div class="profile-card">
+        <h1>Your profile</h1>
+        <dl class="profile-grid">
+            <div>
+                <dt>Username</dt>
+                <dd>{{ request.user.username }}</dd>
+            </div>
+            <div>
+                <dt>Email</dt>
+                <dd>{{ request.user.email }}</dd>
+            </div>
+            <div>
+                <dt>Balance</dt>
+                <dd>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</dd>
+            </div>
+            <div>
+                <dt>KYC tier</dt>
+                <dd>{{ profile.get_kyc_status_display }}</dd>
+            </div>
+            <div>
+                <dt>Phone</dt>
+                <dd>{{ profile.phone_number|default:'Not set' }}</dd>
+            </div>
+            <div>
+                <dt>Daily deposit limit</dt>
+                <dd>{{ profile.daily_deposit_limit|floatformat:2 }} {{ profile.currency }}</dd>
+            </div>
+            <div>
+                <dt>Daily loss limit</dt>
+                <dd>{{ profile.daily_loss_limit|floatformat:2 }} {{ profile.currency }}</dd>
+            </div>
+            <div>
+                <dt>Joined</dt>
+                <dd>{{ request.user.date_joined|date:'M d, Y' }}</dd>
+            </div>
+        </dl>
+        <form class="form-card" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="compliance">
+            {{ form.phone_number }}
+            {{ form.daily_deposit_limit }}
+            {{ form.daily_loss_limit }}
+            {% if form.errors %}
+                <div class="field-errors">{{ form.errors }}</div>
+            {% endif %}
+            <button class="button button-secondary" type="submit">Update compliance settings</button>
+        </form>
+        <form class="form-card" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="kyc">
+            <h2>KYC submission</h2>
+            {{ kyc_form.document_type }}
+            {{ kyc_form.document_number }}
+            {{ kyc_form.full_name }}
+            {{ kyc_form.date_of_birth }}
+            {% if kyc_form.errors %}
+                <div class="field-errors">{{ kyc_form.errors }}</div>
+            {% endif %}
+            <button class="button button-secondary" type="submit">Submit KYC</button>
+        </form>
+        <form class="form-card" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="self_exclude">
+            <h2>Self-exclusion</h2>
+            {{ exclusion_form.duration }}
+            {{ exclusion_form.reason }}
+            {% if exclusion_form.errors %}
+                <div class="field-errors">{{ exclusion_form.errors }}</div>
+            {% endif %}
+            <button class="button button-secondary" type="submit">Activate self-exclusion</button>
+        </form>
+        <div class="profile-grid">
+            <div>
+                <dt>KYC history</dt>
+                <dd>
+                    {% for submission in kyc_submissions %}
+                        {{ submission.created_at|date:'M d' }} - {{ submission.status|title }}<br>
+                    {% empty %}
+                        No KYC submissions yet.
+                    {% endfor %}
+                </dd>
+            </div>
+            <div>
+                <dt>Self-exclusion history</dt>
+                <dd>
+                    {% for exclusion in exclusions %}
+                        {{ exclusion.created_at|date:'M d' }} - {% if exclusion.permanent %}Permanent{% else %}Until {{ exclusion.ends_at|date:'M d, H:i' }}{% endif %}<br>
+                    {% empty %}
+                        No self-exclusions yet.
+                    {% endfor %}
+                </dd>
+            </div>
+        </div>
+        <a class="button button-primary" href="{% url 'wallet' %}">Manage wallet</a>
+        <p class="profile-note">Deposit, withdraw, or review your wallet history in one secure place.</p>
+    </div>
+</section>
+{% endblock %}

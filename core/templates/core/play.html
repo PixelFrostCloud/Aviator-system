@@ -1,0 +1,342 @@
+{% extends 'core/base.html' %}
+{% block title %}Aviator | Live Crash Betting{% endblock %}
+{% block content %}
+<div class="aviator-play-page">
+    {% csrf_token %}
+    <header class="aviator-topbar">
+        <button class="help-chip" type="button" data-aviator-modal-open="how-to-play">How to play?</button>
+        <div class="topbar-spacer"></div>
+        <div class="topbar-right">
+            <div class="balance-pill" id="play-balance">
+                <strong>{{ profile.balance|floatformat:2 }}</strong>
+                <span>{{ profile.currency }}</span>
+            </div>
+            <a class="wallet-link" href="{% url 'wallet' %}">Wallet</a>
+            <button class="menu-button" id="aviator-menu-button" type="button" aria-label="Menu" aria-expanded="false">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </header>
+
+    <section class="aviator-shell">
+        <aside class="live-bets-panel">
+            <div class="panel-tabs" role="tablist" aria-label="Bet history">
+                <button class="panel-tab active" type="button" data-ledger-tab="all">All Bets</button>
+                <button class="panel-tab" type="button" data-ledger-tab="mine">My Bets</button>
+                <button class="panel-tab" type="button" data-ledger-tab="top">Top</button>
+            </div>
+
+            <div class="total-bets-line">
+                <strong>TOTAL BETS: <span id="total-bets-count">{{ highest_stakers|length }}</span></strong>
+                <button class="previous-hand" type="button">
+                    <span class="clock-dot"></span>
+                    Previous hand
+                </button>
+            </div>
+
+            <div class="ledger-head">
+                <span>User</span>
+                <span>Bet</span>
+                <span>X</span>
+                <span>Win</span>
+            </div>
+
+            <div class="ledger-list" id="ledger-list">
+                {% for session in highest_stakers %}
+                    <div class="ledger-row {% if session.won_amount %}won{% endif %}">
+                        <span class="ledger-user"><span class="player-avatar">{{ session.user.username|slice:":1"|upper }}</span>{{ session.user.username|truncatechars:5 }}</span>
+                        <span>{{ session.stake|floatformat:2 }}</span>
+                        <span>{{ session.crash_point|floatformat:2 }}x</span>
+                        <span>{{ session.won_amount|floatformat:2 }}</span>
+                    </div>
+                {% endfor %}
+                {% for _ in "123456789012345678" %}
+                    <div class="ledger-row muted demo-bet-row">
+                        <span class="ledger-user"><span class="player-avatar"></span>m***{{ forloop.counter }}</span>
+                        <span>10.00</span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                {% endfor %}
+            </div>
+        </aside>
+
+        <main class="aviator-main">
+            <div class="round-strip" aria-label="Recent multipliers">
+                {% for session in recent_crashes %}
+                    <span class="round-pill {% if session.crash_point >= 10 %}hot{% elif session.crash_point >= 2 %}mid{% endif %}">
+                        {{ session.crash_point|floatformat:2 }}x
+                    </span>
+                {% empty %}
+                    <span class="round-pill mid">6.91x</span>
+                    <span class="round-pill">1.84x</span>
+                    <span class="round-pill hot">80.74x</span>
+                    <span class="round-pill">1.32x</span>
+                {% endfor %}
+                <span class="round-actions">
+                    <button type="button" aria-label="Sound"></button>
+                    <button type="button" aria-label="Round menu"></button>
+                </span>
+            </div>
+
+            <section class="flight-stage" aria-live="polite">
+                <div class="fun-mode">FUN MODE</div>
+                <div class="stage-grid"></div>
+                <div class="height-markers">
+                    <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div class="ground-markers">
+                    <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div class="flight-fill" id="flight-fill"></div>
+                <div class="flight-curve" id="flight-curve"></div>
+                <div class="plane-silhouette" id="plane-silhouette">
+                    <span class="plane-wing"></span>
+                    <span class="plane-body"></span>
+                    <span class="plane-tail"></span>
+                </div>
+                <strong class="stage-multiplier" id="multiplier">1.00x</strong>
+                <div class="round-countdown" id="round-countdown">
+                    <span>PLACE YOUR BETS</span>
+                    <strong>4</strong>
+                </div>
+                <p class="stage-message" id="game-message">Place your bets before the next flight.</p>
+                <div class="fairness-strip" id="fairness-strip">
+                    <span>Hash pending</span>
+                    <strong>Provably fair</strong>
+                </div>
+            </section>
+
+            <section class="betting-dock" id="play-form" data-play-widget>
+                <div class="bet-slip aviator-bet-slip">
+                    <div class="bet-slip-tabs">
+                        <button class="bet-mode-toggle active" type="button" data-mode="manual">Bet</button>
+                        <button class="bet-mode-toggle" type="button" data-mode="auto">Auto</button>
+                    </div>
+                    <div class="bet-slip-body">
+                        <div class="amount-column">
+                            <div class="amount-stepper">
+                                <button class="amount-minus" type="button" aria-label="Decrease bet">-</button>
+                                <input class="stake-input" type="number" min="1" step="0.01" value="1.00" aria-label="Bet amount">
+                                <button class="amount-plus" type="button" aria-label="Increase bet">+</button>
+                            </div>
+                            <div class="quick-stakes">
+                                <button type="button" data-stake="1">1</button>
+                                <button type="button" data-stake="2">2</button>
+                                <button type="button" data-stake="5">5</button>
+                                <button type="button" data-stake="10">10</button>
+                            </div>
+                            <div class="auto-controls">
+                                <label>
+                                    <span>Auto cashout</span>
+                                    <input class="auto-cashout-input" type="number" min="1.01" step="0.01" value="2.00">
+                                </label>
+                            </div>
+                        </div>
+                        <button class="bet-action start-bet" type="button">
+                            <span>BET</span>
+                            <strong>1.00 {{ profile.currency }}</strong>
+                        </button>
+                        <button class="bet-action cashout-bet" type="button" disabled>
+                            <span>CASH OUT</span>
+                            <strong>0.00 {{ profile.currency }}</strong>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bet-slip aviator-bet-slip">
+                    <div class="bet-slip-tabs">
+                        <button class="bet-mode-toggle active" type="button" data-mode="manual">Bet</button>
+                        <button class="bet-mode-toggle" type="button" data-mode="auto">Auto</button>
+                    </div>
+                    <div class="bet-slip-body">
+                        <div class="amount-column">
+                            <div class="amount-stepper">
+                                <button class="amount-minus" type="button" aria-label="Decrease bet">-</button>
+                                <input class="stake-input" type="number" min="1" step="0.01" value="1.00" aria-label="Bet amount">
+                                <button class="amount-plus" type="button" aria-label="Increase bet">+</button>
+                            </div>
+                            <div class="quick-stakes">
+                                <button type="button" data-stake="1">1</button>
+                                <button type="button" data-stake="2">2</button>
+                                <button type="button" data-stake="5">5</button>
+                                <button type="button" data-stake="10">10</button>
+                            </div>
+                            <div class="auto-controls">
+                                <label>
+                                    <span>Auto cashout</span>
+                                    <input class="auto-cashout-input" type="number" min="1.01" step="0.01" value="2.00">
+                                </label>
+                            </div>
+                        </div>
+                        <button class="bet-action start-bet" type="button">
+                            <span>BET</span>
+                            <strong>1.00 {{ profile.currency }}</strong>
+                        </button>
+                        <button class="bet-action cashout-bet" type="button" disabled>
+                            <span>CASH OUT</span>
+                            <strong>0.00 {{ profile.currency }}</strong>
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <aside class="right-chat-panel">
+            <div class="chat-header">
+                <strong>CHAT</strong>
+                <span>Online: 246</span>
+            </div>
+            <div class="chat-promo">Good bets for everyone!</div>
+            <div class="chat-list" id="chat-list">
+                {% for chat in chat_messages %}
+                    <div class="chat-item">
+                        <span class="player-avatar">{{ chat.user.username|slice:":1"|upper }}</span>
+                        <div>
+                            <strong>{{ chat.user.username|truncatechars:8 }}</strong>
+                            <span>{{ chat.message }}</span>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div class="chat-item muted">No chat messages yet.</div>
+                {% endfor %}
+            </div>
+            <form class="chat-form" id="chat-form">
+                <input type="hidden" name="action" value="chat">
+                {{ chat_form.message }}
+                <button type="submit">Send</button>
+            </form>
+        </aside>
+    </section>
+
+    <div class="aviator-menu-backdrop" id="aviator-menu-backdrop" hidden></div>
+    <aside class="aviator-menu-drawer" id="aviator-menu-drawer" aria-hidden="true">
+        <div class="menu-profile">
+            <span class="menu-avatar">{{ request.user.username|slice:":1"|upper }}</span>
+            <strong>{{ request.user.username }}</strong>
+            <a href="{% url 'profile' %}">Change Avatar</a>
+            <button class="menu-close" id="aviator-menu-close" type="button" aria-label="Close menu">...</button>
+        </div>
+        <div class="menu-section">
+            <button class="menu-toggle-row" type="button" data-setting-toggle="sound">
+                <span class="menu-icon">♪</span>
+                <strong>Sound</strong>
+                <span class="setting-switch" aria-hidden="true"></span>
+            </button>
+            <button class="menu-toggle-row" type="button" data-setting-toggle="music">
+                <span class="menu-icon">♫</span>
+                <strong>Music</strong>
+                <span class="setting-switch" aria-hidden="true"></span>
+            </button>
+            <button class="menu-toggle-row" type="button" data-setting-toggle="animation">
+                <span class="menu-icon">✦</span>
+                <strong>Animation</strong>
+                <span class="setting-switch" aria-hidden="true"></span>
+            </button>
+        </div>
+        <nav class="menu-links" aria-label="Aviator menu">
+            <a href="{% url 'free_bets' %}" data-aviator-modal-open="free-bets"><span class="menu-icon">☆</span>Free Bets</a>
+            <a href="{% url 'bet_history' %}" data-aviator-modal-open="bet-history"><span class="menu-icon">↺</span>My Bet History</a>
+            <a href="{% url 'game_limits' %}" data-aviator-modal-open="game-limits"><span class="menu-icon">▣</span>Game Limits</a>
+            <a href="{% url 'how_to_play' %}" data-aviator-modal-open="how-to-play"><span class="menu-icon">?</span>How To Play</a>
+            <a href="{% url 'game_rules' %}" data-aviator-modal-open="game-rules"><span class="menu-icon">☷</span>Game Rules</a>
+            <a href="{% url 'provably_fair' %}" data-aviator-modal-open="provably-fair"><span class="menu-icon">◇</span>Provably Fair Settings</a>
+        </nav>
+    </aside>
+
+    <div class="aviator-modal-backdrop" id="aviator-modal-backdrop" hidden></div>
+
+    <section class="aviator-game-modal aviator-how-modal" data-aviator-modal="how-to-play" aria-hidden="true">
+        <header><h2>HOW TO PLAY?</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
+        <div class="aviator-how-steps">
+            <div><strong>01</strong><span class="pink-token">▱</span><p>Make a bet, or even two at same time and wait for the round to start.</p></div>
+            <div><strong>02</strong><span class="pink-token">◉</span><p>Look after the lucky plane. Your win is bet multiplied by a coefficient of lucky plane.</p></div>
+            <div><strong>03</strong><span class="pink-token">▰</span><p>Cash Out before plane flies away and money is yours.</p></div>
+        </div>
+        <button class="modal-footer-link" type="button" data-aviator-modal-switch="game-rules">detailed rules</button>
+    </section>
+
+    <section class="aviator-game-modal" data-aviator-modal="free-bets" aria-hidden="true">
+        <header><h2>FREE BETS MANAGEMENT</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
+        <div class="modal-body">
+            <div class="cash-option"><span></span>Play with cash</div>
+            <div class="modal-row-title"><strong>ACTIVE FREE BETS</strong><button type="button">↺ Archive</button></div>
+            <div class="empty-ticket">
+                <div class="ticket-icon">☆</div>
+                <strong>No Active Free Bets. Yet!</strong>
+            </div>
+        </div>
+    </section>
+
+    <section class="aviator-game-modal" data-aviator-modal="game-limits" aria-hidden="true">
+        <header><h2>GAME LIMITS</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
+        <div class="modal-body compact">
+            <div class="limit-line"><span>Minimum bet {{ profile.currency }}:</span><strong>1.00</strong></div>
+            <div class="limit-line"><span>Maximum bet {{ profile.currency }}:</span><strong>{{ profile.daily_loss_limit|floatformat:2 }}</strong></div>
+            <div class="limit-line"><span>Maximum win for one bet {{ profile.currency }}:</span><strong>450,000,000.00</strong></div>
+        </div>
+    </section>
+
+    <section class="aviator-game-modal" data-aviator-modal="bet-history" aria-hidden="true">
+        <header><h2>MY BET HISTORY</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
+        <div class="modal-table">
+            <div class="modal-table-head"><span>Date</span><span>Bet {{ profile.currency }}</span><span>X</span><span>Cash out {{ profile.currency }}</span></div>
+            {% for session in recent_sessions %}
+                <div class="modal-table-row">
+                    <span>{{ session.created_at|date:'M d, H:i' }}</span>
+                    <span>{{ session.stake|floatformat:2 }}</span>
+                    <span>{% if session.cashed_out_at %}{{ session.cashed_out_at|floatformat:2 }}x{% else %}-{% endif %}</span>
+                    <span>{{ session.won_amount|floatformat:2 }}</span>
+                </div>
+            {% empty %}
+                <div class="modal-empty">No bets yet.</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="aviator-game-modal wide" data-aviator-modal="game-rules" aria-hidden="true">
+        <header><h2>GAME RULES</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
+        <div class="modal-body rules">
+            <p>Aviator is built on a provably fair system. The multiplier rises from 1x and stops when the plane flies away.</p>
+            <h3>HOW TO PLAY</h3>
+            <div class="rules-grid">
+                <div><strong>01</strong><div class="rule-preview bet-preview">Bet<br>1.00 {{ profile.currency }}</div><p><b>BET</b> before take-off.</p></div>
+                <div><strong>02</strong><div class="rule-preview">2.25x</div><p><b>WATCH</b> as your winnings increase.</p></div>
+                <div><strong>03</strong><div class="rule-preview cash-preview">Cash Out</div><p><b>CASH OUT</b> before the plane disappears.</p></div>
+            </div>
+            <p>Before each round, the server commits to a seed hash. After the crash, the seed can be revealed and verified.</p>
+            <ul>
+                <li>Select an amount and press Bet during the countdown.</li>
+                <li>Cash out before the plane flies away to keep the multiplier win.</li>
+                <li>Auto mode can place repeat bets and cash out at your target multiplier.</li>
+                <li>If you do not cash out before crash, the bet is lost.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="aviator-game-modal" data-aviator-modal="provably-fair" aria-hidden="true">
+        <header><h2>PROVABLY FAIR SETTINGS</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
+        <div class="modal-body fairness">
+            <p>This game uses Provably Fair technology to determine game result. You can check fairness after every round.</p>
+            <div class="fair-card">
+                <strong>Client (your) seed:</strong>
+                <div class="seed-pill">Current: {{ request.user.username|slugify|default:'player' }}-client-seed</div>
+            </div>
+            <div class="fair-card">
+                <strong>Server seed SHA256:</strong>
+                <div class="seed-pill">{% for session in recent_crashes|slice:":1" %}{{ session.server_seed_hash }}{% empty %}No round hash yet{% endfor %}</div>
+            </div>
+            <footer>You can check fairness of each bet from bets history.</footer>
+        </div>
+    </section>
+</div>
+
+<script>
+window.aviatorConfig = {
+    playUrl: "{% url 'play' %}",
+    currency: "{{ profile.currency }}"
+};
+</script>
+{% endblock %}

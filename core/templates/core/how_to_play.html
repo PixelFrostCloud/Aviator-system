@@ -1,0 +1,13 @@
+{% extends 'core/base.html' %}
+{% block title %}How To Play | Aviator{% endblock %}
+{% block content %}
+<section class="panel-panel">
+    <div class="profile-card">
+        <h1>How To Play</h1>
+        <p>Place a bet during the countdown. The multiplier starts at 1.00x and rises until the plane flies away.</p>
+        <p>Cash out before the crash to receive your stake multiplied by the current multiplier.</p>
+        <p>Auto mode can place repeat bets and cash out at your target multiplier.</p>
+        <a class="button button-primary" href="{% url 'play' %}">Play</a>
+    </div>
+</section>
+{% endblock %}

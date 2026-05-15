@@ -1,0 +1,26 @@
+{% extends 'core/base.html' %}
+{% block title %}My Bet History | Aviator{% endblock %}
+{% block content %}
+<section class="dashboard-grid">
+    <div class="stats-card">
+        <h1>My Bet History</h1>
+        <ul class="session-list">
+            {% for session in sessions %}
+                <li>
+                    <span>{{ session.created_at|date:'M d, H:i' }}</span>
+                    <strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong>
+                    <span>{{ session.cashed_out_at|default:session.crash_point|floatformat:2 }}x</span>
+                    <span class="session-tag {% if session.is_winner %}win{% else %}loss{% endif %}">{{ session.won_amount|floatformat:2 }}</span>
+                </li>
+            {% empty %}
+                <li class="empty-state">No bets yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <aside class="stats-card">
+        <h2>Fairness</h2>
+        <p>Each completed round can be checked from Provably Fair Settings.</p>
+        <a class="button button-secondary" href="{% url 'provably_fair' %}">Open fairness log</a>
+    </aside>
+</section>
+{% endblock %}

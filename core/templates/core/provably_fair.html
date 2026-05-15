@@ -1,0 +1,25 @@
+{% extends 'core/base.html' %}
+{% block title %}Provably Fair | Aviator{% endblock %}
+{% block content %}
+<section class="dashboard-grid">
+    <div class="stats-card">
+        <h1>Provably Fair Settings</h1>
+        <p>Rounds commit to a server seed hash before play and reveal the seed after crash.</p>
+        <ul class="session-list">
+            {% for round in rounds %}
+                <li>
+                    <span>{{ round.public_id }}</span>
+                    <strong>{{ round.crash_point|floatformat:2 }}x</strong>
+                    <span>{% if round.is_revealed %}Revealed{% else %}Pending{% endif %}</span>
+                </li>
+            {% empty %}
+                <li class="empty-state">No verifiable rounds yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <aside class="stats-card">
+        <h2>Verification Formula</h2>
+        <p>Crash point is generated from HMAC-SHA256(server seed, client seed), with the configured house edge applied.</p>
+    </aside>
+</section>
+{% endblock %}

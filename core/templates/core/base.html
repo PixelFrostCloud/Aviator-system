@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% load static %}
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Aviator System{% endblock %}</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap">
+    <link rel="stylesheet" href="{% static 'core/css/styles.css' %}?v=aviator-modals-20260504">
+    <script src="{% static 'core/js/main.js' %}?v=aviator-modals-20260504" defer></script>
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-grid">
+            <a class="brand" href="{% url 'home' %}">AVIATOR</a>
+            <nav class="nav-links">
+                <a href="{% url 'home' %}">Home</a>
+                {% if user.is_authenticated %}
+                    <a href="{% url 'dashboard' %}">Dashboard</a>
+                    <a href="{% url 'room_list' %}">Rooms</a>
+                    <a href="{% url 'wallet' %}">Wallet</a>
+                    <a href="{% url 'profile' %}">Profile</a>
+                    {% if user.is_staff %}
+                        <a href="{% url 'admin_dashboard' %}">Analytics</a>
+                    {% endif %}
+                    <a href="{% url 'logout' %}">Logout</a>
+                {% else %}
+                    <a href="{% url 'login' %}">Login</a>
+                    <a href="{% url 'register' %}">Register</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+    <main class="container">
+        {% if messages %}
+            <section class="alerts">
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+                {% endfor %}
+            </section>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="footer">
+        <div class="container">
+            <p>© {{ now|date:'Y' }} Aviator System. Built with Django, HTML, CSS, and JavaScript.</p>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,78 @@
+{% extends 'core/base.html' %}
+{% block title %}Room {{ room.code }} | Aviator{% endblock %}
+{% block content %}
+<section class="dashboard-grid">
+    <div class="dashboard-panel">
+        <div class="stats-card">
+            <div class="play-card-header">
+                <div>
+                    <h1>{{ room.name }}</h1>
+                    <p>Room code: <strong>{{ room.code }}</strong></p>
+                    <p>Status: <strong>{{ room.get_status_display }}</strong></p>
+                </div>
+                {% if request.user == room.host and room.status == 'waiting' %}
+                    <button id="room-start" class="button button-primary">Start game</button>
+                {% endif %}
+            </div>
+            <div id="room-game" class="game-panel{% if room.status == 'waiting' %} hidden{% endif %}">
+                <div class="game-status">
+                    <span>Flight multiplier</span>
+                    <strong id="room-multiplier">1.00x</strong>
+                </div>
+                <div class="progress-bar"><span id="room-progress"></span></div>
+                <div class="game-actions">
+                    <button id="room-cashout" class="button button-secondary" disabled>Cash Out</button>
+                    <p id="room-message">Waiting for the host to start the game.</p>
+                </div>
+            </div>
+            <div class="stats-card">
+                <h2>Room participants</h2>
+                <ul class="session-list" id="room-participants">
+                    {% for player in room.participants.all %}
+                        <li>
+                            <span>{{ player.user.username }}</span>
+                            <strong>${{ player.stake|floatformat:2 }}</strong>
+                            <span>{{ player.cashed_out_at|default:'Pending' }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% if not player and room.status == 'waiting' %}
+                <div class="form-card">
+                    <h2>Join room</h2>
+                    <form id="join-room-form" method="post" action="{% url 'room_action' room_id=room.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="join">
+                        {{ join_form.stake }}
+                        <button class="button button-primary" type="submit">Join room</button>
+                    </form>
+                </div>
+            {% elif player %}
+                <div class="stats-card">
+                    <h2>Your room stake</h2>
+                    <p>${{ player.stake|floatformat:2 }}</p>
+                    <p>Status: <strong>{% if player.cashed_out_at %}{{ player.cashed_out_at }}x{% else %}Active{% endif %}</strong></p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    <aside class="dashboard-sidebar">
+        <div class="stats-card">
+            <h2>Room details</h2>
+            <p>Max players: <strong>{{ room.max_players }}</strong></p>
+            <p>Created by: <strong>{{ room.host.username }}</strong></p>
+            <p>Created at: <strong>{{ room.created_at|date:'M d, H:i' }}</strong></p>
+        </div>
+    </aside>
+</section>
+<script>
+    window.roomConfig = {
+        roomActionUrl: '{% url "room_action" room_id=room.id %}',
+        roomStatusUrl: '{% url "room_status" room_id=room.id %}',
+        csrfToken: '{{ csrf_token }}',
+        canCashout: {{ player is not None|yesno:'true,false' }},
+        isHost: {{ request.user == room.host|yesno:'true,false' }},
+        initialRoomStatus: '{{ room.status }}',
+    };
+</script>
+{% endblock %}

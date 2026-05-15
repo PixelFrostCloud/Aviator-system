@@ -1,0 +1,29 @@
+{% extends 'core/base.html' %}
+{% block title %}Login | Aviator{% endblock %}
+{% block content %}
+<section class="panel-panel">
+    <div class="auth-panel">
+        <h1>Login</h1>
+        <form method="post" class="form-card">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+                <div class="alert alert-error">
+                    {% for error in form.non_field_errors %}
+                        <p>{{ error }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <label>
+                Username
+                <input type="text" name="username" required autofocus>
+            </label>
+            <label>
+                Password
+                <input type="password" name="password" required>
+            </label>
+            <button class="button button-primary">Login</button>
+        </form>
+        <p class="form-foot">New here? <a href="{% url 'register' %}">Create an account</a></p>
+    </div>
+</section>
+{% endblock %}
