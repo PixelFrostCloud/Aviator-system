@@ -124,7 +124,7 @@ class ChatMessageForm(forms.ModelForm):
         model = ChatMessage
         fields = ['message']
         widgets = {
-            'message': forms.TextInput(attrs={'placeholder': 'Send a live chat message', 'class': 'form-control', 'maxlength': 280}),
+            'message': forms.TextInput(attrs={'placeholder': 'Your message...', 'class': 'form-control', 'maxlength': 160}),
         }
 
 

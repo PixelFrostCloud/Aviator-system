@@ -2,6 +2,7 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils import timezone
 from .models import Room, RoomPlayer, AuditLog
+from .reward_services import REWARD_GROUP, mark_participant
 
 
 class RoomSyncConsumer(AsyncWebsocketConsumer):
@@ -82,4 +83,41 @@ class RoomSyncConsumer(AsyncWebsocketConsumer):
             'type': 'player_joined',
             'username': event['username'],
             'player_count': event['player_count'],
+        }))
+
+
+class RewardConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.user = self.scope.get('user')
+        if not self.user or not self.user.is_authenticated:
+            await self.close()
+            return
+        await self.channel_layer.group_add(REWARD_GROUP, self.channel_name)
+        await self.accept()
+        mark_participant(self.user, self.channel_name, self.scope.get('session').session_key if self.scope.get('session') else '')
+        await self.send(text_data=json.dumps({
+            'type': 'participant_joined',
+            'user_id': self.user.id,
+        }))
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(REWARD_GROUP, self.channel_name)
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+        except json.JSONDecodeError:
+            return
+        if data.get('type') in ['heartbeat', 'participant_joined']:
+            mark_participant(self.user, self.channel_name, data.get('session_id', ''))
+            await self.send(text_data=json.dumps({
+                'type': 'participant_joined',
+                'user_id': self.user.id,
+                'last_activity': timezone.now().isoformat(),
+            }))
+
+    async def reward_event(self, event):
+        await self.send(text_data=json.dumps({
+            'type': event.get('event'),
+            **event.get('payload', {}),
         }))

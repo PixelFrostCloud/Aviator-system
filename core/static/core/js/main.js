@@ -7,10 +7,24 @@ function formatMultiplier(value) {
   return `${value.toFixed(2)}x`;
 }
 
+function escapeHtml(value) {
+  const element = document.createElement('span');
+  element.textContent = value || '';
+  return element.innerHTML;
+}
+
+const FLIGHT_INCREMENT = 0.04;
+const FLIGHT_TICK_MS = 40;
+
+function calculateMaskedFlightProgress(tick) {
+  const elapsedSeconds = tick * (FLIGHT_TICK_MS / 1000);
+  const eased = 1 - Math.exp(-elapsedSeconds / 4.8);
+  const steadyDrift = Math.min(elapsedSeconds * 1.35, 18);
+  return Math.min((eased * 72) + steadyDrift, 96);
+}
+
 function animateFlightProgress(progressElement, multiplierElement, messageElement, crashValue, cashoutButton) {
   let multiplier = 1.0;
-  const increment = 0.04;
-  const updateInterval = 40;
   let tick = 0;
 
   cashoutButton.disabled = false;
@@ -18,9 +32,9 @@ function animateFlightProgress(progressElement, multiplierElement, messageElemen
 
   const interval = setInterval(() => {
     tick += 1;
-    multiplier = 1 + tick * increment;
+    multiplier = 1 + tick * FLIGHT_INCREMENT;
     multiplier = Math.min(multiplier, crashValue + 0.05);
-    const percentage = Math.min((multiplier / (crashValue + 2)) * 100, 100);
+    const percentage = calculateMaskedFlightProgress(tick);
 
     progressElement.style.width = `${percentage}%`;
     multiplierElement.textContent = formatMultiplier(multiplier);
@@ -31,7 +45,57 @@ function animateFlightProgress(progressElement, multiplierElement, messageElemen
       cashoutButton.disabled = true;
       messageElement.textContent = 'Flight crashed. Round over.';
     }
-  }, updateInterval);
+  }, FLIGHT_TICK_MS);
+
+  return interval;
+}
+
+async function settleRoundById(roundId) {
+  const formData = new FormData();
+  formData.append('action', 'settle_crash');
+  formData.append('round_id', roundId);
+
+  const response = await fetch(window.aviatorConfig.playUrl, {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': getCsrfToken(),
+    },
+    body: formData,
+  });
+  const payload = await response.json();
+  return payload.success ? payload : null;
+}
+
+function animateServerFlightProgress(progressElement, multiplierElement, messageElement, session, cashoutButton) {
+  let tick = 0;
+  let checkInFlight = false;
+
+  cashoutButton.disabled = false;
+  messageElement.textContent = 'Cash out before the flight crashes.';
+
+  const interval = setInterval(() => {
+    tick += 1;
+    const multiplier = 1 + tick * FLIGHT_INCREMENT;
+    progressElement.style.width = `${calculateMaskedFlightProgress(tick)}%`;
+    multiplierElement.textContent = formatMultiplier(multiplier);
+
+    if (!checkInFlight && tick % 5 === 0) {
+      checkInFlight = true;
+      settleRoundById(session.round_id)
+        .then((payload) => {
+          if (!payload) {
+            return;
+          }
+          clearInterval(interval);
+          multiplierElement.textContent = formatMultiplier(payload.crash_point);
+          cashoutButton.disabled = true;
+          messageElement.textContent = 'Flight crashed. Round over.';
+        })
+        .finally(() => {
+          checkInFlight = false;
+        });
+    }
+  }, FLIGHT_TICK_MS);
 
   return interval;
 }
@@ -55,6 +119,168 @@ function attachPlayWidget() {
   }
 
   if (chatForm && chatList) {
+    const chatPanel = document.querySelector('[data-chat-panel]');
+    const chatInput = chatForm.querySelector('input[name="message"]');
+    const charCount = document.getElementById('chat-char-count');
+    const newMessagePill = document.getElementById('new-message-pill');
+    const spamFilter = document.getElementById('chat-spam-filter');
+    const rainForm = document.getElementById('chat-rain-form');
+    const rainTotal = document.getElementById('rain-total');
+    const rainTotalDisplay = document.getElementById('rain-total-display');
+    const rainPlayers = document.getElementById('rain-players');
+    const rainAmount = document.getElementById('rain-amount');
+    const rainHelper = document.getElementById('rain-helper');
+    const rulesModal = document.getElementById('chat-rules-modal');
+    const onlineCount = document.getElementById('chat-online-count');
+    const maxChatLength = parseInt(chatInput?.getAttribute('maxlength') || '160', 10);
+    const playPage = document.querySelector('.aviator-play-page');
+    const shell = document.querySelector('.aviator-shell');
+    const reopenChatButton = document.createElement('button');
+    reopenChatButton.className = 'chat-reopen-button';
+    reopenChatButton.type = 'button';
+    reopenChatButton.textContent = 'Chat';
+    reopenChatButton.hidden = true;
+    shell?.append(reopenChatButton);
+    const chatDrawerBackdrop = document.createElement('button');
+    chatDrawerBackdrop.className = 'chat-drawer-backdrop';
+    chatDrawerBackdrop.type = 'button';
+    chatDrawerBackdrop.setAttribute('aria-label', 'Close chat');
+    chatDrawerBackdrop.hidden = true;
+    document.body.append(chatDrawerBackdrop);
+    if (rulesModal && rulesModal.parentElement !== document.body) {
+      document.body.append(rulesModal);
+    }
+
+    chatList.querySelectorAll('.chat-row.win').forEach((row) => row.remove());
+    chatList.querySelectorAll('.chat-bubble p').forEach((message) => {
+      if (message.textContent.includes('W H A T') || message.textContent.includes('0118')) {
+        message.closest('.chat-row')?.remove();
+      }
+    });
+    if (!chatList.children.length) {
+      const empty = document.createElement('div');
+      empty.className = 'chat-empty';
+      empty.textContent = 'No chat messages yet.';
+      chatList.append(empty);
+    }
+
+    function isChatNearBottom() {
+      return chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 32;
+    }
+
+    function renderChatMessage(message, options = {}) {
+      const wasNearBottom = isChatNearBottom();
+      chatList.querySelector('.chat-empty')?.remove();
+      const article = document.createElement('article');
+      article.className = `chat-row${options.system ? ' system' : ''}`;
+      article.innerHTML = `
+        <span class="chat-avatar">${escapeHtml((message.username || 'B').charAt(0).toUpperCase())}</span>
+        <div class="chat-bubble">
+          <div class="chat-meta"><strong>${escapeHtml(message.username || 'player')}</strong><time>${escapeHtml(message.created_at || '')}</time></div>
+          <p>${escapeHtml(message.text || '')}</p>
+        </div>
+        <button class="chat-like" type="button" aria-label="Like"><span>♥</span><b>1</b></button>
+      `;
+      chatList.append(article);
+      const likeButton = article.querySelector('.chat-like');
+      if (likeButton) {
+        likeButton.dataset.messageId = message.id || '';
+        const likeCount = likeButton.querySelector('b');
+        if (likeCount) {
+          likeCount.textContent = String(message.reaction_count || 0);
+        }
+      }
+      if (options.local || wasNearBottom) {
+        chatList.scrollTop = chatList.scrollHeight;
+        newMessagePill.hidden = true;
+      } else if (options.notify !== false) {
+        newMessagePill.hidden = false;
+      }
+      return article;
+    }
+
+    function updateCharCount() {
+      if (!chatInput || !charCount) {
+        return;
+      }
+      charCount.textContent = Math.max(maxChatLength - chatInput.value.length, 0);
+    }
+
+    function showSpamFilter() {
+      if (!spamFilter) {
+        return;
+      }
+      spamFilter.hidden = false;
+      setTimeout(() => {
+        spamFilter.hidden = true;
+      }, 2200);
+    }
+
+    function walletBalance() {
+      return Math.max(parseFloat(window.aviatorConfig.walletBalance || '0') || 0, 0);
+    }
+
+    function formatMoney(value) {
+      return `${Number(value).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} ${window.aviatorConfig.currency || 'UGX'}`;
+    }
+
+    function setRainHelper(message, state = 'neutral') {
+      if (!rainHelper) {
+        return;
+      }
+      rainHelper.textContent = message || 'This feature will give selected amount to random users in chat.';
+      rainHelper.dataset.state = state;
+    }
+
+    function syncRainAmounts(source) {
+      if (!rainTotal || !rainPlayers || !rainAmount) {
+        return;
+      }
+      const maxBalance = walletBalance();
+      const maxPlayers = Math.max(parseInt(rainPlayers.max || '20', 10) || 20, 1);
+      const players = Math.min(Math.max(parseInt(rainPlayers.value, 10) || 1, 1), maxPlayers);
+      let amount = Math.max(parseFloat(rainAmount.value) || 0.01, 0.01);
+      let total = Math.max(parseFloat(rainTotal.value) || 0, 0);
+      if (source === 'open' || source === 'balance') {
+        total = Math.min(Math.max(maxBalance, 0), 1500);
+        if (total < 1 && maxBalance > 0) {
+          total = maxBalance;
+        }
+      }
+      if (maxBalance > 0) {
+        total = Math.min(total || maxBalance, maxBalance);
+      }
+      if (source === 'open' || source === 'balance' || source === 'total' || source === 'players') {
+        amount = players > 0 ? total / players : 0;
+      } else if (source === 'amount') {
+        total = amount * players;
+        if (maxBalance > 0 && total > maxBalance) {
+          total = maxBalance;
+          amount = total / players;
+        }
+      }
+      rainPlayers.value = players.toString();
+      rainTotal.max = maxBalance.toFixed(2);
+      rainAmount.value = Math.max(amount, 0).toFixed(2);
+      rainTotal.value = Math.max(total, 0).toFixed(2);
+      if (rainTotalDisplay) {
+        rainTotalDisplay.textContent = formatMoney(total);
+      }
+      if (maxBalance < 1) {
+        setRainHelper('You do not have sufficient balance on your wallet.', 'error');
+      } else if (total > maxBalance) {
+        setRainHelper('You do not have sufficient balance on your wallet.', 'error');
+      } else {
+        setRainHelper(`Wallet balance: ${formatMoney(maxBalance)}.`, 'neutral');
+      }
+    }
+
+    chatInput?.addEventListener('input', updateCharCount);
+    updateCharCount();
+
     chatForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const formData = new FormData(chatForm);
@@ -67,14 +293,214 @@ function attachPlayWidget() {
       });
       const payload = await response.json();
       if (!payload.success) {
+        showSpamFilter();
         return;
       }
-      const item = document.createElement('div');
-      item.className = 'chat-item';
-      item.innerHTML = `<strong>${payload.message.username}</strong><span>${payload.message.text}</span>`;
-      chatList.prepend(item);
+      renderChatMessage(payload.message, { local: true });
+      if (payload.message.flagged) {
+        showSpamFilter();
+      }
       chatForm.reset();
+      updateCharCount();
     });
+
+    chatList.addEventListener('click', async (event) => {
+      const like = event.target.closest('.chat-like');
+      if (!like) {
+        return;
+      }
+      const messageId = like.dataset.messageId;
+      if (!messageId) {
+        return;
+      }
+      const formData = new FormData();
+      formData.append('action', 'chat_react');
+      formData.append('message_id', messageId);
+      const response = await fetch(window.aviatorConfig.playUrl, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCsrfToken(),
+        },
+        body: formData,
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        showSpamFilter();
+        return;
+      }
+      const count = like.querySelector('b');
+      count.textContent = String(payload.reaction_count || 0);
+      like.classList.toggle('active', Boolean(payload.active));
+    });
+
+    newMessagePill?.addEventListener('click', () => {
+      chatList.scrollTop = chatList.scrollHeight;
+      newMessagePill.hidden = true;
+    });
+
+    document.querySelectorAll('[data-chat-emoji]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (!chatInput) {
+          return;
+        }
+        chatInput.value = `${chatInput.value} 👏`.slice(0, maxChatLength);
+        chatInput.focus();
+        updateCharCount();
+      });
+    });
+
+    function closeChatRules() {
+      rulesModal?.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('chat-rules-lock');
+      chatPanel?.classList.remove('rules-open');
+    }
+
+    const rulesOpenButton = document.querySelector('[data-chat-rules-open]');
+    rulesOpenButton?.addEventListener('click', () => {
+      rulesModal?.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('chat-rules-lock');
+      chatPanel?.classList.add('rules-open');
+      rulesModal?.querySelector('[data-chat-rules-close]')?.focus({ preventScroll: true });
+    });
+    document.querySelector('[data-chat-rules-close]')?.addEventListener('click', closeChatRules);
+    rulesModal?.addEventListener('click', (event) => {
+      if (event.target === rulesModal) {
+        closeChatRules();
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && rulesModal?.getAttribute('aria-hidden') === 'false') {
+        closeChatRules();
+      }
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!rulesModal || rulesModal.getAttribute('aria-hidden') !== 'false') {
+        return;
+      }
+      if (rulesModal.contains(event.target) || rulesOpenButton?.contains(event.target)) {
+        return;
+      }
+      closeChatRules();
+    });
+    const mobileChatMedia = window.matchMedia('(max-width: 760px)');
+    let chatCloseTimer = null;
+
+    function syncChatDrawerBackdrop() {
+      chatDrawerBackdrop.hidden = !mobileChatMedia.matches || playPage?.classList.contains('chat-collapsed');
+    }
+
+    function closeChatPanel() {
+      if (chatCloseTimer) {
+        clearTimeout(chatCloseTimer);
+      }
+      playPage?.classList.add('chat-collapsed');
+      reopenChatButton.hidden = false;
+      chatDrawerBackdrop.hidden = true;
+      chatCloseTimer = setTimeout(() => {
+        playPage?.classList.add('chat-closed');
+        chatPanel?.classList.add('is-collapsed');
+      }, 260);
+    }
+
+    function openChatPanel() {
+      if (chatCloseTimer) {
+        clearTimeout(chatCloseTimer);
+      }
+      playPage?.classList.remove('chat-closed');
+      chatPanel?.classList.remove('is-collapsed');
+      requestAnimationFrame(() => {
+        playPage?.classList.remove('chat-collapsed');
+        syncChatDrawerBackdrop();
+      });
+      reopenChatButton.hidden = true;
+    }
+
+    document.querySelector('[data-chat-collapse]')?.addEventListener('click', closeChatPanel);
+    chatDrawerBackdrop.addEventListener('click', closeChatPanel);
+    reopenChatButton.addEventListener('click', openChatPanel);
+    function syncChatMode(event) {
+      if (event.matches) {
+        playPage?.classList.add('chat-collapsed', 'chat-closed');
+        chatPanel?.classList.add('is-collapsed');
+        reopenChatButton.hidden = false;
+      } else {
+        playPage?.classList.remove('chat-collapsed', 'chat-closed');
+        chatPanel?.classList.remove('is-collapsed');
+        reopenChatButton.hidden = true;
+      }
+      syncChatDrawerBackdrop();
+    }
+
+    mobileChatMedia.addEventListener?.('change', syncChatMode);
+    if (mobileChatMedia.matches) {
+      playPage?.classList.add('chat-collapsed', 'chat-closed');
+      chatPanel?.classList.add('is-collapsed');
+      reopenChatButton.hidden = false;
+    }
+    syncChatDrawerBackdrop();
+
+    document.querySelector('[data-chat-rain-open]')?.addEventListener('click', () => {
+      rainForm.hidden = false;
+      chatForm.hidden = true;
+      syncRainAmounts('open');
+    });
+    document.querySelector('[data-chat-rain-close]')?.addEventListener('click', () => {
+      rainForm.hidden = true;
+      chatForm.hidden = false;
+    });
+
+    rainTotal?.addEventListener('input', () => syncRainAmounts('total'));
+    rainPlayers?.addEventListener('input', () => syncRainAmounts('players'));
+    rainAmount?.addEventListener('input', () => syncRainAmounts('amount'));
+    rainForm?.querySelectorAll('[data-rain-step]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = button.dataset.rainStep === 'players' ? rainPlayers : rainAmount;
+        const step = parseFloat(button.dataset.step) || 1;
+        const min = parseFloat(target.min) || 1;
+        const max = parseFloat(target.max) || Infinity;
+        target.value = Math.min(Math.max((parseFloat(target.value) || 0) + step, min), max).toFixed(target === rainPlayers ? 0 : 2);
+        syncRainAmounts(button.dataset.rainStep === 'players' ? 'players' : 'amount');
+      });
+    });
+
+    rainForm?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const submit = rainForm.querySelector('.rain-submit');
+      syncRainAmounts('total');
+      if (parseFloat(rainTotal.value || '0') > walletBalance() || walletBalance() < 1) {
+        setRainHelper('You do not have sufficient balance on your wallet.', 'error');
+        return;
+      }
+      submit.disabled = true;
+      const response = await fetch(window.aviatorConfig.playUrl, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCsrfToken(),
+        },
+        body: new FormData(rainForm),
+      });
+      const payload = await response.json();
+      submit.disabled = false;
+      if (!payload.success) {
+        setRainHelper(payload.message || 'Unable to send rain right now.', 'error');
+        return;
+      }
+      renderChatMessage(payload.message, { system: true, local: true });
+      const balanceDisplay = document.querySelector('#play-balance strong');
+      if (balanceDisplay && typeof payload.balance === 'number') {
+        balanceDisplay.textContent = payload.balance.toFixed(2);
+        window.aviatorConfig.walletBalance = payload.balance;
+      }
+      rainForm.hidden = true;
+      chatForm.hidden = false;
+    });
+
+    if (onlineCount) {
+      setInterval(() => {
+        const current = parseInt(onlineCount.textContent, 10) || 1093;
+        onlineCount.textContent = Math.max(900, current + Math.floor(Math.random() * 7) - 3).toString();
+      }, 6000);
+    }
   }
 
   const professionalWidget = playForm.hasAttribute('data-play-widget');
@@ -238,31 +664,28 @@ function attachPlayWidget() {
       renderLedger();
     }
 
-    async function revealCrashedRound(attempt = 0) {
+    async function settleCrashedRound() {
       if (!currentSession) {
-        return;
+        return null;
       }
-
-      const formData = new FormData();
-      formData.append('action', 'settle_crash');
-      formData.append('round_id', currentSession.round_id);
-
-      const response = await fetch(window.aviatorConfig.playUrl, {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: formData,
-      });
-      const payload = await response.json();
-      if (payload.success && payload.fairness) {
+      const payload = await settleRoundById(currentSession.round_id);
+      if (payload && payload.fairness) {
         setFairnessText('Seed', payload.fairness.server_seed);
-        return;
+        return payload;
+      }
+      return null;
+    }
+
+    async function revealCrashedRound(attempt = 0) {
+      const payload = await settleCrashedRound();
+      if (payload) {
+        return payload;
       }
       if (attempt < 8) {
         await new Promise((resolve) => setTimeout(resolve, 200));
         return revealCrashedRound(attempt + 1);
       }
+      return null;
     }
 
     slips.forEach((slip) => {
@@ -405,10 +828,39 @@ function attachPlayWidget() {
 
       gameMessage.textContent = activeSlipSessions.size ? 'Cash out before the flight crashes.' : 'Watching live round. Place a bet next round.';
       let tick = 0;
+      let crashCheckInFlight = false;
+      function finishCrashedRound(crashPoint, revealPromise) {
+        clearInterval(flightTimer);
+        multiplierValue.textContent = formatMultiplier(crashPoint);
+        setFlightProgress(calculateMaskedFlightProgress(tick));
+        gameMessage.textContent = `Flew away at ${formatMultiplier(crashPoint)}. Round over.`;
+        addHistoryPill(crashPoint);
+        revealPromise.finally(() => {
+          activeSlipRows.forEach((row, slip) => {
+            if (!cashedOutSlips.has(slip)) {
+              row.status = 'lost';
+              row.multiplier = null;
+              row.win = 0;
+            }
+          });
+          renderLedger();
+          phase = 'crashed';
+          currentSession = null;
+          activeSlipSessions.clear();
+          cashedOutSlips.clear();
+          activeSlipRows.clear();
+          pendingCashoutSlips.clear();
+          syncSlipStates();
+          setTimeout(startBettingWindow, 1200);
+        });
+      }
+
       flightTimer = setInterval(() => {
         tick += 1;
-        currentMultiplier = Math.min(1 + tick * 0.04, publicRound.crash_point + 0.05);
-        const progress = Math.min((currentMultiplier / Math.max(publicRound.crash_point, 2.4)) * 100, 100);
+        currentMultiplier = currentSession
+          ? 1 + tick * FLIGHT_INCREMENT
+          : Math.min(1 + tick * FLIGHT_INCREMENT, publicRound.crash_point + 0.05);
+        const progress = calculateMaskedFlightProgress(tick);
         multiplierValue.textContent = formatMultiplier(currentMultiplier);
         setFlightProgress(progress);
         syncBetLabels();
@@ -437,32 +889,21 @@ function attachPlayWidget() {
           renderLedger();
         }
 
-        if (currentMultiplier >= publicRound.crash_point) {
-          clearInterval(flightTimer);
-          multiplierValue.textContent = formatMultiplier(publicRound.crash_point);
-          gameMessage.textContent = `Flew away at ${formatMultiplier(publicRound.crash_point)}. Round over.`;
-          addHistoryPill(publicRound.crash_point);
-          const done = currentSession ? revealCrashedRound() : Promise.resolve();
-          done.finally(() => {
-            activeSlipRows.forEach((row, slip) => {
-              if (!cashedOutSlips.has(slip)) {
-                row.status = 'lost';
-                row.multiplier = null;
-                row.win = 0;
+        if (currentSession && !crashCheckInFlight && tick % 5 === 0) {
+          crashCheckInFlight = true;
+          settleCrashedRound()
+            .then((payload) => {
+              if (payload && phase === 'flying') {
+                finishCrashedRound(payload.crash_point, Promise.resolve(payload));
               }
+            })
+            .finally(() => {
+              crashCheckInFlight = false;
             });
-            renderLedger();
-            phase = 'crashed';
-            currentSession = null;
-            activeSlipSessions.clear();
-            cashedOutSlips.clear();
-            activeSlipRows.clear();
-            pendingCashoutSlips.clear();
-            syncSlipStates();
-            setTimeout(startBettingWindow, 1200);
-          });
+        } else if (!currentSession && currentMultiplier >= publicRound.crash_point) {
+          finishCrashedRound(publicRound.crash_point, Promise.resolve());
         }
-      }, 40);
+      }, FLIGHT_TICK_MS);
     }
 
     function startBettingWindow() {
@@ -590,7 +1031,9 @@ function attachPlayWidget() {
       clearInterval(flightTimer);
     }
 
-    flightTimer = animateFlightProgress(legacyProgressBar, multiplierValue, gameMessage, payload.crash_point, legacyCashoutButton);
+    flightTimer = payload.crash_point
+      ? animateFlightProgress(legacyProgressBar, multiplierValue, gameMessage, payload.crash_point, legacyCashoutButton)
+      : animateServerFlightProgress(legacyProgressBar, multiplierValue, gameMessage, payload, legacyCashoutButton);
   });
 
   legacyCashoutButton.addEventListener('click', async () => {
@@ -653,9 +1096,8 @@ function attachRoomWidget() {
   const joinForm = document.getElementById('join-room-form');
 
   let roomTimer = null;
-  let crashPoint = null;
   let currentMultiplier = 1.0;
-  let roomRunning = window.roomConfig.initialRoomStatus === 'running';
+  let roomRunning = false;
 
   async function updateParticipants(data) {
     if (!participantList) {
@@ -670,39 +1112,85 @@ function attachRoomWidget() {
     });
   }
 
-  async function pollRoomStatus() {
+  async function fetchRoomStatus() {
     const response = await fetch(window.roomConfig.roomStatusUrl, {
       headers: {
         'X-CSRFToken': getCsrfToken(),
       },
     });
     const payload = await response.json();
-    if (!payload.success) {
+    return payload.success ? payload : null;
+  }
+
+  function finishRoomFlight(payload) {
+    roomRunning = false;
+    if (roomTimer) {
+      clearInterval(roomTimer);
+    }
+    if (payload?.room?.crash_point) {
+      roomMultiplier.textContent = formatMultiplier(payload.room.crash_point);
+      roomMessage.textContent = `Flew away at ${formatMultiplier(payload.room.crash_point)}. Game ended.`;
+    } else {
+      roomMessage.textContent = 'Game ended. Review the results below.';
+    }
+    if (cashoutButton) {
+      cashoutButton.disabled = true;
+    }
+  }
+
+  function startRoomFlight() {
+    let tick = 0;
+    let statusCheckInFlight = false;
+
+    roomRunning = true;
+    roomGamePanel.classList.remove('hidden');
+    if (cashoutButton) {
+      cashoutButton.disabled = false;
+    }
+    roomMessage.textContent = 'Game in progress. Cash out before the crash.';
+    if (roomTimer) {
+      clearInterval(roomTimer);
+    }
+
+    roomTimer = setInterval(() => {
+      tick += 1;
+      currentMultiplier = 1 + tick * FLIGHT_INCREMENT;
+      roomMultiplier.textContent = formatMultiplier(currentMultiplier);
+      roomProgress.style.width = `${calculateMaskedFlightProgress(tick)}%`;
+
+      if (!statusCheckInFlight && tick % 5 === 0) {
+        statusCheckInFlight = true;
+        fetchRoomStatus()
+          .then((payload) => {
+            if (!payload) {
+              return;
+            }
+            updateParticipants(payload);
+            if (payload.room.status === 'ended') {
+              finishRoomFlight(payload);
+            }
+          })
+          .finally(() => {
+            statusCheckInFlight = false;
+          });
+      }
+    }, FLIGHT_TICK_MS);
+  }
+
+  async function pollRoomStatus() {
+    const payload = await fetchRoomStatus();
+    if (!payload) {
       return;
     }
 
     updateParticipants(payload);
 
     if (payload.room.status === 'running' && !roomRunning) {
-      roomRunning = true;
-      crashPoint = payload.room.crash_point;
-      roomGamePanel.classList.remove('hidden');
-      if (cashoutButton) {
-        cashoutButton.disabled = false;
-      }
-      roomMessage.textContent = 'Game in progress. Cash out before the crash.';
-      if (roomTimer) {
-        clearInterval(roomTimer);
-      }
-      roomTimer = animateFlightProgress(roomProgress, roomMultiplier, roomMessage, crashPoint, cashoutButton);
+      startRoomFlight();
     }
 
     if (payload.room.status === 'ended' && roomRunning) {
-      roomRunning = false;
-      if (roomTimer) {
-        clearInterval(roomTimer);
-      }
-      roomMessage.textContent = 'Game ended. Review the results below.';
+      finishRoomFlight(payload);
     }
   }
 
@@ -747,16 +1235,7 @@ function attachRoomWidget() {
         return;
       }
 
-      crashPoint = payload.crash_point;
-      roomRunning = true;
-      roomGamePanel.classList.remove('hidden');
-      if (cashoutButton) {
-        cashoutButton.disabled = false;
-      }
-      if (roomTimer) {
-        clearInterval(roomTimer);
-      }
-      roomTimer = animateFlightProgress(roomProgress, roomMultiplier, roomMessage, crashPoint, cashoutButton);
+      startRoomFlight();
     });
   }
 
@@ -863,6 +1342,15 @@ function attachAviatorModals() {
   if (!backdrop || modals.length === 0 || triggers.length === 0) {
     return;
   }
+
+  if (backdrop.parentElement !== document.body) {
+    document.body.append(backdrop);
+  }
+  modals.forEach((modal) => {
+    if (modal.parentElement !== document.body) {
+      document.body.append(modal);
+    }
+  });
 
   function closeMenu() {
     if (!menuDrawer || !menuBackdrop || !menuButton) {

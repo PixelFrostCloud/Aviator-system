@@ -1161,7 +1161,7 @@ body:has(.aviator-play-page) main.container {
   --topbar-h: clamp(32px, 5.7dvh, 40px);
   --shell-gap: clamp(3px, 0.55dvw, 6px);
   --side-w: clamp(196px, 21dvw, 236px);
-  --chat-w: clamp(190px, 19dvw, 236px);
+  --chat-w: clamp(292px, 22dvw, 344px);
   --round-h: clamp(24px, 4dvh, 28px);
   --dock-h: clamp(104px, 18dvh, 126px);
   --panel-tab-h: clamp(24px, 4dvh, 28px);
@@ -2160,7 +2160,7 @@ body:has(.aviator-play-page) {
 
 .aviator-play-page {
   --left-table-w: clamp(204px, 17.9vw, 344px);
-  --right-chat-w: clamp(214px, 12.4vw, 248px);
+  --right-chat-w: clamp(292px, 22vw, 344px);
   --topbar-h: 40px;
   --round-h: 32px;
   --dock-h: clamp(132px, 17.3vh, 168px);
@@ -2186,6 +2186,20 @@ body:has(.aviator-play-page) {
   overflow: hidden !important;
   min-width: 0 !important;
   min-height: 0 !important;
+  transition: grid-template-columns 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: grid-template-columns;
+}
+
+.aviator-play-page.chat-collapsed .aviator-shell {
+  grid-template-columns: var(--left-table-w) minmax(0, 1fr) 0 !important;
+}
+
+.aviator-play-page.chat-collapsed .aviator-main {
+  grid-column: 2 / 4 !important;
+}
+
+.aviator-play-page.chat-collapsed.chat-closed .right-chat-panel {
+  display: none !important;
 }
 
 .live-bets-panel,
@@ -2210,6 +2224,7 @@ body:has(.aviator-play-page) {
   display: grid !important;
   grid-template-rows: var(--round-h) minmax(0, 1fr) var(--dock-h) !important;
   gap: 6px !important;
+  transition: filter 260ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .right-chat-panel {
@@ -2219,6 +2234,20 @@ body:has(.aviator-play-page) {
   grid-template-rows: 32px auto minmax(0, 1fr) auto !important;
   background: #151719 !important;
   border-left: 1px solid #2d3032 !important;
+  transform: translateX(0);
+  opacity: 1;
+  transition:
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease,
+    border-color 240ms ease;
+  will-change: transform, opacity;
+}
+
+.aviator-play-page.chat-collapsed .right-chat-panel {
+  transform: translateX(18px);
+  opacity: 0;
+  pointer-events: none;
+  border-left-color: transparent !important;
 }
 
 .panel-tabs {
@@ -2407,38 +2436,646 @@ body:has(.aviator-play-page) {
   height: 30px !important;
 }
 
+.right-chat-panel {
+  position: relative !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  background: #171717 !important;
+  border-left: 1px solid #2a2a2a !important;
+  color: #f6f6f6 !important;
+  overflow: hidden !important;
+  isolation: isolate;
+}
+
+.right-chat-panel [hidden],
+.new-message-pill[hidden],
+.chat-spam-filter[hidden],
+.chat-rain-panel[hidden],
+.chat-form[hidden] {
+  display: none !important;
+}
+
+.right-chat-panel.is-collapsed {
+  display: none !important;
+}
+
+.chat-reopen-button {
+  position: fixed;
+  right: 14px;
+  bottom: 16px;
+  z-index: 35;
+  height: 38px;
+  min-width: 78px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: #242424;
+  color: #58e86e;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  cursor: pointer;
+}
+
+.chat-reopen-button[hidden] {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aviator-shell,
+  .aviator-main,
+  .right-chat-panel {
+    transition: none !important;
+  }
+}
+
+.chat-row.win {
+  display: none !important;
+}
+
+.chat-empty {
+  margin: auto;
+  padding: 14px;
+  border: 1px dashed #3b3b3b;
+  border-radius: 12px;
+  color: #8f949b;
+  font-size: 13px;
+  text-align: center;
+}
+
+.chat-topbar {
+  height: 54px;
+  margin: 0 6px;
+  display: grid;
+  grid-template-columns: 38px 1fr 38px;
+  align-items: center;
+  gap: 6px;
+  background: #242424;
+  border: 1px solid #3a3a3a;
+  border-radius: 0 0 18px 18px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+  z-index: 5;
+}
+
+.chat-topbar span {
+  text-align: center;
+  color: #9d9d9d;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.chat-topbar strong {
+  color: #58e86e;
+}
+
+.chat-icon-button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  margin: auto;
+  background: #303030;
+  color: #9f9f9f;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-feed {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 7px 10px 8px;
+  background: #171717;
+  scrollbar-width: thin;
+  scrollbar-color: #656b72 #171717;
+}
+
+.chat-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 7px;
+}
+
+.chat-avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  align-self: end;
+  border-radius: 50%;
+  background: #137ce8;
+  color: #101010;
+  font-size: 18px;
+  font-weight: 900;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.chat-avatar.image {
+  background: #d8d8d8;
+  font-size: 26px;
+}
+
+.chat-bubble {
+  min-width: 0;
+  padding: 8px 10px 9px;
+  border-radius: 0 15px 15px 0;
+  background: #242424;
+  color: #f4f4f4;
+  font-size: 14px;
+  line-height: 1.35;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.015);
+}
+
+.chat-row.system .chat-bubble,
+.chat-row.win .chat-bubble {
+  background: #561756;
+}
+
+.chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.chat-meta strong {
+  color: #27bdf1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chat-row.win .chat-meta strong,
+.chat-row.system .chat-meta strong {
+  color: #48ed70;
+}
+
+.chat-meta time {
+  color: #8f8f8f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-bubble p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-like {
+  width: 24px;
+  min-height: 46px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: #5d5d5d;
+  cursor: pointer;
+}
+
+.chat-like span {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.chat-like b {
+  color: #666;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.chat-like.active span {
+  color: #58e86e;
+}
+
+.win-ticket {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #3a0638;
+  color: #a88da7;
+}
+
+.ticket-head {
+  display: grid;
+  grid-template-columns: 48px 1fr 24px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ticket-avatar {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #1f1f1f;
+}
+
+.ticket-head strong {
+  color: #f3e8f3;
+  font-size: 20px;
+}
+
+.verified {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #1dad35;
+  color: #081c0b;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.ticket-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 22px;
+}
+
+.ticket-grid span {
+  display: grid;
+  gap: 2px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.ticket-grid b {
+  color: #f7f1f7;
+  font-size: 18px;
+}
+
+.ticket-grid span:nth-child(1) b {
+  color: #e721d2;
+}
+
+.ticket-grid span:nth-child(2) b {
+  color: #58e86e;
+}
+
+.new-message-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  min-width: 174px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 22px;
+  background: #58e86e;
+  color: #050505;
+  font-size: 15px;
+  font-weight: 900;
+  z-index: 8;
+  cursor: pointer;
+}
+
+.chat-form {
+  min-height: 76px;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 8px;
+  margin: 0 6px 6px;
+  padding: 9px 11px 8px;
+  border: 1px solid #3b3b3b;
+  border-radius: 16px;
+  background: #242424 !important;
+  z-index: 6;
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.16);
+}
+
+.chat-text-wrap input[type='text'],
+.right-chat-panel .chat-form input[type='text'] {
+  width: 100% !important;
+  height: 24px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  color: #f3f3f3 !important;
+  font-size: 15px !important;
+  outline: none !important;
+}
+
+.chat-text-wrap input::placeholder {
+  color: #a8abb2;
+  opacity: 1;
+}
+
+.chat-tools {
+  display: grid;
+  grid-template-columns: 30px 30px 1fr 34px;
+  align-items: center;
+  gap: 7px;
+}
+
+.chat-tools button,
+.right-chat-panel .chat-form button {
+  width: 30px !important;
+  height: 30px !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  color: #9f9f9f !important;
+  font-size: 21px !important;
+  cursor: pointer;
+}
+
+.chat-tools button[type='submit'] {
+  justify-self: end;
+  color: #8c8c8c !important;
+  transform: rotate(-18deg);
+}
+
+.chat-tools span {
+  text-align: center;
+  color: #9b9da3;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chat-spam-filter {
+  position: absolute;
+  left: 54px;
+  right: 54px;
+  bottom: 178px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  color: #bdbdbd;
+  font-size: 15px;
+  font-weight: 700;
+  z-index: 9;
+}
+
+.chat-spam-filter i {
+  width: 148px;
+  height: 9px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #58e86e 62%, #4a4a4a 62%);
+}
+
+.chat-rain-panel {
+  max-height: min(68dvh, 430px);
+  overflow: hidden auto;
+  margin: 0 6px 6px;
+  padding: 10px 12px 12px;
+  border: 1px solid #3e3e3e;
+  border-radius: 16px;
+  background: #242424;
+  z-index: 7;
+  box-shadow: 0 -16px 42px rgba(0, 0, 0, 0.28);
+}
+
+.rain-toolbar {
+  display: grid;
+  grid-template-columns: 24px 2px 28px 1fr;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+.rain-toolbar > span {
+  width: 2px;
+  height: 22px;
+  background: #9a9a9a;
+}
+
+.rain-toolbar button:not(.rain-submit) {
+  border: 0;
+  background: transparent;
+  color: #aaa;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.rain-toolbar strong {
+  display: none;
+}
+
+.rain-submit {
+  justify-self: end;
+  min-width: 92px;
+  height: 36px;
+  border: 0;
+  border-radius: 18px;
+  background: #58e86e;
+  color: #050505;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.chat-rain-panel label {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 9px 0;
+  color: #a7a9b0;
+  font-size: 13px;
+}
+
+.chat-rain-panel > label:first-of-type input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 900;
+  text-align: center;
+  outline: none;
+}
+
+.rain-stepper {
+  width: min(176px, 88%);
+  height: 44px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  align-items: center;
+  padding: 4px;
+  border-radius: 999px;
+  background: #464646;
+}
+
+.rain-stepper button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: #b3b3b3;
+  color: #050505;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.rain-stepper button:last-child {
+  background: #58e86e;
+}
+
+.rain-stepper input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 900;
+  text-align: center;
+  outline: none;
+  min-width: 0;
+}
+
+.chat-rain-panel p {
+  margin: 10px auto 0;
+  color: #a7a9b0;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.chat-rules-modal {
+  position: fixed;
+  top: 24px;
+  right: calc(var(--right-chat-w) - 48px);
+  width: min(750px, calc(100vw - var(--right-chat-w) - 28px));
+  max-height: min(76vh, 620px);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1b1b1b;
+  color: #d8d8d8;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58);
+  z-index: 30;
+}
+
+.chat-form,
+.chat-rain-panel {
+  flex-shrink: 0;
+}
+
+.chat-rules-modal[aria-hidden='true'] {
+  display: none;
+}
+
+.chat-rules-modal header {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: #2a2c30;
+}
+
+.chat-rules-modal h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.chat-rules-modal header button {
+  border: 0;
+  background: transparent;
+  color: #aeb4bb;
+  font-size: 32px;
+  font-weight: 900;
+}
+
+.chat-rules-modal ul {
+  margin: 0;
+  padding: 34px 44px 32px 56px;
+  list-style: none;
+}
+
+.chat-rules-modal li {
+  position: relative;
+  margin: 0 0 12px;
+  font-size: 22px;
+  line-height: 1.28;
+}
+
+.chat-rules-modal li::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 8px;
+  width: 12px;
+  height: 12px;
+  border-top: 4px solid #ff1554;
+  border-right: 4px solid #ff1554;
+  transform: rotate(45deg);
+}
+
 @media (max-width: 1120px) {
   .aviator-play-page {
     --left-table-w: clamp(190px, 24vw, 246px);
-    --right-chat-w: 0px;
+    --right-chat-w: min(344px, 100vw);
   }
 
   .aviator-shell {
     grid-template-columns: var(--left-table-w) minmax(0, 1fr) !important;
   }
 
+  .aviator-play-page.chat-collapsed .aviator-shell {
+    grid-template-columns: var(--left-table-w) minmax(0, 1fr) !important;
+  }
+
+  .aviator-play-page.chat-collapsed .aviator-main {
+    grid-column: 2 !important;
+  }
+
   .right-chat-panel {
-    display: none !important;
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: var(--right-chat-w) !important;
+    display: grid !important;
+    z-index: 25 !important;
+  }
+
+  .chat-rules-modal {
+    left: 8px;
+    right: 8px;
+    width: auto;
   }
 }
 
 @media (max-width: 760px) {
   body:has(.aviator-play-page) {
-    overflow: auto !important;
-    height: auto !important;
+    overflow: hidden !important;
+    height: 100dvh !important;
   }
 
   .aviator-play-page {
-    height: auto !important;
-    min-height: 100dvh !important;
-    overflow: visible !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
   }
 
   .aviator-shell {
-    height: auto !important;
+    height: calc(100dvh - var(--topbar-h)) !important;
     grid-template-columns: 1fr !important;
-    grid-template-rows: auto auto !important;
-    overflow: visible !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+    overflow: hidden !important;
+  }
+
+  .aviator-play-page.chat-collapsed .aviator-shell {
+    grid-template-columns: 1fr !important;
+  }
+
+  .aviator-play-page.chat-collapsed .aviator-main {
+    grid-column: 1 !important;
   }
 
   .aviator-main {
@@ -2455,6 +3092,10 @@ body:has(.aviator-play-page) {
 
   .betting-dock {
     grid-template-columns: 1fr !important;
+  }
+
+  .right-chat-panel {
+    height: 100dvh !important;
   }
 }
 
@@ -3268,5 +3909,1766 @@ body.aviator-modal-lock {
     gap: 8px;
     padding: 0 10px;
     font-size: 13px;
+  }
+}
+
+/* Final chat drawer skin: compact Spribe-like chat, scoped after all older rules. */
+body:has(.aviator-play-page) .aviator-play-page {
+  --right-chat-w: clamp(420px, 29vw, 560px);
+}
+
+body:has(.aviator-play-page) .right-chat-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0 0 8px !important;
+  background: #181818 !important;
+  border-left: 1px solid #2a2a2a !important;
+  overflow: hidden !important;
+}
+
+body:has(.aviator-play-page) .chat-topbar {
+  height: 74px !important;
+  margin: 6px 20px 10px !important;
+  padding: 0 12px !important;
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) 48px !important;
+  align-items: center !important;
+  gap: 10px !important;
+  border: 1px solid #3a3a3a !important;
+  border-radius: 24px !important;
+  background: #242424 !important;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24) !important;
+}
+
+body:has(.aviator-play-page) .chat-icon-button {
+  width: 48px !important;
+  height: 48px !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: #303030 !important;
+  color: #9e9e9e !important;
+  font-size: 28px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+body:has(.aviator-play-page) .chat-topbar span {
+  min-width: 0 !important;
+  text-align: center !important;
+  color: #a8a8a8 !important;
+  font-size: clamp(18px, 1.25vw, 22px) !important;
+  font-weight: 700 !important;
+}
+
+body:has(.aviator-play-page) .chat-topbar strong {
+  color: #58e86e !important;
+}
+
+body:has(.aviator-play-page) .chat-feed {
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  padding: 0 12px 14px 32px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  background: #181818 !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #6a6a6a transparent !important;
+}
+
+body:has(.aviator-play-page) .chat-feed::-webkit-scrollbar {
+  width: 8px;
+}
+
+body:has(.aviator-play-page) .chat-feed::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body:has(.aviator-play-page) .chat-feed::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #686868;
+}
+
+body:has(.aviator-play-page) .chat-row {
+  width: 100% !important;
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: 54px minmax(0, max-content) 42px !important;
+  column-gap: 10px !important;
+  align-items: center !important;
+}
+
+body:has(.aviator-play-page) .chat-avatar {
+  width: 54px !important;
+  height: 54px !important;
+  align-self: center !important;
+  border-radius: 50% !important;
+  display: grid !important;
+  place-items: center !important;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255,255,255,0.42), transparent 28%),
+    linear-gradient(135deg, #1a7be8, #0f6cd4) !important;
+  color: #050505 !important;
+  font-size: 26px !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 8px 20px rgba(0,0,0,0.28) !important;
+}
+
+body:has(.aviator-play-page) .chat-bubble {
+  width: fit-content !important;
+  max-width: min(270px, calc(var(--right-chat-w) - 150px)) !important;
+  min-width: 138px !important;
+  min-height: 64px !important;
+  padding: 12px 14px 13px !important;
+  border-radius: 0 18px 18px 0 !important;
+  background: #252525 !important;
+  color: #f4f4f4 !important;
+  font-size: 21px !important;
+  line-height: 1.22 !important;
+  box-shadow: none !important;
+}
+
+body:has(.aviator-play-page) .chat-meta {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 12px !important;
+  margin: 0 0 5px !important;
+  white-space: nowrap !important;
+}
+
+body:has(.aviator-play-page) .chat-meta strong {
+  max-width: 120px !important;
+  overflow: hidden !important;
+  color: #58e86e !important;
+  font-size: 16px !important;
+  font-weight: 900 !important;
+  text-overflow: ellipsis !important;
+}
+
+body:has(.aviator-play-page) .chat-row:nth-child(3n + 1) .chat-meta strong {
+  color: #efff3f !important;
+}
+
+body:has(.aviator-play-page) .chat-row:nth-child(3n + 2) .chat-meta strong {
+  color: #32f05c !important;
+}
+
+body:has(.aviator-play-page) .chat-row:nth-child(3n + 3) .chat-meta strong {
+  color: #c85cff !important;
+}
+
+body:has(.aviator-play-page) .chat-meta time {
+  color: #747474 !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+}
+
+body:has(.aviator-play-page) .chat-bubble p {
+  margin: 0 !important;
+  color: #f7f7f7 !important;
+  font-size: 21px !important;
+  font-weight: 500 !important;
+  line-height: 1.22 !important;
+  overflow-wrap: anywhere !important;
+}
+
+body:has(.aviator-play-page) .chat-like {
+  width: 42px !important;
+  min-height: 60px !important;
+  justify-self: end !important;
+  align-self: center !important;
+  display: grid !important;
+  grid-template-rows: 34px 18px !important;
+  place-items: center !important;
+  gap: 3px !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #626262 !important;
+}
+
+body:has(.aviator-play-page) .chat-like span {
+  color: #626262 !important;
+  font-size: 35px !important;
+  line-height: 1 !important;
+}
+
+body:has(.aviator-play-page) .chat-like b {
+  color: #777 !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+}
+
+body:has(.aviator-play-page) .chat-like.active span {
+  color: #58e86e !important;
+}
+
+body:has(.aviator-play-page) .chat-empty {
+  margin: auto 28px !important;
+  padding: 18px !important;
+  border: 1px dashed #3a3a3a !important;
+  border-radius: 18px !important;
+  color: #8d8d8d !important;
+  font-size: 16px !important;
+  text-align: center !important;
+}
+
+body:has(.aviator-play-page) .chat-form {
+  min-height: 122px !important;
+  margin: 0 20px !important;
+  padding: 17px 20px 14px !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: 34px 42px !important;
+  gap: 12px !important;
+  border: 1px solid #3b3b3b !important;
+  border-radius: 23px !important;
+  background: #242424 !important;
+  box-shadow: 0 -12px 34px rgba(0,0,0,0.25) !important;
+}
+
+body:has(.aviator-play-page) .chat-text-wrap input[type='text'],
+body:has(.aviator-play-page) .right-chat-panel .chat-form input[type='text'] {
+  height: 34px !important;
+  width: 100% !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #f2f2f2 !important;
+  font-size: 21px !important;
+  outline: none !important;
+}
+
+body:has(.aviator-play-page) .chat-text-wrap input::placeholder {
+  color: #b0b4bd !important;
+}
+
+body:has(.aviator-play-page) .chat-tools {
+  display: grid !important;
+  grid-template-columns: 36px 36px minmax(0, 1fr) 40px !important;
+  align-items: center !important;
+  gap: 14px !important;
+}
+
+body:has(.aviator-play-page) .chat-tools button,
+body:has(.aviator-play-page) .right-chat-panel .chat-form button {
+  width: 36px !important;
+  height: 36px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  color: #9b9b9b !important;
+  font-size: 28px !important;
+  line-height: 1 !important;
+}
+
+body:has(.aviator-play-page) .chat-tools span {
+  justify-self: center !important;
+  color: #9c9ca2 !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+
+body:has(.aviator-play-page) .chat-tools button[type='submit'] {
+  justify-self: end !important;
+  color: #8f8f8f !important;
+  transform: rotate(-18deg) !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel {
+  margin: 0 20px !important;
+  max-height: min(64dvh, 492px) !important;
+  overflow: hidden auto !important;
+  padding: 18px 24px 22px !important;
+  border: 1px solid #3b3b3b !important;
+  border-radius: 23px !important;
+  background: #242424 !important;
+}
+
+body:has(.aviator-play-page) .new-message-pill {
+  bottom: 136px !important;
+}
+
+@media (max-width: 1120px) {
+  body:has(.aviator-play-page) .aviator-play-page {
+    --right-chat-w: min(560px, 100vw);
+  }
+
+  body:has(.aviator-play-page) .right-chat-panel {
+    position: fixed !important;
+    inset: 0 0 0 auto !important;
+    width: var(--right-chat-w) !important;
+    z-index: 25 !important;
+  }
+}
+
+@media (max-width: 560px) {
+  body:has(.aviator-play-page) .chat-topbar {
+    margin-inline: 8px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-feed {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-row {
+    grid-template-columns: 46px minmax(0, 1fr) 34px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-avatar {
+    width: 46px !important;
+    height: 46px !important;
+    font-size: 22px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-bubble {
+    max-width: calc(100vw - 140px) !important;
+    min-width: 130px !important;
+    font-size: 18px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-bubble p {
+    font-size: 18px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-form,
+  body:has(.aviator-play-page) .chat-rain-panel {
+    margin-inline: 8px !important;
+  }
+}
+
+/* Compact production chat: visually aligned with the left bets panel. */
+body:has(.aviator-play-page) .aviator-play-page {
+  --right-chat-w: clamp(316px, 19vw, 384px);
+}
+
+body:has(.aviator-play-page) .right-chat-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  padding: 0 0 6px !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.018), transparent 88px),
+    #151617 !important;
+  border-left: 1px solid #282b2e !important;
+}
+
+body:has(.aviator-play-page) .chat-topbar {
+  height: 52px !important;
+  margin: 6px 8px 8px !important;
+  padding: 0 8px !important;
+  grid-template-columns: 36px minmax(0, 1fr) 36px !important;
+  border-radius: 12px !important;
+  border: 1px solid #2c3034 !important;
+  background: #1d1f21 !important;
+  box-shadow: none !important;
+}
+
+body:has(.aviator-play-page) .chat-icon-button {
+  width: 32px !important;
+  height: 32px !important;
+  background: #2b2e31 !important;
+  color: #a5abb2 !important;
+  font-size: 20px !important;
+}
+
+body:has(.aviator-play-page) .chat-topbar span {
+  color: #b7bdc5 !important;
+  font-size: clamp(14px, 0.92vw, 17px) !important;
+  font-weight: 800 !important;
+}
+
+body:has(.aviator-play-page) .chat-topbar strong {
+  color: #4dec67 !important;
+}
+
+body:has(.aviator-play-page) .chat-feed {
+  gap: 5px !important;
+  padding: 0 7px 7px !important;
+  background: transparent !important;
+  scrollbar-color: #59606a #111314 !important;
+}
+
+body:has(.aviator-play-page) .chat-row {
+  min-height: 44px !important;
+  grid-template-columns: 34px minmax(0, 1fr) 26px !important;
+  gap: 6px !important;
+}
+
+body:has(.aviator-play-page) .chat-avatar {
+  width: 28px !important;
+  height: 28px !important;
+  justify-self: center !important;
+  color: #101113 !important;
+  font-size: 14px !important;
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255,255,255,0.6), transparent 28%),
+    linear-gradient(135deg, #ff6464 0%, #f0c25b 45%, #4f8cff 100%) !important;
+  box-shadow: none !important;
+}
+
+body:has(.aviator-play-page) .chat-bubble {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  min-height: 42px !important;
+  padding: 7px 9px !important;
+  border: 1px solid #24282b !important;
+  border-radius: 8px !important;
+  background: #141617 !important;
+  font-size: 13px !important;
+}
+
+body:has(.aviator-play-page) .chat-meta {
+  gap: 7px !important;
+  margin: 0 0 3px !important;
+}
+
+body:has(.aviator-play-page) .chat-meta strong,
+body:has(.aviator-play-page) .chat-row:nth-child(n) .chat-meta strong {
+  max-width: 118px !important;
+  color: #dfe5ec !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+
+body:has(.aviator-play-page) .chat-meta time {
+  color: #8e99a6 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+
+body:has(.aviator-play-page) .chat-bubble p {
+  color: #f2f5f8 !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  line-height: 1.22 !important;
+}
+
+body:has(.aviator-play-page) .chat-like {
+  width: 26px !important;
+  min-height: 42px !important;
+  grid-template-rows: 20px 14px !important;
+  gap: 1px !important;
+}
+
+body:has(.aviator-play-page) .chat-like span {
+  color: #61676d !important;
+  font-size: 22px !important;
+}
+
+body:has(.aviator-play-page) .chat-like b {
+  color: #7c858e !important;
+  font-size: 10px !important;
+}
+
+body:has(.aviator-play-page) .chat-like.active span {
+  color: #4dec67 !important;
+}
+
+body:has(.aviator-play-page) .chat-form {
+  min-height: 74px !important;
+  margin: 0 7px !important;
+  padding: 9px 10px 8px !important;
+  grid-template-rows: 24px 28px !important;
+  gap: 5px !important;
+  border: 1px solid #30353a !important;
+  border-radius: 8px !important;
+  background: #1b1d1f !important;
+  box-shadow: none !important;
+}
+
+body:has(.aviator-play-page) .chat-text-wrap input[type='text'],
+body:has(.aviator-play-page) .right-chat-panel .chat-form input[type='text'] {
+  height: 24px !important;
+  color: #f1f4f7 !important;
+  font-size: 14px !important;
+}
+
+body:has(.aviator-play-page) .chat-text-wrap input::placeholder {
+  color: #9ba5b2 !important;
+}
+
+body:has(.aviator-play-page) .chat-tools {
+  grid-template-columns: 26px 26px minmax(0, 1fr) 30px !important;
+  gap: 8px !important;
+}
+
+body:has(.aviator-play-page) .chat-tools button,
+body:has(.aviator-play-page) .right-chat-panel .chat-form button {
+  width: 26px !important;
+  height: 26px !important;
+  color: #9ca4ad !important;
+  font-size: 18px !important;
+}
+
+body:has(.aviator-play-page) .chat-tools span {
+  color: #8f98a4 !important;
+  font-size: 11px !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel {
+  margin: 0 7px !important;
+  max-height: min(58dvh, 360px) !important;
+  padding: 10px 12px 12px !important;
+  border-radius: 8px !important;
+  border: 1px solid #30353a !important;
+  background: #1b1d1f !important;
+  box-shadow: none !important;
+}
+
+body:has(.aviator-play-page) .rain-submit {
+  height: 32px !important;
+  min-width: 88px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel > label:first-of-type input {
+  font-size: 24px !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper {
+  height: 36px !important;
+  width: min(164px, 88%) !important;
+  grid-template-columns: 32px minmax(0, 1fr) 32px !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper button {
+  width: 30px !important;
+  height: 30px !important;
+  font-size: 22px !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper input {
+  font-size: 14px !important;
+}
+
+@media (max-width: 1120px) {
+  body:has(.aviator-play-page) .aviator-play-page {
+    --right-chat-w: min(384px, 100vw);
+  }
+}
+
+/* Final modal layer: always above gameplay/chat, using the compact dark system language. */
+body:has(.aviator-play-page).aviator-modal-lock {
+  overflow: hidden !important;
+}
+
+body:has(.aviator-play-page) .aviator-modal-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9000 !important;
+  background: rgba(5, 6, 7, 0.72) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal {
+  position: fixed !important;
+  top: clamp(54px, 7vh, 86px) !important;
+  left: 50% !important;
+  z-index: 9010 !important;
+  width: min(760px, calc(100vw - 28px)) !important;
+  max-height: calc(100dvh - 96px) !important;
+  overflow: hidden auto !important;
+  border: 1px solid #30353a !important;
+  border-radius: 10px !important;
+  background: #181a1c !important;
+  color: #eef2f5 !important;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.64) !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal.is-open {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: translate(-50%, 0) scale(1) !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal > header {
+  min-height: 50px !important;
+  padding: 0 12px 0 16px !important;
+  background: #1f2225 !important;
+  border-bottom: 1px solid #30353a !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal h2 {
+  color: #f3f6f9 !important;
+  font-size: clamp(16px, 1.08vw, 20px) !important;
+  font-weight: 900 !important;
+  letter-spacing: 0 !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal > header button {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 50% !important;
+  background: #2b2e31 !important;
+  color: #aeb5bd !important;
+  font-size: 24px !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal > header button:hover {
+  background: #34383c !important;
+  color: #fff !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal .modal-body {
+  padding: 18px !important;
+  background: #181a1c !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal.wide {
+  width: min(860px, calc(100vw - 36px)) !important;
+}
+
+body:has(.aviator-play-page) .modal-body.rules {
+  display: grid !important;
+  gap: 16px !important;
+  color: #cfd6de !important;
+}
+
+body:has(.aviator-play-page) .modal-body.rules > p {
+  padding: 12px 14px !important;
+  border: 1px solid #292e33 !important;
+  border-radius: 8px !important;
+  background: #141617 !important;
+  color: #cfd6de !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+
+body:has(.aviator-play-page) .rules-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  margin: 0 !important;
+}
+
+body:has(.aviator-play-page) .rules-grid > div {
+  min-width: 0 !important;
+  padding: 12px !important;
+  border: 1px solid #292e33 !important;
+  border-radius: 8px !important;
+  background: #141617 !important;
+}
+
+body:has(.aviator-play-page) .rules-grid strong {
+  color: #4dec67 !important;
+  font-size: 13px !important;
+}
+
+body:has(.aviator-play-page) .rules-grid p,
+body:has(.aviator-play-page) .modal-body.rules li {
+  color: #cfd6de !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+body:has(.aviator-play-page) .modal-body.rules ul {
+  margin: 0 !important;
+  padding: 12px 14px 12px 28px !important;
+  border: 1px solid #292e33 !important;
+  border-radius: 8px !important;
+  background: #141617 !important;
+}
+
+@media (max-width: 720px) {
+  body:has(.aviator-play-page) .rules-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-game-modal,
+  body:has(.aviator-play-page) .aviator-game-modal.wide {
+    top: 46px !important;
+    width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 58px) !important;
+  }
+}
+
+/* Structural modal escape hatch: body-mounted dialogs above every game panel. */
+body:has(.aviator-play-page) .aviator-modal-backdrop {
+  z-index: 9200 !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal {
+  z-index: 9210 !important;
+}
+
+body.chat-rules-lock {
+  overflow: hidden !important;
+}
+
+body.chat-rules-lock::before {
+  content: '' !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9300 !important;
+  background: rgba(5, 6, 7, 0.74) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal {
+  position: fixed !important;
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: 50% !important;
+  z-index: 9310 !important;
+  display: block !important;
+  width: min(720px, calc(100vw - 28px)) !important;
+  max-height: min(78dvh, 620px) !important;
+  overflow: hidden auto !important;
+  border: 1px solid #30353a !important;
+  border-radius: 10px !important;
+  background: #181a1c !important;
+  color: #eef2f5 !important;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.64) !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: translate(-50%, -50%) scale(1) !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal[aria-hidden='true'] {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal > header {
+  min-height: 50px !important;
+  padding: 0 12px 0 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background: #1f2225 !important;
+  border-bottom: 1px solid #30353a !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal h2,
+body:has(.aviator-play-page) .chat-rules-modal h3 {
+  margin: 0 !important;
+  color: #f3f6f9 !important;
+  font-size: clamp(16px, 1.08vw, 20px) !important;
+  font-weight: 900 !important;
+  letter-spacing: 0 !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal [data-chat-rules-close] {
+  width: 34px !important;
+  height: 34px !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  background: #2b2e31 !important;
+  color: #aeb5bd !important;
+  font-size: 24px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal [data-chat-rules-close]:hover {
+  background: #34383c !important;
+  color: #ffffff !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal .rules-body,
+body:has(.aviator-play-page) .chat-rules-modal .modal-body {
+  padding: 18px !important;
+  background: #181a1c !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal ul {
+  margin: 0 !important;
+  padding: 0 !important;
+  display: grid !important;
+  gap: 10px !important;
+  list-style: none !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal li {
+  position: relative !important;
+  min-width: 0 !important;
+  padding: 10px 12px 10px 30px !important;
+  border: 1px solid #292e33 !important;
+  border-radius: 8px !important;
+  background: #141617 !important;
+  color: #cfd6de !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1.42 !important;
+}
+
+body:has(.aviator-play-page) .chat-rules-modal li::before {
+  content: '' !important;
+  position: absolute !important;
+  top: 15px !important;
+  left: 12px !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-top: 3px solid #ff2558 !important;
+  border-right: 3px solid #ff2558 !important;
+  transform: rotate(45deg) !important;
+}
+
+@media (max-width: 720px) {
+  body:has(.aviator-play-page) .chat-rules-modal {
+    width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 42px) !important;
+  }
+}
+
+/* Final responsive chat-rules polish: independent of layout width and native scrollbars. */
+.chat-rules-modal {
+  scrollbar-width: thin !important;
+  scrollbar-color: #5f6872 #1b1d1f !important;
+}
+
+.chat-rules-modal::-webkit-scrollbar {
+  width: 8px !important;
+}
+
+.chat-rules-modal::-webkit-scrollbar-track {
+  margin: 8px 0 !important;
+  border-radius: 999px !important;
+  background: #1b1d1f !important;
+}
+
+.chat-rules-modal::-webkit-scrollbar-thumb {
+  min-height: 56px !important;
+  border-radius: 999px !important;
+  background: linear-gradient(180deg, #727b85, #4b535c) !important;
+  border: 2px solid #1b1d1f !important;
+}
+
+.chat-rules-modal::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #8a949e, #5a636d) !important;
+}
+
+body .chat-rules-modal {
+  position: fixed !important;
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: 50% !important;
+  z-index: 9310 !important;
+  width: min(680px, calc(100vw - 32px)) !important;
+  max-height: min(76dvh, 600px) !important;
+  overflow: hidden auto !important;
+  border-radius: 10px !important;
+  transform: translate(-50%, -50%) scale(1) !important;
+  overscroll-behavior: contain !important;
+}
+
+body .chat-rules-modal[aria-hidden='true'] {
+  display: none !important;
+}
+
+body.chat-rules-lock::before {
+  pointer-events: none !important;
+}
+
+body .chat-rules-modal > header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+}
+
+body .chat-rules-modal ul {
+  padding: 12px !important;
+  gap: 8px !important;
+}
+
+body .chat-rules-modal li {
+  padding: 10px 12px 10px 28px !important;
+  font-size: clamp(13px, 1.4vw, 15px) !important;
+  line-height: 1.35 !important;
+}
+
+@media (max-width: 760px) {
+  body .chat-rules-modal {
+    width: calc(100vw - 18px) !important;
+    max-height: calc(100dvh - 28px) !important;
+  }
+
+  body .chat-rules-modal > header {
+    min-height: 46px !important;
+    padding-inline: 12px !important;
+  }
+
+  body .chat-rules-modal li {
+    padding-block: 9px !important;
+  }
+}
+
+@media (max-width: 430px) {
+  body .chat-rules-modal {
+    width: calc(100vw - 10px) !important;
+    max-height: calc(100dvh - 12px) !important;
+    border-radius: 8px !important;
+  }
+
+  body .chat-rules-modal ul {
+    padding: 8px !important;
+  }
+}
+
+/* Final mobile chat drawer: overlay the game instead of squeezing it. */
+.chat-drawer-backdrop {
+  display: none;
+}
+
+.chat-drawer-backdrop[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  body:has(.aviator-play-page) .aviator-play-page {
+    --mobile-chat-w: min(386px, calc(100vw - 18px));
+    width: 100vw !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-shell,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-shell {
+    width: 100vw !important;
+    height: calc(100dvh - var(--topbar-h)) !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body:has(.aviator-play-page) .live-bets-panel {
+    display: none !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-main,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-main {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 100vw !important;
+    min-width: 0 !important;
+    transform: none !important;
+  }
+
+  body:has(.aviator-play-page) .right-chat-panel {
+    position: fixed !important;
+    top: max(8px, env(safe-area-inset-top)) !important;
+    right: max(8px, env(safe-area-inset-right)) !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    left: auto !important;
+    z-index: 1200 !important;
+    width: var(--mobile-chat-w) !important;
+    max-width: var(--mobile-chat-w) !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 0 8px !important;
+    border: 1px solid #2d3338 !important;
+    border-radius: 10px !important;
+    background: #101112 !important;
+    box-shadow: -22px 0 70px rgba(0, 0, 0, 0.56) !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: translateX(0) !important;
+    transition: transform 240ms ease, opacity 220ms ease !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .right-chat-panel {
+    display: grid !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: translateX(calc(100% + 18px)) !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed.chat-closed .right-chat-panel {
+    display: grid !important;
+  }
+
+  body:has(.aviator-play-page) .chat-topbar {
+    height: 58px !important;
+    margin: 6px 6px 8px !important;
+    border-radius: 9px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-icon-button {
+    width: 38px !important;
+    height: 38px !important;
+    font-size: 22px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-feed {
+    padding: 0 8px 8px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-row {
+    grid-template-columns: 34px minmax(0, 1fr) 24px !important;
+    gap: 7px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-avatar {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 14px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-bubble {
+    min-height: 42px !important;
+    padding: 7px 8px !important;
+  }
+
+  body:has(.aviator-play-page) .chat-form,
+  body:has(.aviator-play-page) .chat-rain-panel {
+    margin-inline: 7px !important;
+    border-radius: 9px !important;
+  }
+
+  .chat-drawer-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1190 !important;
+    display: block !important;
+    border: 0 !important;
+    background: rgba(4, 5, 6, 0.48) !important;
+    backdrop-filter: blur(1.5px) !important;
+    cursor: pointer !important;
+  }
+
+  body:has(.aviator-play-page) .chat-reopen-button {
+    right: max(12px, env(safe-area-inset-right)) !important;
+    bottom: max(12px, env(safe-area-inset-bottom)) !important;
+    z-index: 1180 !important;
+    height: 38px !important;
+    min-width: 74px !important;
+    border-radius: 999px !important;
+    background: #4dec67 !important;
+    color: #07120a !important;
+    font-size: 13px !important;
+    font-weight: 900 !important;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42) !important;
+  }
+}
+
+@media (max-width: 420px) {
+  body:has(.aviator-play-page) .aviator-play-page {
+    --mobile-chat-w: calc(100vw - 10px);
+  }
+
+  body:has(.aviator-play-page) .right-chat-panel {
+    top: max(5px, env(safe-area-inset-top)) !important;
+    right: max(5px, env(safe-area-inset-right)) !important;
+    bottom: max(5px, env(safe-area-inset-bottom)) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body:has(.aviator-play-page) .right-chat-panel {
+    transition: none !important;
+  }
+}
+
+/* Final rain composer: polished Spribe-style panel inside the current dark system. */
+body:has(.aviator-play-page) .chat-rain-panel {
+  display: grid !important;
+  grid-template-rows: auto auto auto auto auto !important;
+  align-content: start !important;
+  gap: clamp(10px, 1.5dvh, 16px) !important;
+  width: auto !important;
+  max-height: min(76dvh, 520px) !important;
+  margin: 0 8px 8px !important;
+  padding: 12px clamp(14px, 3.4vw, 24px) 18px !important;
+  overflow: hidden auto !important;
+  border: 1px solid #35383b !important;
+  border-radius: 10px !important;
+  background: #1f2021 !important;
+  color: #f3f5f7 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel[hidden] {
+  display: none !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar {
+  min-height: 40px !important;
+  display: grid !important;
+  grid-template-columns: 28px 1px 32px 36px minmax(102px, auto) !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar span {
+  width: 2px !important;
+  height: 26px !important;
+  display: block !important;
+  border-radius: 999px !important;
+  background: #8f949a !important;
+  opacity: 0.8 !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar button:not(.rain-submit),
+body:has(.aviator-play-page) .rain-toolbar strong {
+  width: 32px !important;
+  height: 32px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  color: #a9afb6 !important;
+  font-size: 25px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar strong {
+  color: #58e86e !important;
+  font-size: 28px !important;
+  transform: translateY(1px) !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar button:not(.rain-submit):hover {
+  color: #ffffff !important;
+  background: #2c2e30 !important;
+}
+
+body:has(.aviator-play-page) .rain-submit {
+  justify-self: end !important;
+  min-width: 102px !important;
+  height: 42px !important;
+  padding: 0 18px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #55e86d !important;
+  color: #050b07 !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+}
+
+body:has(.aviator-play-page) .rain-submit:disabled {
+  cursor: wait !important;
+  opacity: 0.58 !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel label {
+  display: grid !important;
+  justify-items: center !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  color: #aeb5bd !important;
+  font-size: clamp(13px, 1.55vw, 16px) !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  text-align: center !important;
+}
+
+body:has(.aviator-play-page) .rain-value-source {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+body:has(.aviator-play-page) .rain-total-display {
+  display: block !important;
+  width: 100% !important;
+  color: #ffffff !important;
+  font-size: clamp(31px, 5.4vw, 44px) !important;
+  font-weight: 900 !important;
+  line-height: 1.08 !important;
+  text-align: center !important;
+  letter-spacing: 0 !important;
+  text-shadow: 0 2px 0 rgba(45, 93, 255, 0.38) !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper {
+  width: min(268px, 92%) !important;
+  height: 54px !important;
+  display: grid !important;
+  grid-template-columns: 54px minmax(0, 1fr) 54px !important;
+  align-items: center !important;
+  padding: 4px !important;
+  border: 1px solid #525456 !important;
+  border-radius: 999px !important;
+  background: #424242 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper button {
+  width: 46px !important;
+  height: 46px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: #bfc0c2 !important;
+  color: #050505 !important;
+  font-size: 34px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper button:last-child {
+  background: #55e86d !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper button:hover {
+  filter: brightness(1.06) !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper input {
+  width: 100% !important;
+  min-width: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #ffffff !important;
+  font-size: clamp(16px, 2.5vw, 22px) !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  text-shadow: 0 2px 0 rgba(45, 93, 255, 0.38) !important;
+  -moz-appearance: textfield !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper input::-webkit-outer-spin-button,
+body:has(.aviator-play-page) .rain-stepper input::-webkit-inner-spin-button {
+  margin: 0 !important;
+  -webkit-appearance: none !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel p {
+  width: min(100%, 420px) !important;
+  margin: 0 auto !important;
+  color: #aeb5bd !important;
+  font-size: clamp(13px, 1.5vw, 15px) !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+  text-align: center !important;
+}
+
+@media (max-width: 760px) {
+  body:has(.aviator-play-page) .chat-rain-panel {
+    max-height: calc(100dvh - 86px) !important;
+    padding: 10px 12px 16px !important;
+    gap: 12px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-toolbar {
+    grid-template-columns: 26px 1px 30px 34px minmax(96px, auto) !important;
+    gap: 8px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-submit {
+    min-width: 96px !important;
+    height: 38px !important;
+    padding: 0 14px !important;
+    font-size: 14px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-total-display {
+    font-size: clamp(32px, 10vw, 42px) !important;
+  }
+
+  body:has(.aviator-play-page) .rain-stepper {
+    width: min(268px, 88vw) !important;
+    height: 52px !important;
+    grid-template-columns: 52px minmax(0, 1fr) 52px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-stepper button {
+    width: 44px !important;
+    height: 44px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  body:has(.aviator-play-page) .rain-toolbar {
+    grid-template-columns: 24px 1px 28px 30px minmax(86px, auto) !important;
+    gap: 6px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-submit {
+    min-width: 86px !important;
+    height: 36px !important;
+    padding-inline: 10px !important;
+    font-size: 13px !important;
+  }
+}
+
+/* Compact rain composer refinement: softer scale, same Aviator chat language. */
+body:has(.aviator-play-page) .chat-rain-panel {
+  gap: 10px !important;
+  max-height: min(64dvh, 430px) !important;
+  padding: 10px 14px 14px !important;
+  border-radius: 10px !important;
+  background: #202121 !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar {
+  min-height: 34px !important;
+  grid-template-columns: 24px 1px 28px 30px minmax(92px, auto) !important;
+  gap: 8px !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar span {
+  height: 24px !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar button:not(.rain-submit),
+body:has(.aviator-play-page) .rain-toolbar strong {
+  width: 28px !important;
+  height: 28px !important;
+  font-size: 22px !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar strong {
+  font-size: 25px !important;
+}
+
+body:has(.aviator-play-page) .rain-submit {
+  min-width: 94px !important;
+  height: 34px !important;
+  padding: 0 14px !important;
+  font-size: 13px !important;
+  border-radius: 999px !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel label {
+  gap: 6px !important;
+  color: #aeb5bd !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+
+body:has(.aviator-play-page) .rain-total-display {
+  white-space: nowrap !important;
+  font-size: clamp(28px, 3.25vw, 38px) !important;
+  line-height: 1.05 !important;
+  text-shadow: 0 1px 0 rgba(45, 93, 255, 0.34) !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper {
+  width: min(214px, 86%) !important;
+  height: 42px !important;
+  grid-template-columns: 42px minmax(0, 1fr) 42px !important;
+  padding: 3px !important;
+  border-color: #4c4e50 !important;
+  background: #3d3d3d !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper button {
+  width: 36px !important;
+  height: 36px !important;
+  font-size: 27px !important;
+  font-weight: 800 !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper input {
+  font-size: 16px !important;
+  text-shadow: 0 1px 0 rgba(45, 93, 255, 0.34) !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel p {
+  width: min(100%, 360px) !important;
+  font-size: 13px !important;
+  line-height: 1.38 !important;
+}
+
+@media (max-width: 760px) {
+  body:has(.aviator-play-page) .chat-rain-panel {
+    max-height: min(62dvh, 410px) !important;
+    padding: 10px 12px 14px !important;
+    gap: 10px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-total-display {
+    font-size: clamp(27px, 8vw, 34px) !important;
+  }
+
+  body:has(.aviator-play-page) .rain-stepper {
+    width: min(212px, 76vw) !important;
+    height: 42px !important;
+    grid-template-columns: 42px minmax(0, 1fr) 42px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-stepper button {
+    width: 36px !important;
+    height: 36px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  body:has(.aviator-play-page) .rain-submit {
+    min-width: 86px !important;
+    height: 32px !important;
+    font-size: 12px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-total-display {
+    font-size: clamp(24px, 7.5vw, 30px) !important;
+  }
+}
+
+/* Final alignment pass for the rain drawer: compact, quiet, no wrapping. */
+body:has(.aviator-play-page) .chat-rain-panel {
+  box-sizing: border-box !important;
+  gap: 9px !important;
+  max-height: min(58dvh, 392px) !important;
+  padding: 9px 12px 13px !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar {
+  min-height: 34px !important;
+  grid-template-columns: 24px 1px 28px 28px minmax(104px, 1fr) !important;
+  gap: 7px !important;
+}
+
+body:has(.aviator-play-page) .rain-submit {
+  justify-self: end !important;
+  min-width: 104px !important;
+  width: auto !important;
+  height: 34px !important;
+  padding: 0 14px !important;
+  white-space: nowrap !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel label {
+  gap: 5px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+body:has(.aviator-play-page) .rain-total-label {
+  margin-top: 2px !important;
+}
+
+body:has(.aviator-play-page) .rain-total-display {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  color: #f7f8fb !important;
+  font-size: clamp(23px, 2.25vw, 30px) !important;
+  font-weight: 850 !important;
+  line-height: 1.08 !important;
+  text-overflow: clip !important;
+  text-shadow: 0 1px 0 rgba(45, 93, 255, 0.24) !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper {
+  width: min(184px, 76%) !important;
+  height: 36px !important;
+  grid-template-columns: 36px minmax(0, 1fr) 36px !important;
+  padding: 3px !important;
+  border-color: #484a4c !important;
+  background: #393a3a !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper button {
+  width: 30px !important;
+  height: 30px !important;
+  font-size: 23px !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper input {
+  font-size: 14px !important;
+  font-weight: 850 !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel p {
+  width: min(100%, 330px) !important;
+  font-size: 12px !important;
+  line-height: 1.34 !important;
+}
+
+@media (max-width: 760px) {
+  body:has(.aviator-play-page) .chat-rain-panel {
+    max-height: min(56dvh, 378px) !important;
+    padding: 9px 10px 12px !important;
+    gap: 8px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-toolbar {
+    grid-template-columns: 22px 1px 26px 27px minmax(102px, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-toolbar button:not(.rain-submit),
+  body:has(.aviator-play-page) .rain-toolbar strong {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 20px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-toolbar strong {
+    font-size: 23px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-submit {
+    min-width: 102px !important;
+    height: 33px !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-total-display {
+    font-size: clamp(24px, 6.4vw, 29px) !important;
+  }
+
+  body:has(.aviator-play-page) .rain-stepper {
+    width: min(184px, 68vw) !important;
+    height: 36px !important;
+    grid-template-columns: 36px minmax(0, 1fr) 36px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  body:has(.aviator-play-page) .rain-toolbar {
+    grid-template-columns: 20px 1px 24px 25px minmax(94px, 1fr) !important;
+    gap: 5px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-submit {
+    min-width: 94px !important;
+    height: 32px !important;
+    padding-inline: 10px !important;
+    font-size: 12px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-total-display {
+    font-size: clamp(21px, 6.1vw, 25px) !important;
+  }
+}
+
+/* Final rain composer rebuild: balanced hierarchy and centered controls. */
+body:has(.aviator-play-page) .chat-rain-panel {
+  container-type: inline-size !important;
+  display: grid !important;
+  grid-template-rows: 38px auto auto auto auto !important;
+  align-content: start !important;
+  row-gap: 11px !important;
+  max-height: min(58dvh, 408px) !important;
+  padding: 10px 16px 16px !important;
+  border: 1px solid #34383b !important;
+  border-radius: 10px !important;
+  background: #202121 !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar {
+  height: 38px !important;
+  min-height: 38px !important;
+  display: grid !important;
+  grid-template-columns: 26px 1px 28px 34px minmax(106px, max-content) !important;
+  align-items: center !important;
+  justify-content: stretch !important;
+  column-gap: 9px !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar span {
+  width: 2px !important;
+  height: 24px !important;
+  align-self: center !important;
+  background: #8f9499 !important;
+  opacity: 0.74 !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar button:not(.rain-submit),
+body:has(.aviator-play-page) .rain-toolbar strong {
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  color: #a5abb1 !important;
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+body:has(.aviator-play-page) .rain-toolbar strong {
+  color: #55e86d !important;
+  font-size: 26px !important;
+}
+
+body:has(.aviator-play-page) .rain-submit {
+  justify-self: end !important;
+  width: 106px !important;
+  min-width: 106px !important;
+  height: 38px !important;
+  padding: 0 14px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border-radius: 999px !important;
+  white-space: nowrap !important;
+  color: #050b07 !important;
+  font-size: 14px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel label {
+  display: grid !important;
+  justify-items: center !important;
+  gap: 6px !important;
+  margin: 0 !important;
+  color: #aeb5bc !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.15 !important;
+  text-align: center !important;
+}
+
+body:has(.aviator-play-page) .rain-total-label {
+  gap: 8px !important;
+}
+
+body:has(.aviator-play-page) .rain-total-display {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: block !important;
+  overflow: visible !important;
+  white-space: nowrap !important;
+  color: #f7f8fb !important;
+  font-size: clamp(25px, 10cqw, 36px) !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  text-shadow: 0 1px 0 rgba(45, 93, 255, 0.24) !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper {
+  width: min(206px, 72cqw) !important;
+  height: 42px !important;
+  display: grid !important;
+  grid-template-columns: 40px minmax(0, 1fr) 40px !important;
+  align-items: center !important;
+  justify-items: center !important;
+  padding: 3px !important;
+  border: 1px solid #4b4d4f !important;
+  border-radius: 999px !important;
+  background: #3d3e3e !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper button {
+  width: 34px !important;
+  height: 34px !important;
+  padding: 0 0 3px !important;
+  display: grid !important;
+  place-items: center !important;
+  align-self: center !important;
+  justify-self: center !important;
+  border-radius: 50% !important;
+  color: #050505 !important;
+  font-size: 25px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper button:last-child {
+  padding-bottom: 1px !important;
+}
+
+body:has(.aviator-play-page) .rain-stepper input {
+  height: 100% !important;
+  padding: 0 !important;
+  color: #f8f9fb !important;
+  font-size: 15px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  text-shadow: 0 1px 0 rgba(45, 93, 255, 0.22) !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel p {
+  width: min(100%, 340px) !important;
+  margin: 0 auto !important;
+  color: #aeb5bc !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.34 !important;
+  text-align: center !important;
+}
+
+body:has(.aviator-play-page) .chat-rain-panel p[data-state='error'] {
+  color: #ff6f87 !important;
+  font-weight: 700 !important;
+}
+
+@media (max-width: 760px) {
+  body:has(.aviator-play-page) .chat-rain-panel {
+    row-gap: 10px !important;
+    max-height: min(58dvh, 396px) !important;
+    padding: 10px 14px 15px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-toolbar {
+    grid-template-columns: 24px 1px 26px 30px minmax(104px, max-content) !important;
+    column-gap: 7px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-toolbar button:not(.rain-submit),
+  body:has(.aviator-play-page) .rain-toolbar strong {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 20px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-toolbar strong {
+    font-size: 24px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-submit {
+    width: 104px !important;
+    min-width: 104px !important;
+    height: 36px !important;
+    font-size: 13px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-total-display {
+    font-size: clamp(24px, 9.4cqw, 32px) !important;
+  }
+
+  body:has(.aviator-play-page) .rain-stepper {
+    width: min(198px, 70cqw) !important;
+    height: 40px !important;
+    grid-template-columns: 38px minmax(0, 1fr) 38px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-stepper button {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 24px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  body:has(.aviator-play-page) .chat-rain-panel {
+    padding-inline: 10px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-toolbar {
+    grid-template-columns: 22px 1px 24px 26px minmax(96px, max-content) !important;
+    column-gap: 5px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-submit {
+    width: 96px !important;
+    min-width: 96px !important;
+    height: 34px !important;
+    padding-inline: 10px !important;
+    font-size: 12px !important;
+  }
+
+  body:has(.aviator-play-page) .rain-total-display {
+    font-size: clamp(22px, 8.8cqw, 28px) !important;
   }
 }

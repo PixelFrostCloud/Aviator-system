@@ -1,6 +1,6 @@
 import json
 import random
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.contrib.auth import login
@@ -10,6 +10,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Count, Sum
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
+from django.views.decorators.http import require_http_methods, require_POST
 from django.utils import timezone
 from .forms import (
     RegisterForm,
@@ -26,6 +27,9 @@ from .forms import (
 from .models import (
     Profile,
     ChatMessage,
+    ChatReaction,
+    ChatRain,
+    ChatRainRecipient,
     FinancialReport,
     GameSession,
     GameRound,
@@ -36,6 +40,21 @@ from .models import (
     Transaction,
     Room,
     RoomPlayer,
+    RewardClaim,
+    RewardEvent,
+    RewardTransaction,
+    RewardWallet,
+)
+from .reward_services import (
+    RewardError,
+    activate_event,
+    claim_reward,
+    ensure_reward_wallet,
+    event_payload,
+    reward_statistics,
+    send_chat_rain,
+    stop_event,
+    wallet_payload,
 )
 from .utils import (
     can_deposit,
@@ -53,6 +72,265 @@ from .utils import (
 
 def home(request):
     return render(request, 'core/home.html')
+
+
+def request_payload(request):
+    if request.content_type == 'application/json':
+        try:
+            return json.loads(request.body.decode() or '{}')
+        except json.JSONDecodeError:
+            return {}
+    return request.POST.dict()
+
+
+def staff_required_json(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'message': 'Authentication required.'}, status=401)
+    if not request.user.is_staff:
+        return JsonResponse({'success': False, 'message': 'Administrator access required.'}, status=403)
+    return None
+
+
+def parse_decimal_payload(data, field, default='0'):
+    try:
+        return Decimal(str(data.get(field, default))).quantize(Decimal('0.01'))
+    except (InvalidOperation, TypeError):
+        raise RewardError(f'Invalid {field}.', 400)
+
+
+def parse_datetime_payload(value, fallback=None):
+    if not value:
+        return fallback
+    parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def client_ip(request):
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
+
+
+@require_POST
+def reward_create_api(request):
+    denied = staff_required_json(request)
+    if denied:
+        return denied
+    data = request_payload(request)
+    try:
+        total_pool = parse_decimal_payload(data, 'total_reward_pool')
+        reward_per_claim = parse_decimal_payload(data, 'reward_per_claim')
+        starts_at = parse_datetime_payload(data.get('starts_at'), timezone.now())
+        ends_at = parse_datetime_payload(data.get('ends_at'), starts_at + timedelta(hours=1))
+        event = RewardEvent.objects.create(
+            title=data.get('title', '').strip() or 'Reward Event',
+            description=data.get('description', '').strip(),
+            total_reward_pool=total_pool,
+            remaining_reward_pool=parse_decimal_payload(data, 'remaining_reward_pool', total_pool),
+            maximum_claims=max(int(data.get('maximum_claims') or 1), 1),
+            reward_per_claim=reward_per_claim,
+            minimum_random_reward=parse_decimal_payload(data, 'minimum_random_reward', '0.01'),
+            maximum_random_reward=parse_decimal_payload(data, 'maximum_random_reward', reward_per_claim),
+            claim_strategy=data.get('claim_strategy') if data.get('claim_strategy') in dict(RewardEvent.CLAIM_STRATEGIES) else 'equal',
+            starts_at=starts_at,
+            ends_at=ends_at,
+            status=data.get('status') if data.get('status') in dict(RewardEvent.STATUS_CHOICES) else ('scheduled' if starts_at > timezone.now() else 'draft'),
+            created_by=request.user,
+        )
+    except (RewardError, ValueError) as exc:
+        return JsonResponse({'success': False, 'message': getattr(exc, 'message', str(exc))}, status=getattr(exc, 'status', 400))
+    return JsonResponse({'success': True, 'event': event_payload(event)}, status=201)
+
+
+@require_http_methods(['PUT', 'POST'])
+def reward_update_api(request):
+    denied = staff_required_json(request)
+    if denied:
+        return denied
+    data = request_payload(request)
+    event = get_object_or_404(RewardEvent, uuid=data.get('id') or data.get('event_id'))
+    if event.status == 'completed':
+        return JsonResponse({'success': False, 'message': 'Completed events cannot be edited.'}, status=409)
+    try:
+        for field in ['title', 'description', 'claim_strategy', 'status']:
+            if field in data:
+                setattr(event, field, data[field])
+        for field in ['total_reward_pool', 'remaining_reward_pool', 'reward_per_claim', 'minimum_random_reward', 'maximum_random_reward']:
+            if field in data:
+                setattr(event, field, parse_decimal_payload(data, field))
+        if 'maximum_claims' in data:
+            event.maximum_claims = max(int(data['maximum_claims']), 1)
+        if 'starts_at' in data:
+            event.starts_at = parse_datetime_payload(data.get('starts_at'), event.starts_at)
+        if 'ends_at' in data:
+            event.ends_at = parse_datetime_payload(data.get('ends_at'), event.ends_at)
+        event.save()
+    except (RewardError, ValueError) as exc:
+        return JsonResponse({'success': False, 'message': getattr(exc, 'message', str(exc))}, status=getattr(exc, 'status', 400))
+    return JsonResponse({'success': True, 'event': event_payload(event)})
+
+
+@require_http_methods(['DELETE', 'POST'])
+def reward_delete_api(request):
+    denied = staff_required_json(request)
+    if denied:
+        return denied
+    data = request_payload(request)
+    event = get_object_or_404(RewardEvent, uuid=data.get('id') or data.get('event_id'))
+    if event.claims.filter(status='approved').exists():
+        stop_event(event, request.user, status='cancelled')
+        return JsonResponse({'success': True, 'event': event_payload(event), 'message': 'Event cancelled because it already has claims.'})
+    event.delete()
+    return JsonResponse({'success': True})
+
+
+@require_POST
+def reward_start_api(request):
+    denied = staff_required_json(request)
+    if denied:
+        return denied
+    data = request_payload(request)
+    event = get_object_or_404(RewardEvent, uuid=data.get('id') or data.get('event_id'))
+    activate_event(event, request.user)
+    return JsonResponse({'success': True, 'event': event_payload(event)})
+
+
+@require_POST
+def reward_stop_api(request):
+    denied = staff_required_json(request)
+    if denied:
+        return denied
+    data = request_payload(request)
+    event = get_object_or_404(RewardEvent, uuid=data.get('id') or data.get('event_id'))
+    status = 'cancelled' if data.get('cancel') else 'completed'
+    stop_event(event, request.user, status=status)
+    return JsonResponse({'success': True, 'event': event_payload(event)})
+
+
+@login_required
+def reward_statistics_api(request):
+    if not request.user.is_staff:
+        return JsonResponse({'success': False, 'message': 'Administrator access required.'}, status=403)
+    event_uuid = request.GET.get('event_id')
+    event = RewardEvent.objects.filter(uuid=event_uuid).first() if event_uuid else None
+    return JsonResponse({'success': True, 'statistics': reward_statistics(event)})
+
+
+@login_required
+def reward_export_api(request):
+    if not request.user.is_staff:
+        return JsonResponse({'success': False, 'message': 'Administrator access required.'}, status=403)
+    event_uuid = request.GET.get('event_id')
+    claims = RewardClaim.objects.select_related('reward_event', 'user').filter(status='approved')
+    if event_uuid:
+        claims = claims.filter(reward_event__uuid=event_uuid)
+    return JsonResponse({
+        'success': True,
+        'claims': [
+            {
+                'event': str(claim.reward_event.uuid),
+                'event_title': claim.reward_event.title,
+                'user': claim.user.username,
+                'amount': float(claim.amount_claimed),
+                'reference': claim.transaction_reference,
+                'claim_time': claim.claim_time.isoformat(),
+                'ip_address': claim.ip_address,
+                'device_identifier': claim.device_identifier,
+            }
+            for claim in claims[:1000]
+        ],
+    })
+
+
+@login_required
+def reward_active_api(request):
+    now = timezone.now()
+    events = RewardEvent.objects.filter(status='active', starts_at__lte=now, ends_at__gte=now).order_by('ends_at')
+    return JsonResponse({'success': True, 'events': [event_payload(event) for event in events]})
+
+
+@require_POST
+@login_required
+def reward_claim_api(request):
+    data = request_payload(request)
+    event_id = data.get('event_id') or data.get('id')
+    if not event_id:
+        return JsonResponse({'success': False, 'message': 'event_id is required.'}, status=400)
+    try:
+        claim, created = claim_reward(
+            request.user,
+            event_id,
+            ip_address=client_ip(request),
+            device_identifier=data.get('device_identifier') or request.META.get('HTTP_USER_AGENT', ''),
+            idempotency_key=data.get('idempotency_key') or request.META.get('HTTP_IDEMPOTENCY_KEY', ''),
+        )
+    except RewardEvent.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Reward event was not found.'}, status=404)
+    except RewardError as exc:
+        return JsonResponse({'success': False, 'message': exc.message}, status=exc.status)
+    wallet = ensure_reward_wallet(request.user)
+    return JsonResponse({
+        'success': True,
+        'created': created,
+        'claim': {
+            'id': str(claim.uuid),
+            'event_id': str(claim.reward_event.uuid),
+            'amount': float(claim.amount_claimed),
+            'status': claim.status,
+            'reference': claim.transaction_reference,
+            'claim_time': claim.claim_time.isoformat(),
+        },
+        'wallet': wallet_payload(wallet),
+    })
+
+
+@login_required
+def reward_history_api(request):
+    claims = RewardClaim.objects.select_related('reward_event').filter(user=request.user)
+    return JsonResponse({
+        'success': True,
+        'claims': [
+            {
+                'id': str(claim.uuid),
+                'event': str(claim.reward_event.uuid),
+                'event_title': claim.reward_event.title,
+                'amount': float(claim.amount_claimed),
+                'status': claim.status,
+                'claim_time': claim.claim_time.isoformat(),
+            }
+            for claim in claims[:100]
+        ],
+    })
+
+
+@login_required
+def reward_wallet_api(request):
+    return JsonResponse({'success': True, 'wallet': wallet_payload(ensure_reward_wallet(request.user))})
+
+
+@login_required
+def reward_transactions_api(request):
+    wallet = ensure_reward_wallet(request.user)
+    transactions = RewardTransaction.objects.select_related('event').filter(wallet=wallet)[:100]
+    return JsonResponse({
+        'success': True,
+        'transactions': [
+            {
+                'id': str(txn.uuid),
+                'event': str(txn.event.uuid) if txn.event else None,
+                'amount': float(txn.amount),
+                'transaction_type': txn.transaction_type,
+                'balance_before': float(txn.balance_before),
+                'balance_after': float(txn.balance_after),
+                'reference': txn.reference,
+                'created_at': txn.created_at.isoformat(),
+            }
+            for txn in transactions
+        ],
+    })
 
 
 def register(request):
@@ -93,7 +371,7 @@ def play(request):
     highest_stakers = GameSession.objects.filter(stake__gt=0).order_by('-stake')[:6]
     recent_sessions = GameSession.objects.filter(user=request.user).order_by('-created_at')[:5]
     recent_crashes = GameRound.objects.filter(status='crashed').order_by('-started_at')[:10]
-    chat_messages = ChatMessage.objects.select_related('user').filter(flagged=False)[:20]
+    chat_messages = ChatMessage.objects.select_related('user').annotate(reaction_count=Count('reactions')).filter(flagged=False)[:20]
 
     if request.method == 'GET':
         return render(request, 'core/play.html', {
@@ -127,9 +405,82 @@ def play(request):
             'success': True,
             'message': {
                 'username': request.user.username,
+                'id': chat.id,
                 'text': chat.message,
                 'created_at': chat.created_at.strftime('%H:%M'),
                 'flagged': chat.flagged,
+                'reaction_count': 0,
+            },
+        })
+
+    if action == 'chat_react':
+        try:
+            message_id = int(request.POST.get('message_id') or '0')
+        except ValueError:
+            return JsonResponse({'success': False, 'message': 'Invalid chat message.'}, status=400)
+
+        chat = get_object_or_404(ChatMessage, id=message_id, flagged=False)
+        reaction, created = ChatReaction.objects.get_or_create(
+            message=chat,
+            user=request.user,
+            reaction='heart',
+        )
+        if not created:
+            reaction.delete()
+        reaction_count = chat.reactions.count()
+        log_audit(request.user, 'chat_message', 'Updated chat reaction', request, {
+            'message_id': chat.id,
+            'active': created,
+            'reaction_count': reaction_count,
+        })
+        return JsonResponse({
+            'success': True,
+            'active': created,
+            'reaction_count': reaction_count,
+        })
+
+    if action == 'chat_rain':
+        try:
+            total_amount = Decimal(request.POST.get('total_amount') or '0').quantize(Decimal('0.01'))
+            player_count = int(request.POST.get('players') or '0')
+        except (InvalidOperation, ValueError):
+            return JsonResponse({'success': False, 'message': 'Invalid rain settings.'}, status=400)
+
+        try:
+            result = send_chat_rain(
+                request.user,
+                total_amount,
+                player_count,
+                ip_address=client_ip(request),
+                device_identifier=request.META.get('HTTP_USER_AGENT', ''),
+            )
+        except RewardError as exc:
+            return JsonResponse({'success': False, 'message': exc.message}, status=exc.status)
+
+        log_audit(request.user, 'chat_message', 'Sent chat rain', request, {
+            'message_id': result['chat'].id,
+            'reward_event_id': str(result['event'].uuid),
+            'total_amount': str(result['actual_total']),
+            'players': len(result['recipients']),
+        })
+        return JsonResponse({
+            'success': True,
+            'balance': float(result['sender_balance']),
+            'reward_event_id': str(result['event'].uuid),
+            'message': {
+                'username': request.user.username,
+                'id': result['chat'].id,
+                'text': result['chat'].message,
+                'created_at': result['chat'].created_at.strftime('%H:%M:%S'),
+                'flagged': False,
+                'reaction_count': 0,
+                'rain': {
+                    'total_amount': float(result['actual_total']),
+                    'per_player_amount': float(result['per_player']),
+                    'recipient_count': len(result['recipients']),
+                    'reference': result['reference'],
+                    'reward_event_id': str(result['event'].uuid),
+                },
             },
         })
 
@@ -204,7 +555,6 @@ def play(request):
             'round_id': game_round.public_id,
             'server_seed_hash': game_round.server_seed_hash,
             'client_seed': game_round.client_seed,
-            'crash_point': float(game_round.crash_point),
             'balance': float(locked_profile.balance),
             'stake_total': float(total_stake),
         })
@@ -291,7 +641,7 @@ def play(request):
             'success': True,
             'message': message,
             'round_id': game_round.public_id,
-            'crash_point': float(game_round.crash_point),
+            'crash_point': float(game_round.crash_point) if round_has_crashed else None,
             'cashout_multiplier': float(effective_multiplier),
             'won_amount': float(total_won),
             'balance': float(locked_profile.balance),
@@ -612,7 +962,6 @@ def room_action(request, room_id):
         return JsonResponse({
             'success': True,
             'message': 'Game started.',
-            'crash_point': float(room.crash_point),
         })
 
     if action == 'cashout':
@@ -623,17 +972,26 @@ def room_action(request, room_id):
         if player.cashed_out_at is not None:
             return JsonResponse({'success': False, 'message': 'You already cashed out.'}, status=400)
 
-        cashout_multiplier = Decimal(request.POST.get('cashout_multiplier') or '0')
-        player.cashed_out_at = cashout_multiplier
+        requested_cashout_multiplier = Decimal(request.POST.get('cashout_multiplier') or '0')
+        elapsed = max((timezone.now() - room.started_at).total_seconds(), 0)
+        server_multiplier = Decimal('1.00') + Decimal(str(elapsed)).quantize(Decimal('0.01'))
+        effective_multiplier = min(requested_cashout_multiplier, server_multiplier).quantize(Decimal('0.01'))
+        round_has_crashed = server_multiplier >= room.crash_point
+
+        player.cashed_out_at = effective_multiplier
         player.active = False
         player.won_amount = Decimal('0')
         message = 'Crashed before cash out. Better luck next round.'
 
-        if cashout_multiplier < room.crash_point:
-            player.won_amount = (player.stake * cashout_multiplier).quantize(Decimal('0.01'))
+        if not round_has_crashed and effective_multiplier < room.crash_point:
+            player.won_amount = (player.stake * effective_multiplier).quantize(Decimal('0.01'))
             profile.balance += player.won_amount
             profile.save()
-            message = f'Cashed out at {cashout_multiplier:.2f}x and won {player.won_amount:.2f} {profile.currency}.'
+            message = f'Cashed out at {effective_multiplier:.2f}x and won {player.won_amount:.2f} {profile.currency}.'
+        elif round_has_crashed:
+            room.status = 'ended'
+            room.ended_at = room.ended_at or timezone.now()
+            room.save(update_fields=['status', 'ended_at'])
 
         player.save()
         return JsonResponse({
@@ -641,8 +999,8 @@ def room_action(request, room_id):
             'message': message,
             'balance': float(profile.balance),
             'won_amount': float(player.won_amount),
-            'cashout_multiplier': float(cashout_multiplier),
-            'crash_point': float(room.crash_point),
+            'cashout_multiplier': float(effective_multiplier),
+            'crash_point': float(room.crash_point) if round_has_crashed else None,
             'status': 'won' if player.is_winner else 'lost',
         })
 
@@ -652,6 +1010,13 @@ def room_action(request, room_id):
 @login_required
 def room_status(request, room_id):
     room = get_object_or_404(Room, id=room_id)
+    if room.status == 'running' and room.started_at and room.crash_point is not None:
+        elapsed = max((timezone.now() - room.started_at).total_seconds(), 0)
+        server_multiplier = Decimal('1.00') + Decimal(str(elapsed)).quantize(Decimal('0.01'))
+        if server_multiplier >= room.crash_point:
+            room.status = 'ended'
+            room.ended_at = room.ended_at or timezone.now()
+            room.save(update_fields=['status', 'ended_at'])
     players = room.players.select_related('user').all()
     participants = []
     for player in players:
@@ -668,7 +1033,7 @@ def room_status(request, room_id):
         'success': True,
         'room': {
             'status': room.status,
-            'crash_point': float(room.crash_point) if room.crash_point else None,
+            'crash_point': float(room.crash_point) if room.status == 'ended' and room.crash_point else None,
             'host': room.host.username,
             'code': room.code,
             'participants': participants,

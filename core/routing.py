@@ -3,4 +3,5 @@ from . import consumers
 
 websocket_urlpatterns = [
     path('ws/room/<int:room_id>/', consumers.RoomSyncConsumer.as_asgi(), name='ws_room'),
+    path('ws/rewards/', consumers.RewardConsumer.as_asgi(), name='ws_rewards'),
 ]

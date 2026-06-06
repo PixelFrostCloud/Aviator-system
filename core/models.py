@@ -1,5 +1,6 @@
 import random
 import string
+import uuid
 from decimal import Decimal
 from django.contrib.auth.models import User
 from django.db import models
@@ -221,6 +222,187 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f'{self.user.username}: {self.message[:40]}'
+
+
+class ChatReaction(models.Model):
+    message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, related_name='reactions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_reactions')
+    reaction = models.CharField(max_length=16, default='heart')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ('message', 'user', 'reaction')
+
+    def __str__(self):
+        return f'{self.user.username} reacted to message {self.message_id}'
+
+
+class ChatRain(models.Model):
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_chat_rains')
+    message = models.ForeignKey(ChatMessage, on_delete=models.SET_NULL, null=True, blank=True, related_name='rain_events')
+    reward_event = models.ForeignKey('RewardEvent', on_delete=models.SET_NULL, null=True, blank=True, related_name='chat_rains')
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    per_player_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    recipient_count = models.PositiveSmallIntegerField()
+    reference = models.CharField(max_length=80, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Rain {self.reference} by {self.sender.username}'
+
+
+class ChatRainRecipient(models.Model):
+    rain = models.ForeignKey(ChatRain, on_delete=models.CASCADE, related_name='recipients')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_chat_rains')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ('rain', 'user')
+
+    def __str__(self):
+        return f'{self.user.username} received {self.amount} from {self.rain.reference}'
+
+
+class RewardEvent(models.Model):
+    CLAIM_STRATEGIES = [
+        ('equal', 'Equal'),
+        ('random', 'Random'),
+        ('weighted', 'Weighted'),
+    ]
+
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('scheduled', 'Scheduled'),
+        ('active', 'Active'),
+        ('paused', 'Paused'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    title = models.CharField(max_length=160)
+    description = models.TextField(blank=True)
+    total_reward_pool = models.DecimalField(max_digits=14, decimal_places=2)
+    remaining_reward_pool = models.DecimalField(max_digits=14, decimal_places=2)
+    maximum_claims = models.PositiveIntegerField()
+    reward_per_claim = models.DecimalField(max_digits=12, decimal_places=2)
+    minimum_random_reward = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.01'))
+    maximum_random_reward = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    claim_strategy = models.CharField(max_length=12, choices=CLAIM_STRATEGIES, default='equal')
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='draft')
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='created_reward_events')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'starts_at', 'ends_at']),
+            models.Index(fields=['created_by', '-created_at']),
+        ]
+
+    @property
+    def claim_count(self):
+        return self.claims.filter(status='approved').count()
+
+    @property
+    def remaining_claims(self):
+        return max(self.maximum_claims - self.claim_count, 0)
+
+    @property
+    def is_claimable(self):
+        now = timezone.now()
+        return self.status == 'active' and self.starts_at <= now <= self.ends_at and self.remaining_reward_pool > 0 and self.remaining_claims > 0
+
+    def __str__(self):
+        return f'{self.title} ({self.status})'
+
+
+class RewardWallet(models.Model):
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='reward_wallet')
+    available_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    locked_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_rewards_received = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_rewards_claimed = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    activity_score = models.PositiveIntegerField(default=0)
+    loyalty_points = models.PositiveIntegerField(default=0)
+    admin_weight_multiplier = models.DecimalField(max_digits=8, decimal_places=2, default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'{self.user.username} reward wallet'
+
+
+class RewardClaim(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('failed', 'Failed'),
+    ]
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    reward_event = models.ForeignKey(RewardEvent, on_delete=models.CASCADE, related_name='claims')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reward_claims')
+    amount_claimed = models.DecimalField(max_digits=12, decimal_places=2)
+    claim_time = models.DateTimeField(default=timezone.now)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    device_identifier = models.CharField(max_length=160, blank=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='approved')
+    transaction_reference = models.CharField(max_length=96, db_index=True)
+    idempotency_key = models.CharField(max_length=96, blank=True, db_index=True)
+
+    class Meta:
+        ordering = ['-claim_time']
+        unique_together = ('user', 'reward_event')
+        indexes = [
+            models.Index(fields=['reward_event', 'status', '-claim_time']),
+            models.Index(fields=['user', '-claim_time']),
+            models.Index(fields=['idempotency_key']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} claimed {self.amount_claimed} from {self.reward_event.title}'
+
+
+class RewardTransaction(models.Model):
+    TRANSACTION_TYPES = [
+        ('credit', 'Credit'),
+        ('debit', 'Debit'),
+        ('lock', 'Lock'),
+        ('unlock', 'Unlock'),
+        ('adjustment', 'Adjustment'),
+    ]
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    wallet = models.ForeignKey(RewardWallet, on_delete=models.CASCADE, related_name='transactions')
+    event = models.ForeignKey(RewardEvent, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    transaction_type = models.CharField(max_length=12, choices=TRANSACTION_TYPES)
+    balance_before = models.DecimalField(max_digits=14, decimal_places=2)
+    balance_after = models.DecimalField(max_digits=14, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    reference = models.CharField(max_length=96, unique=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['wallet', '-created_at']),
+            models.Index(fields=['event', '-created_at']),
+            models.Index(fields=['transaction_type', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.transaction_type} {self.amount} ({self.reference})'
 
 
 class FinancialReport(models.Model):

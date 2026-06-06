@@ -184,30 +184,84 @@
             </section>
         </main>
 
-        <aside class="right-chat-panel">
-            <div class="chat-header">
-                <strong>CHAT</strong>
-                <span>Online: 246</span>
-            </div>
-            <div class="chat-promo">Good bets for everyone!</div>
-            <div class="chat-list" id="chat-list">
+        <aside class="right-chat-panel" data-chat-panel>
+            <header class="chat-topbar">
+                <button class="chat-icon-button" type="button" data-chat-rules-open aria-label="Chat rules">i</button>
+                <span>Online: <strong id="chat-online-count">1093</strong></span>
+                <button class="chat-icon-button" type="button" data-chat-collapse aria-label="Close chat">&times;</button>
+            </header>
+
+            <div class="chat-feed" id="chat-list" aria-live="polite">
                 {% for chat in chat_messages %}
-                    <div class="chat-item">
-                        <span class="player-avatar">{{ chat.user.username|slice:":1"|upper }}</span>
-                        <div>
-                            <strong>{{ chat.user.username|truncatechars:8 }}</strong>
-                            <span>{{ chat.message }}</span>
+                    <article class="chat-row">
+                        <span class="chat-avatar">{{ chat.user.username|slice:":1"|upper }}</span>
+                        <div class="chat-bubble">
+                            <div class="chat-meta"><strong>{{ chat.user.username|truncatechars:8 }}</strong><time>{{ chat.created_at|date:"H:i:s" }}</time></div>
+                            <p>{{ chat.message }}</p>
                         </div>
-                    </div>
+                        <button class="chat-like" type="button" data-message-id="{{ chat.id }}" aria-label="Like"><span>&hearts;</span><b>{{ chat.reaction_count|default:0 }}</b></button>
+                    </article>
                 {% empty %}
-                    <div class="chat-item muted">No chat messages yet.</div>
+                    <div class="chat-empty">No chat messages yet.</div>
                 {% endfor %}
             </div>
+
+            <button class="new-message-pill" id="new-message-pill" type="button" hidden>New messages <span>▾</span></button>
+
+            <div class="chat-spam-filter" id="chat-spam-filter" hidden>
+                <span>Spam Filter...</span>
+                <i></i>
+            </div>
+
             <form class="chat-form" id="chat-form">
                 <input type="hidden" name="action" value="chat">
-                {{ chat_form.message }}
-                <button type="submit">Send</button>
+                <label class="chat-text-wrap">
+                    {{ chat_form.message }}
+                </label>
+                <div class="chat-tools">
+                    <button type="button" data-chat-emoji aria-label="Emoji">&#9786;</button>
+                    <button type="button" data-chat-rain-open aria-label="Rain">&#9748;</button>
+                    <span>AA <b id="chat-char-count">160</b></span>
+                    <button type="submit" aria-label="Send message">&#10148;</button>
+                </div>
             </form>
+
+            <form class="chat-rain-panel" id="chat-rain-form" hidden>
+                <input type="hidden" name="action" value="chat_rain">
+                <div class="rain-toolbar">
+                    <button type="button" data-chat-rain-close aria-label="Back">&#8249;</button>
+                    <span></span>
+                    <button type="button" data-chat-emoji aria-label="Emoji">&#9786;</button>
+                    <strong>&#9748;</strong>
+                    <button class="rain-submit" type="submit">Send Rain</button>
+                </div>
+                <label class="rain-total-label">Total amount
+                    <input id="rain-total" class="rain-value-source" name="total_amount" type="number" min="1" max="{{ profile.balance|floatformat:2 }}" step="0.01" value="{{ profile.balance|floatformat:2 }}">
+                    <output id="rain-total-display" class="rain-total-display">{{ profile.balance|floatformat:2 }} {{ profile.currency }}</output>
+                </label>
+                <label>Number of players
+                    <span class="rain-stepper"><button type="button" data-rain-step="players" data-step="-1">&minus;</button><input id="rain-players" name="players" type="number" min="1" max="20" value="5"><button type="button" data-rain-step="players" data-step="1">+</button></span>
+                </label>
+                <label>Amount per player
+                    <span class="rain-stepper"><button type="button" data-rain-step="amount" data-step="-10">&minus;</button><input id="rain-amount" type="number" min="0.01" step="0.01" value="300.00"><button type="button" data-rain-step="amount" data-step="10">+</button></span>
+                </label>
+                <p id="rain-helper">This feature will give selected amount to random users in chat.</p>
+            </form>
+
+            <section class="chat-rules-modal" id="chat-rules-modal" aria-hidden="true">
+                <header><h2>CHAT RULES</h2><button type="button" data-chat-rules-close aria-label="Close">&times;</button></header>
+                <ul>
+                    <li>Do not spam or use excessive capital letters when chatting.</li>
+                    <li>Be respectful; do not harass or be offensive to other players.</li>
+                    <li>Do not share personal information of yourself or other players.</li>
+                    <li>Do not beg or ask for loans, rains, or tips.</li>
+                    <li>Avoid behavior that may be seen as potential scams.</li>
+                    <li>Do not engage in any form of advertising, trading, selling, buying, or offering services.</li>
+                    <li>Chat access is restricted for players with balance below 10.00 UGX</li>
+                    <li>Chat access is restricted for players with wager amount over the last 7 days below 10.00 UGX</li>
+                    <li>Chat access is restricted for players whose account has been active for less than 1 day(s).</li>
+                </ul>
+            </section>
         </aside>
     </section>
 
@@ -336,7 +390,8 @@
 <script>
 window.aviatorConfig = {
     playUrl: "{% url 'play' %}",
-    currency: "{{ profile.currency }}"
+    currency: "{{ profile.currency }}",
+    walletBalance: {{ profile.balance|floatformat:2 }}
 };
 </script>
 {% endblock %}
