@@ -159,6 +159,21 @@ class PlayEndpointTests(TestCase):
         self.assertFalse(second.json()['active'])
         self.assertEqual(second.json()['reaction_count'], 0)
 
+    def test_chat_prunes_oldest_messages_when_total_reaches_limit(self):
+        oldest = ChatMessage.objects.create(user=self.user, message='oldest message')
+        for index in range(98):
+            ChatMessage.objects.create(user=self.user, message=f'old message {index}')
+
+        response = self.client.post('/play/', {
+            'action': 'chat',
+            'message': 'fresh message',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ChatMessage.objects.count(), 30)
+        self.assertFalse(ChatMessage.objects.filter(id=oldest.id).exists())
+        self.assertTrue(ChatMessage.objects.filter(message='fresh message').exists())
+
     def test_round_seed_cannot_be_revealed_before_server_crash_time(self):
         start = self.client.post('/play/', {
             'action': 'start',

@@ -1,77 +1,91 @@
 {% extends 'core/base.html' %}
-{% block title %}Dashboard | Aviator{% endblock %}
+{% block title %}Top | Aviator{% endblock %}
 {% block content %}
-<section class="dashboard-grid">
-    <div class="dashboard-panel">
-        <div class="dashboard-hero">
-            <h1>Welcome back, {{ request.user.username }}.</h1>
-            <p>Balance: <strong>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong></p>
-        </div>
-        <div class="play-card">
-            <div class="play-card-header">
-                <h2>Start a round</h2>
-                <span class="tag">Ready to play</span>
-            </div>
-            <form id="play-form" class="form-inline" method="post">
-                {% csrf_token %}
-                <input type="number" name="stake" step="0.01" min="1" placeholder="Stake" value="10" required>
-                <button class="button button-primary" type="submit">Launch</button>
-            </form>
-            <div id="game-panel" class="game-panel hidden">
-                <div class="game-status">
-                    <span>Flight multiplier</span>
-                    <strong id="multiplier">1.00x</strong>
+<section class="account-page account-top-page">
+    {% include 'core/partials/account_sidebar.html' %}
+    <div class="account-workspace">
+        {% include 'core/partials/account_topbar.html' %}
+        <main class="account-main">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>Top</h1>
+                        <p>Track active rooms, recent results, and your current wallet position.</p>
+                    </div>
+                    <a class="account-close-link" href="{% url 'play' %}">×</a>
                 </div>
-                <div class="progress-bar"><span id="flight-progress"></span></div>
-                <div class="game-actions">
-                    <button id="cashout-button" class="button button-secondary" disabled>Cash Out</button>
-                    <p id="game-message">Start the round to begin.</p>
+
+                <section class="account-hero-card compact-hero">
+                    <div class="wallet-identity">
+                        <div class="wallet-avatar">{{ request.user.username|first|upper }}</div>
+                        <div>
+                            <h2>{{ request.user.username }}</h2>
+                            <p>Balance: {{ profile.balance|floatformat:2 }} {{ profile.currency }}</p>
+                            <span>Ready to play</span>
+                        </div>
+                    </div>
+                    <div class="wallet-level">
+                        <strong>Level 23</strong>
+                        <i><b style="width: 58%"></b></i>
+                        <p>12,450 / 20,000 XP</p>
+                    </div>
+                    <div class="account-stat-row">
+                        <article><span>▣</span><small>Recent Bets</small><strong>{{ sessions|length }}</strong></article>
+                        <article><span>▤</span><small>Balance</small><strong>{{ profile.balance|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
+                        <article><span>◎</span><small>Open Rooms</small><strong>{{ rooms|length }}</strong></article>
+                    </div>
+                </section>
+
+                <div class="account-grid-2">
+                    <section class="account-card account-activity-card">
+                        <div class="section-heading">
+                            <h2>Recent Sessions</h2>
+                            <a href="{% url 'bet_history' %}">View All</a>
+                        </div>
+                        <ul class="account-activity-list">
+                            {% for session in sessions %}
+                                <li>
+                                    <span class="activity-icon {% if session.is_winner %}positive{% else %}negative{% endif %}">{% if session.is_winner %}✓{% else %}×{% endif %}</span>
+                                    <div><strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong><small>{{ session.created_at|date:'M d, H:i' }}</small></div>
+                                    <em class="{% if session.is_winner %}positive{% else %}negative{% endif %}">{{ session.is_winner|yesno:'Won,Lost' }}</em>
+                                </li>
+                            {% empty %}
+                                <li class="account-empty-state">No sessions yet.</li>
+                            {% endfor %}
+                        </ul>
+                    </section>
+
+                    <section class="account-card account-activity-card">
+                        <div class="section-heading">
+                            <h2>Open Rooms</h2>
+                            <a href="{% url 'room_list' %}">Browse</a>
+                        </div>
+                        <ul class="account-activity-list">
+                            {% for room in rooms %}
+                                <li>
+                                    <span class="activity-icon positive">◎</span>
+                                    <div><strong>{{ room.name }}</strong><small>{{ room.status|title }}</small></div>
+                                    <em>{{ room.players.count }} / {{ room.max_players }}</em>
+                                </li>
+                            {% empty %}
+                                <li class="account-empty-state">No active rooms available yet.</li>
+                            {% endfor %}
+                        </ul>
+                    </section>
                 </div>
-            </div>
-        </div>
+            </section>
+
+            <aside class="account-right-rail">
+                <section class="account-card">
+                    <div class="vip-head"><span>▤</span><strong>Wallet</strong></div>
+                    <strong class="wallet-balance-large">{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong>
+                    <div class="wallet-action-tabs">
+                        <a href="{% url 'wallet' %}#deposit-form">Deposit</a>
+                        <a href="{% url 'wallet' %}#withdraw-form">Withdraw</a>
+                    </div>
+                </section>
+            </aside>
+        </main>
     </div>
-    <aside class="dashboard-sidebar">
-        <div class="stats-card">
-            <h2>Recent sessions</h2>
-            <ul class="session-list">
-                {% for session in sessions %}
-                    <li>
-                        <span>{{ session.created_at|date:'M d, H:i' }}</span>
-                        <strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong>
-                        <span class="session-tag {% if session.is_winner %}win{% else %}loss{% endif %}">{{ session.is_winner|yesno:'Won,Lost' }}</span>
-                    </li>
-                {% empty %}
-                    <li class="empty-state">No sessions yet. Launch your first round.</li>
-                {% endfor %}
-            </ul>
-        </div>
-        <div class="stats-card">
-            <h2>Player summary</h2>
-            <p>Current balance: <strong>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong></p>
-            <p>Account created on: {{ profile.created_at|date:'M d, Y' }}</p>
-            <a class="button button-secondary" href="{% url 'wallet' %}">Deposit / Withdraw</a>
-        </div>
-        <div class="stats-card">
-            <h2>Open rooms</h2>
-            <ul class="session-list">
-                {% for room in rooms %}
-                    <li>
-                        <span>{{ room.name }}</span>
-                        <strong>{{ room.players.count }} / {{ room.max_players }}</strong>
-                        <span class="session-tag">{{ room.status|title }}</span>
-                    </li>
-                {% empty %}
-                    <li class="empty-state">No active rooms available yet.</li>
-                {% endfor %}
-            </ul>
-            <a class="button button-secondary" href="{% url 'room_list' %}">Browse rooms</a>
-        </div>
-    </aside>
 </section>
-<script>
-    window.aviatorConfig = {
-        playUrl: '{% url "play" %}',
-        csrfToken: '{{ csrf_token }}',
-    };
-</script>
 {% endblock %}

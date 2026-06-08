@@ -23,6 +23,29 @@ function calculateMaskedFlightProgress(tick) {
   return Math.min((eased * 72) + steadyDrift, 96);
 }
 
+function calculateFlightMotion(progress, elapsedMs = 0, isFinal = false) {
+  const ratio = Math.min(Math.max(progress / 96, 0), 1);
+  const seconds = elapsedMs / 1000;
+  const launch = Math.min(seconds / 1.12, 1);
+  const groundRoll = Math.min(seconds / 0.42, 1);
+  const lift = 1 - Math.pow(1 - Math.min(Math.max((seconds - 0.28) / 1.35, 0), 1), 2.4);
+  const climb = 1 - Math.pow(1 - ratio, 2.05);
+  const vertical = 1 - Math.pow(1 - ratio, 1.42);
+  const cruise = Math.max(0, (ratio - 0.68) / 0.32);
+  const cruiseEase = 1 - Math.pow(1 - Math.min(cruise, 1), 2);
+  const bob = isFinal ? 0 : Math.sin(seconds * 3.6) * (0.65 + cruiseEase * 2.15);
+  const glide = isFinal ? 0 : Math.sin(seconds * 1.55) * cruiseEase * 2.35;
+  const noseTrim = Math.sin(seconds * 2.7) * cruiseEase * 1.7;
+  const x = (groundRoll * 8.5) + Math.max(0, 66.5 * climb - 2.8) + glide;
+  const y = Math.max(0, (60.5 * vertical * lift) + bob);
+
+  return {
+    x: Math.min(74, x),
+    y: Math.min(64, y),
+    angle: (groundRoll * 5) + (21 * launch) - (6 * cruiseEase) + noseTrim,
+  };
+}
+
 function animateFlightProgress(progressElement, multiplierElement, messageElement, crashValue, cashoutButton) {
   let multiplier = 1.0;
   let tick = 0;
@@ -147,6 +170,31 @@ function attachPlayWidget() {
     chatDrawerBackdrop.setAttribute('aria-label', 'Close chat');
     chatDrawerBackdrop.hidden = true;
     document.body.append(chatDrawerBackdrop);
+    const emojiPicker = document.createElement('section');
+    emojiPicker.className = 'chat-emoji-picker';
+    emojiPicker.hidden = true;
+    emojiPicker.innerHTML = `
+      <div class="emoji-search-wrap">
+        <span aria-hidden="true">⌕</span>
+        <input type="search" placeholder="Search emoji.." aria-label="Search emoji">
+      </div>
+      <div class="emoji-grid" role="listbox" aria-label="Emoji picker"></div>
+    `;
+    chatPanel?.append(emojiPicker);
+    const emojiSearch = emojiPicker.querySelector('input');
+    const emojiGrid = emojiPicker.querySelector('.emoji-grid');
+    const emojiItems = [
+      ['😀', 'grin happy smile'], ['😍', 'heart eyes love'], ['😜', 'wink tongue playful'], ['😔', 'sad disappointed'],
+      ['😨', 'scared fear'], ['🥶', 'cold frozen'], ['😱', 'scream shock'], ['😖', 'frustrated'], ['😴', 'sleep sleepy'],
+      ['😃', 'happy smile'], ['😘', 'kiss love'], ['😝', 'tongue laugh'], ['😊', 'soft smile'], ['😂', 'laugh tears'],
+      ['😅', 'sweat smile'], ['😳', 'surprised blush'], ['😆', 'laugh closed'], ['😵', 'dizzy shock'],
+      ['😃', 'grinning'], ['😚', 'kiss closed'], ['😛', 'tongue'], ['🙄', 'eyeroll'], ['😭', 'cry tears'],
+      ['😟', 'worried'], ['😠', 'angry'], ['😊', 'smile'], ['😲', 'astonished'],
+      ['🙂', 'slight smile'], ['😗', 'kiss'], ['😯', 'surprised'], ['😞', 'sad'], ['😪', 'sleepy tired'],
+      ['😩', 'weary'], ['😡', 'rage angry'], ['🤭', 'hand mouth'], ['🥺', 'pleading'],
+      ['☺️', 'relaxed smile'], ['😙', 'kiss smile'], ['😁', 'big grin'], ['😣', 'persevere'],
+      ['😰', 'anxious sweat'], ['😫', 'tired'], ['😤', 'triumph'], ['😎', 'cool sunglasses'], ['😳', 'blush']
+    ];
     if (rulesModal && rulesModal.parentElement !== document.body) {
       document.body.append(rulesModal);
     }
@@ -204,6 +252,51 @@ function attachPlayWidget() {
         return;
       }
       charCount.textContent = Math.max(maxChatLength - chatInput.value.length, 0);
+    }
+
+    function renderEmojiGrid(filter = '') {
+      if (!emojiGrid) {
+        return;
+      }
+      const query = filter.trim().toLowerCase();
+      emojiGrid.innerHTML = '';
+      emojiItems
+        .filter(([, keywords]) => !query || keywords.includes(query))
+        .forEach(([emoji, keywords]) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'emoji-choice';
+          button.dataset.keywords = keywords;
+          button.textContent = emoji;
+          button.setAttribute('aria-label', keywords.split(' ')[0]);
+          emojiGrid.append(button);
+        });
+    }
+
+    function toggleEmojiPicker(forceOpen = null) {
+      const shouldOpen = forceOpen === null ? emojiPicker.hidden : forceOpen;
+      emojiPicker.hidden = !shouldOpen;
+      chatPanel?.classList.toggle('emoji-open', shouldOpen);
+      if (shouldOpen) {
+        renderEmojiGrid(emojiSearch?.value || '');
+        emojiSearch?.focus({ preventScroll: true });
+      }
+    }
+
+    function insertEmoji(emoji) {
+      if (!chatInput || !emoji) {
+        return;
+      }
+      const start = chatInput.selectionStart ?? chatInput.value.length;
+      const end = chatInput.selectionEnd ?? chatInput.value.length;
+      const before = chatInput.value.slice(0, start);
+      const after = chatInput.value.slice(end);
+      const next = `${before}${emoji}${after}`.slice(0, maxChatLength);
+      chatInput.value = next;
+      const cursor = Math.min(start + emoji.length, next.length);
+      chatInput.focus();
+      chatInput.setSelectionRange(cursor, cursor);
+      updateCharCount();
     }
 
     function showSpamFilter() {
@@ -301,6 +394,7 @@ function attachPlayWidget() {
         showSpamFilter();
       }
       chatForm.reset();
+      toggleEmojiPicker(false);
       updateCharCount();
     });
 
@@ -349,6 +443,32 @@ function attachPlayWidget() {
       });
     });
 
+    renderEmojiGrid();
+    document.querySelectorAll('[data-chat-emoji]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        toggleEmojiPicker();
+      }, true);
+    });
+    emojiSearch?.addEventListener('input', () => renderEmojiGrid(emojiSearch.value));
+    emojiGrid?.addEventListener('click', (event) => {
+      const choice = event.target.closest('.emoji-choice');
+      if (!choice) {
+        return;
+      }
+      insertEmoji(choice.textContent);
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (emojiPicker.hidden) {
+        return;
+      }
+      if (emojiPicker.contains(event.target) || event.target.closest('[data-chat-emoji]')) {
+        return;
+      }
+      toggleEmojiPicker(false);
+    });
+
     function closeChatRules() {
       rulesModal?.setAttribute('aria-hidden', 'true');
       document.body.classList.remove('chat-rules-lock');
@@ -369,6 +489,9 @@ function attachPlayWidget() {
       }
     });
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !emojiPicker.hidden) {
+        toggleEmojiPicker(false);
+      }
       if (event.key === 'Escape' && rulesModal?.getAttribute('aria-hidden') === 'false') {
         closeChatRules();
       }
@@ -529,11 +652,42 @@ function attachPlayWidget() {
     let currentLedgerTab = 'all';
     let publicRows = [];
     let myRows = [];
+    let flightAnimationFrame = null;
+    let flightStartedAt = 0;
 
-    function setFlightProgress(progress) {
+    function setFlightProgress(progress, elapsedMs = 0, isFinal = false) {
+      const motion = calculateFlightMotion(progress, elapsedMs, isFinal);
       movingParts.forEach((part) => {
-        part.style.setProperty('--progress', progress.toFixed(2));
+        part.style.setProperty('--progress', progress.toFixed(4));
       });
+      if (plane) {
+        plane.style.setProperty('--plane-x', motion.x.toFixed(4));
+        plane.style.setProperty('--plane-y', motion.y.toFixed(4));
+        plane.style.setProperty('--plane-angle', motion.angle.toFixed(3));
+      }
+    }
+
+    function stopFlightMotion() {
+      if (flightAnimationFrame) {
+        cancelAnimationFrame(flightAnimationFrame);
+        flightAnimationFrame = null;
+      }
+    }
+
+    function startFlightMotion() {
+      stopFlightMotion();
+      flightStartedAt = performance.now();
+      const draw = (now) => {
+        if (phase !== 'flying') {
+          flightAnimationFrame = null;
+          return;
+        }
+        const elapsedMs = now - flightStartedAt;
+        const progress = calculateMaskedFlightProgress(elapsedMs / FLIGHT_TICK_MS);
+        setFlightProgress(progress, elapsedMs);
+        flightAnimationFrame = requestAnimationFrame(draw);
+      };
+      flightAnimationFrame = requestAnimationFrame(draw);
     }
 
     function syncBetLabels() {
@@ -574,6 +728,9 @@ function attachPlayWidget() {
       cashedOutSlips.clear();
       pendingCashoutSlips.clear();
       multiplierValue.textContent = '1.00x';
+      stopFlightMotion();
+      plane?.classList.remove('is-flew-away');
+      flightStage?.classList.remove('is-crashed');
       setFlightProgress(0);
       syncSlipStates();
     }
@@ -773,6 +930,7 @@ function attachPlayWidget() {
       if (flightTimer) {
         clearInterval(flightTimer);
       }
+      stopFlightMotion();
 
       phase = 'starting';
       syncSlipStates();
@@ -822,8 +980,11 @@ function attachPlayWidget() {
       currentMultiplier = 1.0;
       cashedOutSlips.clear();
       multiplierValue.textContent = '1.00x';
+      plane?.classList.remove('is-flew-away');
+      flightStage?.classList.remove('is-crashed');
       setFlightProgress(0);
       phase = 'flying';
+      startFlightMotion();
       syncSlipStates();
 
       gameMessage.textContent = activeSlipSessions.size ? 'Cash out before the flight crashes.' : 'Watching live round. Place a bet next round.';
@@ -831,8 +992,11 @@ function attachPlayWidget() {
       let crashCheckInFlight = false;
       function finishCrashedRound(crashPoint, revealPromise) {
         clearInterval(flightTimer);
+        stopFlightMotion();
         multiplierValue.textContent = formatMultiplier(crashPoint);
-        setFlightProgress(calculateMaskedFlightProgress(tick));
+        setFlightProgress(calculateMaskedFlightProgress(tick), performance.now() - flightStartedAt, true);
+        flightStage?.classList.add('is-crashed');
+        requestAnimationFrame(() => plane?.classList.add('is-flew-away'));
         gameMessage.textContent = `Flew away at ${formatMultiplier(crashPoint)}. Round over.`;
         addHistoryPill(crashPoint);
         revealPromise.finally(() => {
@@ -862,7 +1026,9 @@ function attachPlayWidget() {
           : Math.min(1 + tick * FLIGHT_INCREMENT, publicRound.crash_point + 0.05);
         const progress = calculateMaskedFlightProgress(tick);
         multiplierValue.textContent = formatMultiplier(currentMultiplier);
-        setFlightProgress(progress);
+        if (!flightAnimationFrame) {
+          setFlightProgress(progress, tick * FLIGHT_TICK_MS);
+        }
         syncBetLabels();
         activeSlipRows.forEach((row, slip) => {
           if (cashedOutSlips.has(slip)) {

@@ -1,0 +1,9 @@
+<header class="account-topbar">
+    <a class="help-chip" href="{% url 'how_to_play' %}">How to play?</a>
+    <div>
+        <strong>{{ profile.balance|floatformat:2 }}</strong>
+        <span>{{ profile.currency }}</span>
+        <a href="{% url 'wallet' %}">Wallet</a>
+        <button type="button" aria-label="Menu">☰</button>
+    </div>
+</header>

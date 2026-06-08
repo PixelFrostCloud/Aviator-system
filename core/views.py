@@ -45,6 +45,7 @@ from .models import (
     RewardTransaction,
     RewardWallet,
 )
+from .chat_services import prune_chat_messages_if_needed
 from .reward_services import (
     RewardError,
     activate_event,
@@ -392,6 +393,7 @@ def play(request):
         message = form.cleaned_data['message']
         flagged = any(term in message.lower() for term in ['scam', 'fraud', 'hack'])
         chat = ChatMessage.objects.create(user=request.user, message=message, flagged=flagged)
+        prune_chat_messages_if_needed()
         if flagged:
             RiskAlert.objects.create(
                 user=request.user,
@@ -1128,6 +1130,16 @@ def bet_history(request):
 
 
 @login_required
+def transactions_view(request):
+    profile = get_object_or_404(Profile, user=request.user)
+    transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')[:100]
+    return render(request, 'core/transactions.html', {
+        'profile': profile,
+        'transactions': transactions,
+    })
+
+
+@login_required
 def game_limits(request):
     profile = get_object_or_404(Profile, user=request.user)
     if request.method == 'POST':
@@ -1155,8 +1167,19 @@ def free_bets(request):
 
 
 @login_required
+def vip_club(request):
+    profile = get_object_or_404(Profile, user=request.user)
+    transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')[:5]
+    return render(request, 'core/vip_club.html', {
+        'profile': profile,
+        'transactions': transactions,
+    })
+
+
+@login_required
 def how_to_play(request):
-    return render(request, 'core/how_to_play.html')
+    profile = get_object_or_404(Profile, user=request.user)
+    return render(request, 'core/how_to_play.html', {'profile': profile})
 
 
 @login_required

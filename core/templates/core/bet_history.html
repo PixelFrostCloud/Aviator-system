@@ -1,26 +1,59 @@
 {% extends 'core/base.html' %}
-{% block title %}My Bet History | Aviator{% endblock %}
+{% block title %}My Bets | Aviator{% endblock %}
 {% block content %}
-<section class="dashboard-grid">
-    <div class="stats-card">
-        <h1>My Bet History</h1>
-        <ul class="session-list">
-            {% for session in sessions %}
-                <li>
-                    <span>{{ session.created_at|date:'M d, H:i' }}</span>
-                    <strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong>
-                    <span>{{ session.cashed_out_at|default:session.crash_point|floatformat:2 }}x</span>
-                    <span class="session-tag {% if session.is_winner %}win{% else %}loss{% endif %}">{{ session.won_amount|floatformat:2 }}</span>
-                </li>
-            {% empty %}
-                <li class="empty-state">No bets yet.</li>
-            {% endfor %}
-        </ul>
+<section class="account-page account-list-page">
+    {% include 'core/partials/account_sidebar.html' %}
+    <div class="account-workspace">
+        {% include 'core/partials/account_topbar.html' %}
+        <main class="account-main account-main-wide">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>My Bets</h1>
+                        <p>Review your recent stakes, multipliers, and outcomes.</p>
+                    </div>
+                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                </div>
+
+                <section class="account-card account-table-card">
+                    <div class="section-heading">
+                        <h2>Bet History</h2>
+                        <a href="{% url 'provably_fair' %}">Fairness log</a>
+                    </div>
+                    <div class="account-table">
+                        <div class="account-table-head">
+                            <span>Time</span>
+                            <span>Stake</span>
+                            <span>Multiplier</span>
+                            <span>Result</span>
+                        </div>
+                        {% for session in sessions %}
+                            <article class="account-table-row">
+                                <span>{{ session.created_at|date:'M d, H:i' }}</span>
+                                <strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong>
+                                <span>{{ session.cashed_out_at|default:session.crash_point|floatformat:2 }}x</span>
+                                <em class="{% if session.is_winner %}positive{% else %}negative{% endif %}">
+                                    {% if session.is_winner %}+{% endif %}{{ session.won_amount|floatformat:2 }} {{ profile.currency }}
+                                </em>
+                            </article>
+                        {% empty %}
+                            <div class="account-empty-state">No bets yet. Your completed rounds will appear here.</div>
+                        {% endfor %}
+                    </div>
+                </section>
+            </section>
+
+            <aside class="account-right-rail">
+                <section class="account-card">
+                    <div class="vip-head"><span>◎</span><strong>Summary</strong></div>
+                    <ul class="rail-list">
+                        <li><span>Total balance</span><strong>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong></li>
+                        <li><span>Rows shown</span><strong>{{ sessions|length }}</strong></li>
+                        <li><span>Status</span><strong>Live</strong></li>
+                    </ul>
+                </section>
+            </aside>
+        </main>
     </div>
-    <aside class="stats-card">
-        <h2>Fairness</h2>
-        <p>Each completed round can be checked from Provably Fair Settings.</p>
-        <a class="button button-secondary" href="{% url 'provably_fair' %}">Open fairness log</a>
-    </aside>
 </section>
 {% endblock %}

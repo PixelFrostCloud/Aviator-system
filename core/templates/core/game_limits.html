@@ -1,18 +1,47 @@
 {% extends 'core/base.html' %}
-{% block title %}Game Limits | Aviator{% endblock %}
+{% block title %}Settings | Aviator{% endblock %}
 {% block content %}
-<section class="panel-panel">
-    <div class="profile-card">
-        <h1>Game Limits</h1>
-        <p class="profile-note">Set responsible gambling controls for deposits and losses.</p>
-        <form class="form-card" method="post">
-            {% csrf_token %}
-            {{ form.phone_number }}
-            {{ form.daily_deposit_limit }}
-            {{ form.daily_loss_limit }}
-            {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}
-            <button class="button button-primary" type="submit">Save limits</button>
-        </form>
+<section class="account-page account-settings-page">
+    {% include 'core/partials/account_sidebar.html' %}
+    <div class="account-workspace">
+        {% include 'core/partials/account_topbar.html' %}
+        <main class="account-main account-main-wide">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>Settings</h1>
+                        <p>Responsible play controls and account preferences.</p>
+                    </div>
+                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                </div>
+
+                <section class="account-card account-form-panel">
+                    <div class="section-heading">
+                        <h2>Game Limits</h2>
+                        <span>Protection controls</span>
+                    </div>
+                    <form class="account-form-grid" method="post">
+                        {% csrf_token %}
+                        <label><span>Phone Number</span>{{ form.phone_number }}</label>
+                        <label><span>Daily Deposit Limit</span>{{ form.daily_deposit_limit }}</label>
+                        <label><span>Daily Loss Limit</span>{{ form.daily_loss_limit }}</label>
+                        {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}
+                        <button class="account-action-button primary" type="submit">Save Limits</button>
+                    </form>
+                </section>
+            </section>
+
+            <aside class="account-right-rail">
+                <section class="account-card">
+                    <div class="vip-head"><span>⚙</span><strong>Preferences</strong></div>
+                    <ul class="rail-list">
+                        <li><span>Currency</span><strong>{{ profile.currency }}</strong></li>
+                        <li><span>KYC</span><strong>{{ profile.get_kyc_status_display }}</strong></li>
+                        <li><span>Security</span><strong>Enabled</strong></li>
+                    </ul>
+                </section>
+            </aside>
+        </main>
     </div>
 </section>
 {% endblock %}

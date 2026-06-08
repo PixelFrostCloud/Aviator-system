@@ -23,6 +23,7 @@ from .models import (
     RewardWallet,
     Transaction,
 )
+from .chat_services import prune_chat_messages_if_needed
 
 
 REWARD_GROUP = 'rewards'
@@ -328,6 +329,7 @@ def send_chat_rain(sender, total_amount, player_count, ip_address='', device_ide
             user=sender,
             message=f'Sent rain: {actual_total:.2f} {sender_profile.currency} to {len(recipients)} players.',
         )
+        prune_chat_messages_if_needed()
         rain = ChatRain.objects.create(
             sender=sender,
             message=chat,

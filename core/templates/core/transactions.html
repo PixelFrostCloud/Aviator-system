@@ -1,0 +1,59 @@
+{% extends 'core/base.html' %}
+{% block title %}Transactions | Aviator{% endblock %}
+{% block content %}
+<section class="account-page account-list-page">
+    {% include 'core/partials/account_sidebar.html' %}
+    <div class="account-workspace">
+        {% include 'core/partials/account_topbar.html' %}
+        <main class="account-main account-main-wide">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>Transactions</h1>
+                        <p>Deposits, withdrawals, bets, wins, refunds, and bonuses.</p>
+                    </div>
+                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                </div>
+
+                <section class="account-card account-table-card">
+                    <div class="section-heading">
+                        <h2>Transaction History</h2>
+                        <span>{{ transactions|length }} records</span>
+                    </div>
+                    <div class="account-table">
+                        <div class="account-table-head">
+                            <span>Type</span>
+                            <span>Amount</span>
+                            <span>Status</span>
+                            <span>Date</span>
+                        </div>
+                        {% for txn in transactions %}
+                            <article class="account-table-row">
+                                <span>{{ txn.get_transaction_type_display }}</span>
+                                <strong class="{% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}positive{% else %}negative{% endif %}">
+                                    {% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}+{% else %}-{% endif %}{{ txn.amount|floatformat:2 }} {{ profile.currency }}
+                                </strong>
+                                <span>{{ txn.get_status_display }}</span>
+                                <em>{{ txn.created_at|date:'M d, H:i' }}</em>
+                            </article>
+                        {% empty %}
+                            <div class="account-empty-state">No transactions yet.</div>
+                        {% endfor %}
+                    </div>
+                </section>
+            </section>
+
+            <aside class="account-right-rail">
+                <section class="account-card">
+                    <div class="vip-head"><span>▤</span><strong>Current Balance</strong></div>
+                    <strong class="wallet-balance-large">{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong>
+                    <div class="wallet-action-tabs">
+                        <a href="{% url 'wallet' %}#deposit-form">Deposit</a>
+                        <a href="{% url 'wallet' %}#withdraw-form">Withdraw</a>
+                    </div>
+                </section>
+            </aside>
+        </main>
+    </div>
+</section>
+{% endblock %}

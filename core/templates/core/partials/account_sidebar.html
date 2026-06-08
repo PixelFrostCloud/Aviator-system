@@ -1,0 +1,23 @@
+<aside class="account-sidebar">
+    <a class="account-side-link {% if request.resolver_match.url_name == 'play' %}active{% endif %}" href="{% url 'play' %}"><span>⌂</span> All Bets</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'bet_history' %}active{% endif %}" href="{% url 'bet_history' %}"><span>▣</span> My Bets</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span>◎</span> Top</a>
+    <hr>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'profile' %}active{% endif %}" href="{% url 'profile' %}"><span>○</span> Profile</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'wallet' %}active{% endif %}" href="{% url 'wallet' %}"><span>▤</span> Wallet</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'transactions' %}active{% endif %}" href="{% url 'transactions' %}"><span>▦</span> Transactions</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'free_bets' %}active{% endif %}" href="{% url 'free_bets' %}"><span>◇</span> Bonuses</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'profile' and request.GET.tab == 'referrals' %}active{% endif %}" href="{% url 'profile' %}?tab=referrals"><span>♧</span> Referrals</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'vip_club' %}active{% endif %}" href="{% url 'vip_club' %}"><span>☆</span> VIP Club</a>
+    <hr>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'game_limits' %}active{% endif %}" href="{% url 'game_limits' %}"><span>⚙</span> Settings</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'how_to_play' %}active{% endif %}" href="{% url 'how_to_play' %}"><span>?</span> Support</a>
+    <a class="account-side-link" href="{% url 'logout' %}"><span>↪</span> Logout</a>
+
+    <div class="account-invite-card">
+        <div class="invite-art">☂<small>◔</small></div>
+        <strong>Invite & Earn</strong>
+        <p>Get 5% of every bet your friends place!</p>
+        <a href="{% url 'profile' %}?tab=referrals">Invite Now</a>
+    </div>
+</aside>

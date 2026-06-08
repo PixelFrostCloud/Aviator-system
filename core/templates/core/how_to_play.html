@@ -1,13 +1,50 @@
 {% extends 'core/base.html' %}
-{% block title %}How To Play | Aviator{% endblock %}
+{% block title %}Support | Aviator{% endblock %}
 {% block content %}
-<section class="panel-panel">
-    <div class="profile-card">
-        <h1>How To Play</h1>
-        <p>Place a bet during the countdown. The multiplier starts at 1.00x and rises until the plane flies away.</p>
-        <p>Cash out before the crash to receive your stake multiplied by the current multiplier.</p>
-        <p>Auto mode can place repeat bets and cash out at your target multiplier.</p>
-        <a class="button button-primary" href="{% url 'play' %}">Play</a>
+<section class="account-page account-support-page">
+    {% include 'core/partials/account_sidebar.html' %}
+    <div class="account-workspace">
+        {% include 'core/partials/account_topbar.html' %}
+        <main class="account-main account-main-wide">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>Support</h1>
+                        <p>Fast help for gameplay, wallet activity, and responsible play.</p>
+                    </div>
+                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                </div>
+
+                <div class="account-feature-grid">
+                    <section class="account-card support-tile">
+                        <span class="activity-icon positive">1</span>
+                        <h2>Place a Bet</h2>
+                        <p>Choose a stake during countdown and confirm before the round launches.</p>
+                    </section>
+                    <section class="account-card support-tile">
+                        <span class="activity-icon gold">2</span>
+                        <h2>Cash Out</h2>
+                        <p>Cash out before the plane flies away to secure the visible multiplier.</p>
+                    </section>
+                    <section class="account-card support-tile">
+                        <span class="activity-icon blue">3</span>
+                        <h2>Check Fairness</h2>
+                        <p>Use the fairness log to verify completed rounds and crash outcomes.</p>
+                    </section>
+                </div>
+            </section>
+
+            <aside class="account-right-rail">
+                <section class="account-card">
+                    <div class="vip-head"><span>?</span><strong>Need Help?</strong></div>
+                    <ul class="rail-list">
+                        <li><span>Wallet</span><strong><a href="{% url 'wallet' %}">Open</a></strong></li>
+                        <li><span>Fairness</span><strong><a href="{% url 'provably_fair' %}">Verify</a></strong></li>
+                        <li><span>Limits</span><strong><a href="{% url 'game_limits' %}">Set</a></strong></li>
+                    </ul>
+                </section>
+            </aside>
+        </main>
     </div>
 </section>
 {% endblock %}

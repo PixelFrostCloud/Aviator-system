@@ -1,102 +1,202 @@
 {% extends 'core/base.html' %}
 {% block title %}Profile | Aviator{% endblock %}
 {% block content %}
-<section class="panel-panel">
-    <div class="profile-card">
-        <h1>Your profile</h1>
-        <dl class="profile-grid">
-            <div>
-                <dt>Username</dt>
-                <dd>{{ request.user.username }}</dd>
-            </div>
-            <div>
-                <dt>Email</dt>
-                <dd>{{ request.user.email }}</dd>
-            </div>
-            <div>
-                <dt>Balance</dt>
-                <dd>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</dd>
-            </div>
-            <div>
-                <dt>KYC tier</dt>
-                <dd>{{ profile.get_kyc_status_display }}</dd>
-            </div>
-            <div>
-                <dt>Phone</dt>
-                <dd>{{ profile.phone_number|default:'Not set' }}</dd>
-            </div>
-            <div>
-                <dt>Daily deposit limit</dt>
-                <dd>{{ profile.daily_deposit_limit|floatformat:2 }} {{ profile.currency }}</dd>
-            </div>
-            <div>
-                <dt>Daily loss limit</dt>
-                <dd>{{ profile.daily_loss_limit|floatformat:2 }} {{ profile.currency }}</dd>
-            </div>
-            <div>
-                <dt>Joined</dt>
-                <dd>{{ request.user.date_joined|date:'M d, Y' }}</dd>
-            </div>
-        </dl>
-        <form class="form-card" method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="compliance">
-            {{ form.phone_number }}
-            {{ form.daily_deposit_limit }}
-            {{ form.daily_loss_limit }}
-            {% if form.errors %}
-                <div class="field-errors">{{ form.errors }}</div>
-            {% endif %}
-            <button class="button button-secondary" type="submit">Update compliance settings</button>
-        </form>
-        <form class="form-card" method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="kyc">
-            <h2>KYC submission</h2>
-            {{ kyc_form.document_type }}
-            {{ kyc_form.document_number }}
-            {{ kyc_form.full_name }}
-            {{ kyc_form.date_of_birth }}
-            {% if kyc_form.errors %}
-                <div class="field-errors">{{ kyc_form.errors }}</div>
-            {% endif %}
-            <button class="button button-secondary" type="submit">Submit KYC</button>
-        </form>
-        <form class="form-card" method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="self_exclude">
-            <h2>Self-exclusion</h2>
-            {{ exclusion_form.duration }}
-            {{ exclusion_form.reason }}
-            {% if exclusion_form.errors %}
-                <div class="field-errors">{{ exclusion_form.errors }}</div>
-            {% endif %}
-            <button class="button button-secondary" type="submit">Activate self-exclusion</button>
-        </form>
-        <div class="profile-grid">
-            <div>
-                <dt>KYC history</dt>
-                <dd>
-                    {% for submission in kyc_submissions %}
-                        {{ submission.created_at|date:'M d' }} - {{ submission.status|title }}<br>
-                    {% empty %}
-                        No KYC submissions yet.
-                    {% endfor %}
-                </dd>
-            </div>
-            <div>
-                <dt>Self-exclusion history</dt>
-                <dd>
-                    {% for exclusion in exclusions %}
-                        {{ exclusion.created_at|date:'M d' }} - {% if exclusion.permanent %}Permanent{% else %}Until {{ exclusion.ends_at|date:'M d, H:i' }}{% endif %}<br>
-                    {% empty %}
-                        No self-exclusions yet.
-                    {% endfor %}
-                </dd>
-            </div>
+<section class="account-page account-profile-page">
+    <aside class="account-sidebar">
+        <a class="account-side-link" href="{% url 'play' %}"><span>⌂</span> All Bets</a>
+        <a class="account-side-link" href="{% url 'bet_history' %}"><span>▣</span> My Bets</a>
+        <a class="account-side-link" href="{% url 'dashboard' %}"><span>◎</span> Top</a>
+        <hr>
+        <a class="account-side-link active" href="{% url 'profile' %}"><span>◉</span> Profile</a>
+        <a class="account-side-link" href="{% url 'wallet' %}"><span>▤</span> Wallet</a>
+        <a class="account-side-link" href="{% url 'transactions' %}"><span>▦</span> Transactions</a>
+        <a class="account-side-link" href="{% url 'free_bets' %}"><span>◇</span> Bonuses</a>
+        <a class="account-side-link" href="{% url 'profile' %}"><span>♧</span> Referrals</a>
+        <a class="account-side-link" href="{% url 'vip_club' %}"><span>☆</span> VIP Club</a>
+        <hr>
+        <a class="account-side-link" href="{% url 'game_limits' %}"><span>⚙</span> Settings</a>
+        <a class="account-side-link" href="{% url 'how_to_play' %}"><span>?</span> Support</a>
+        <a class="account-side-link" href="{% url 'logout' %}"><span>↪</span> Logout</a>
+        <div class="account-invite-card">
+            <div class="invite-art">☂<small>◔</small></div>
+            <strong>Invite & Earn</strong>
+            <p>Get 5% of every bet your friends place!</p>
+            <a href="{% url 'profile' %}">Invite Now</a>
         </div>
-        <a class="button button-primary" href="{% url 'wallet' %}">Manage wallet</a>
-        <p class="profile-note">Deposit, withdraw, or review your wallet history in one secure place.</p>
+    </aside>
+
+    <div class="account-workspace">
+        <header class="account-topbar">
+            <a class="help-chip" href="{% url 'how_to_play' %}">How to play?</a>
+            <div>
+                <strong>{{ profile.balance|floatformat:2 }}</strong>
+                <span>{{ profile.currency }}</span>
+                <a href="{% url 'wallet' %}">Wallet</a>
+                <button type="button" aria-label="Menu">☰</button>
+            </div>
+        </header>
+
+        <main class="account-main">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>My Profile</h1>
+                        <p>Manage your account and track your activity</p>
+                    </div>
+                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                </div>
+
+                <nav class="account-tabs">
+                    <a class="active" href="#overview">Overview</a>
+                    <a href="#statistics">Statistics</a>
+                    <a href="#activity">Activity</a>
+                    <a href="#preferences">Preferences</a>
+                    <a href="#security">Security</a>
+                </nav>
+
+                <section id="overview" class="account-hero-card">
+                    <div class="wallet-identity">
+                        <div class="wallet-avatar profile-image">✈</div>
+                        <div>
+                            <h2>{{ request.user.username|default:'AviatorMaster' }} <em>VIP 2</em></h2>
+                            <p>Player ID: {{ request.user.id|stringformat:"s" }}{{ request.user.username|upper|slice:":9" }}</p>
+                            <p>Member since: {{ request.user.date_joined|date:'d M Y' }}</p>
+                            <span>✓ Verified</span>
+                        </div>
+                    </div>
+                    <div class="wallet-level">
+                        <strong>Level 23</strong>
+                        <i><b style="width: 58%"></b></i>
+                        <p>12,450 / 20,000 XP</p>
+                    </div>
+                    <div class="account-stat-row">
+                        <article><span>▣</span><small>Total Bets</small><strong>1,248</strong></article>
+                        <article><span>▤</span><small>Total Winnings</small><strong>3,456.75 <em>{{ profile.currency }}</em></strong></article>
+                        <article><span>♙</span><small>Biggest Win</small><strong>1,250.00 <em>{{ profile.currency }}</em></strong></article>
+                        <article><span>✾</span><small>Highest Multiplier</small><strong>13.55x</strong></article>
+                    </div>
+                </section>
+
+                <div class="account-grid-2">
+                    <section class="account-card wallet-actions-card">
+                        <div class="section-heading">
+                            <h2>Wallet Overview</h2>
+                        </div>
+                        <span>Total Balance</span>
+                        <strong class="wallet-balance-large">{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong>
+                        <div class="wallet-action-tabs">
+                            <a href="{% url 'wallet' %}#deposit-form">Deposit</a>
+                            <a href="{% url 'wallet' %}#withdraw-form">Withdraw</a>
+                        </div>
+                        <dl class="wallet-metrics">
+                            <div><dt>Main Balance</dt><dd>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</dd></div>
+                            <div><dt>Bonus Balance</dt><dd>0.00 {{ profile.currency }}</dd></div>
+                            <div><dt>Daily Deposit Limit</dt><dd>{{ profile.daily_deposit_limit|floatformat:2 }} {{ profile.currency }}</dd></div>
+                            <div><dt>Daily Loss Limit</dt><dd>{{ profile.daily_loss_limit|floatformat:2 }} {{ profile.currency }}</dd></div>
+                        </dl>
+                    </section>
+
+                    <section id="activity" class="account-card account-activity-card">
+                        <div class="section-heading">
+                            <h2>Recent Activity</h2>
+                            <a href="{% url 'bet_history' %}">View All</a>
+                        </div>
+                        <ul class="account-activity-list">
+                            <li><span class="activity-icon negative">✈</span><div><strong>You placed a bet</strong><small>Crash @ 2.45x</small></div><b class="negative">10.00 {{ profile.currency }}</b><time>Today</time></li>
+                            <li><span class="activity-icon positive">✓</span><div><strong>You cashed out</strong><small>Crash @ 2.45x</small></div><b class="positive">24.50 {{ profile.currency }}</b><time>Today</time></li>
+                            <li><span class="activity-icon positive">↓</span><div><strong>Deposit successful</strong><small>Main Balance</small></div><b class="positive">50.00 {{ profile.currency }}</b><time>Today</time></li>
+                            <li><span class="activity-icon gift">◇</span><div><strong>Bonus received</strong><small>Welcome Bonus</small></div><b class="positive">5.00 {{ profile.currency }}</b><time>Yesterday</time></li>
+                        </ul>
+                    </section>
+                </div>
+
+                <section id="statistics" class="account-card stats-overview-card">
+                    <h2>Statistics Overview</h2>
+                    <div class="stats-strip">
+                        <article><span>◎</span><small>Win Rate</small><strong>68.42%</strong></article>
+                        <article><span>☍</span><small>Games Played</small><strong>856</strong></article>
+                        <article><span>▤</span><small>Average Bet</small><strong>15.32 {{ profile.currency }}</strong></article>
+                        <article><span>◌</span><small>Average Cashout</small><strong>2.31x</strong></article>
+                        <article><span>▟</span><small>Profit</small><strong>+2,345.75 {{ profile.currency }}</strong></article>
+                    </div>
+                </section>
+
+                <section id="preferences" class="account-card account-forms-card">
+                    <div class="section-heading">
+                        <h2>Account Settings</h2>
+                        <span>Compliance, KYC, and safety controls</span>
+                    </div>
+                    <div class="money-form-grid profile-form-grid">
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="compliance">
+                            <h3>Compliance settings</h3>
+                            {{ form.phone_number }}
+                            {{ form.daily_deposit_limit }}
+                            {{ form.daily_loss_limit }}
+                            {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}
+                            <button class="account-primary-btn" type="submit">Update Settings</button>
+                        </form>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="kyc">
+                            <h3>KYC submission</h3>
+                            {{ kyc_form.document_type }}
+                            {{ kyc_form.document_number }}
+                            {{ kyc_form.full_name }}
+                            {{ kyc_form.date_of_birth }}
+                            {% if kyc_form.errors %}<div class="field-errors">{{ kyc_form.errors }}</div>{% endif %}
+                            <button class="account-secondary-btn" type="submit">Submit KYC</button>
+                        </form>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="self_exclude">
+                            <h3>Self-exclusion</h3>
+                            {{ exclusion_form.duration }}
+                            {{ exclusion_form.reason }}
+                            {% if exclusion_form.errors %}<div class="field-errors">{{ exclusion_form.errors }}</div>{% endif %}
+                            <button class="account-secondary-btn" type="submit">Activate Protection</button>
+                        </form>
+                    </div>
+                </section>
+            </section>
+
+            <aside class="account-right-rail">
+                <section class="account-card vip-card">
+                    <div class="vip-head"><span>♛</span><strong>VIP Club</strong><b>VIP 2</b></div>
+                    <p>Enjoy exclusive benefits and higher rewards!</p>
+                    <div class="vip-progress"><span>Next Level</span><strong>VIP 3</strong><i><b style="width: 56%"></b></i><small>12,450 / 25,000 XP</small></div>
+                    <ul>
+                        <li>Higher cashback <b>✓</b></li>
+                        <li>Monthly reload bonus <b>✓</b></li>
+                        <li>Exclusive promotions <b>✓</b></li>
+                        <li>Priority support <b>⌕</b></li>
+                    </ul>
+                    <a href="{% url 'game_limits' %}">View VIP Benefits</a>
+                </section>
+
+                <section id="security" class="account-card">
+                    <h2>Account Security</h2>
+                    <ul class="rail-list">
+                        <li><span>Email</span><strong>{{ request.user.email|default:'Not set' }}</strong><b>✓</b></li>
+                        <li><span>Phone</span><strong>{{ profile.phone_number|default:'Not set' }}</strong><b>✓</b></li>
+                        <li><span>Password</span><strong>********</strong><b>›</b></li>
+                        <li><span>Two-Factor Auth</span><strong>Enabled</strong><b>✓</b></li>
+                    </ul>
+                    <a class="rail-button" href="{% url 'game_limits' %}">Security Settings</a>
+                </section>
+
+                <section class="account-card">
+                    <h2>Preferences</h2>
+                    <ul class="rail-list">
+                        <li><span>Language</span><strong>English</strong><b>›</b></li>
+                        <li><span>Currency</span><strong>{{ profile.currency }}</strong><b>›</b></li>
+                        <li><span>Odds Format</span><strong>Decimal</strong><b>›</b></li>
+                    </ul>
+                    <a class="rail-button" href="{% url 'game_limits' %}">Edit Preferences</a>
+                </section>
+            </aside>
+        </main>
     </div>
 </section>
 {% endblock %}
