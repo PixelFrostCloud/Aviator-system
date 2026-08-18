@@ -1,0 +1,4099 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "ioTec Pay v1",
+    "description": "\n\n## Overview\n\nThe **ioTec Pay API** enables seamless integration between your systems and ioTec Pay services. With it, you can:\n\n- **Collect Payments**: Receive mobile money payments directly into your ioTec Pay wallet.\n- **Make Disbursements**: Send funds from your wallet to mobile money accounts or commercial bank accounts.\n- **Manage Transactions**: Access and work with transaction data to streamline your financial operations.\n\nThis documentation provides detailed guidance on available endpoints, request/response formats, and authentication requirements to help you integrate ioTec Pay efficiently.\nIt also includes code examples in multiple programming languages to help you get started quickly.\n\n## Getting Started\n\nTo begin using the ioTec Pay API, you'll need to authenticate via **OAuth 2.0 client credentials flow**. This method ensures secure, authorized access.\n\n### Where to get your API credentials\n\nWhen you sign up for ioTec Pay, your `client_id` and `client_secret` are automatically sent to the **email address you used during registration**.\n\nIf you don't see the email:\n- Please check your spam or promotions folder.\n- Still can't find it? Reach out to our support team at **support@iotec.io** and we'll assist you.\n\nOnce you have your credentials, you can request an access token with the curl request below:\n\n```bash\ncurl --request POST \\\n  --url https://id.iotec.io/connect/token \\\n  --header 'Content-Type: application/x-www-form-urlencoded' \\\n  --data client_id=[client_id] \\\n  --data client_secret=[client_secret] \\\n  --data grant_type=client_credentials\n```\n\nThe authorization server will  then return an access token in the following format:\n\n```json\n{\n  \"access_token\": \"xxxx.xxxxxxxxxxxxx.xxxxxxxxxxxxxxxx\",\n  \"expires_in\": 300,\n  \"token_type\": \"Bearer\",\n  \"scope\": \"profile email\"\n}\n```\n\nUse the returned access token in the Authorization header of all your API requests as follows:\n\n```bash\ncurl --request POST \\\n  --url https://pay.iotec.io/api/disbursements/disburse \\\n  --header 'Authorization: Bearer [access_token]' \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"category\": \"MobileMoney\",\n  \"currency\": \"ITX\",\n  \"walletId\": \"5e83b187-801e-410e-b76e-f491928547e0\",\n  \"externalId\": \"001\",\n  \"payee\": \"0111777771\",\n  \"amount\": 1000,\n  \"payerNote\": \"payerNote\",\n  \"payeeNote\": \"payeeNote\"\n}'\n```\n\nThese are the test phone numbers that you can use to test the mobile money transactions of the API:\n\n| Number            | Result         | Description                                                  | Example    |\n| :---              |    :----:      |          :----:                                              |    ---:    |\n| 011177777(0-9)    | `Success`      | The transaction is successful                                | 0111777771 |\n| 011177799(0-9)    | `Failed`       | The transaction has failed                                   | 0111777991 |\n| 011177778(0-9)    | `Pending`      | The transaction is pending                                   | 0111777781 |\n| 011177779(0-9)    | `SentToVendor` | The transaction is being processed by the vendor e.g., MTN   | 0111777791 |\n\n## Callback Notifications\n\nThe ioTec Pay API can automatically notify your system when transaction statuses change to either `Success`, `Failed`, or `SentToVendor`,\neliminating the need for continuous polling.\n\n### How callbacks work\n\n1. Initiate a collection or disbursement request from your system to ioTec Pay.\n2. ioTec Pay processes the transaction and sends an HTTP POST request to your configured callback URL when the transaction status is either `Success`, `Failed`, or `SentToVendor`.\n3. The callback payload contains the complete transaction details, identical to the response from the 'Get transaction status' endpoint.\n\n**Example callback payload:**\n```json\n{\n  \"id\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"status\": \"Success\",\n  \"amount\": 10000,\n  \"currency\": \"UGX\",\n  // ...additional transaction details\n}\n```\n\n### Setting up callback URLs\n\nTo configure callback notifications:\n\n1. Log in to the [ioTec Pay portal](https://pay.iotec.io) and navigate to your wallet's details page.\n2. Under the Settings tab, locate the Callback URLs card, and click the Add button.\n3. In the dialog form, provide the following:\n   - **Callback Category**: Choose between the Collection or Disbursement categories\n   - **Callback URL**: Your endpoint URL (e.g., `https://your-domain.com/api/payments/callback`)\n   - **Security Headers**: Authentication headers (e.g., Authorization tokens) that ioTec Pay should include when calling your endpoint\n4. Submit the form to save your callback configuration.\n\nOnce configured, ioTec Pay will automatically send transaction updates to your specified endpoint for all future transactions on that wallet.\n\n",
+    "contact": {
+      "name": "The Support Team",
+      "email": "support@iotec.io"
+    },
+    "version": "v1"
+  },
+  "paths": {
+    "/api/collections/collect": {
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Initiate Mobile Money Collection",
+        "description": "This endpoint is used to perform a mobile money collection request from a specified payer to your Pay wallet.\n\nThe transaction flow works as follows:\n1. A collection request is initiated\n2. The payer receives a prompt on their mobile device\n3. The transaction remains in `Pending` status until:\n   - The payer authorizes the payment (status changes to `Success`)\n   - The payer declines the payment (status changes to `Failed`)\n   - The system times out the request (status changes to `Failed`)\n\nYou can check the transaction status using:\n```\nGET api/collections/status/{transactionId}\n```",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionRequest"
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionRequest"
+              }
+            },
+            "text/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionRequest"
+              }
+            },
+            "application/*+xml": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/collections/collect/card": {
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Initiate Card Collection",
+        "description": "This endpoint is used to perform a card (Visa/MasterCard) collection request from a specified payer to your Pay wallet, processed via PegPay.\n            \nUnlike mobile money, `Payer` must be the customer's email address rather than a phone number.\n            \nThe transaction flow works as follows:\n1. This endpoint is called and returns a `Pending` transaction, including a `cardRedirectUrl`.\n2. Redirect the customer's browser to `cardRedirectUrl`. This auto-submits the customer to PegPay's hosted payment page, and the transaction moves to `SentToVendor`.\n3. The customer enters their card details and completes payment on PegPay.\n4. PegPay redirects the customer back to us; we independently confirm the authoritative outcome with PegPay before finalizing the status to `Success` or `Failed`.\n5. If you supplied a `RedirectUrl` in the request, the customer's browser is redirected there with the outcome (`id`, `status`, `statusCode`, `statusMessage`, etc.) as query parameters once payment finishes. Otherwise, a generic confirmation page is shown.\n            \nYou can check the transaction status at any time using:\n```\nGET api/collections/status/{transactionId}\n```",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardCollectionRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardCollectionRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardCollectionRequest"
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/CardCollectionRequest"
+              }
+            },
+            "text/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/CardCollectionRequest"
+              }
+            },
+            "application/*+xml": {
+              "schema": {
+                "$ref": "#/components/schemas/CardCollectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/collections/status/{requestId}": {
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Get transaction status",
+        "description": "This endpoint is used to get the details of a collection transaction including the `status`.",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "description": "The unique identifier of the transaction you want to check. This is the `id` field from the response body returned when you initiated the collection.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/collections/external-id/{externalId}": {
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Get transaction status by externalId",
+        "description": "This endpoint is used to get the details of a collection transaction including the `status` with the use of your own reference ID (`externalId`).",
+        "parameters": [
+          {
+            "name": "externalId",
+            "in": "path",
+            "description": "Your custom unique identifier/reference for the transaction. This is the value you provided in the `externalId` field when initiating the collection.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionViewModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/disbursements/disburse": {
+      "post": {
+        "tags": [
+          "Disbursements"
+        ],
+        "summary": "Initiate Payment Disbursement",
+        "description": "This endpoint withdraws money from your ioTec Pay wallet and transfers it to a recipient's mobile money account or bank account.",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisbursementRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisbursementRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisbursementRequest"
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/DisbursementRequest"
+              }
+            },
+            "text/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/DisbursementRequest"
+              }
+            },
+            "application/*+xml": {
+              "schema": {
+                "$ref": "#/components/schemas/DisbursementRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/disbursements/bank-disburse": {
+      "post": {
+        "tags": [
+          "Disbursements"
+        ],
+        "summary": "Transfer funds to bank account",
+        "description": "This endpoint withdraws money from your ioTec Pay wallet and transfers it to a recipient's bank account.",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankDisbursementRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankDisbursementRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankDisbursementRequest"
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/BankDisbursementRequest"
+              }
+            },
+            "text/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/BankDisbursementRequest"
+              }
+            },
+            "application/*+xml": {
+              "schema": {
+                "$ref": "#/components/schemas/BankDisbursementRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/disbursements/bank-list": {
+      "get": {
+        "tags": [
+          "Disbursements"
+        ],
+        "summary": "Get list of supported banks",
+        "description": "This endpoint returns a list of banks that can be used for disbursement to bank accounts.",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BankComboModel"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BankComboModel"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BankComboModel"
+                  }
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BankComboModel"
+                  }
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BankComboModel"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/disbursements/status/{transactionId}": {
+      "get": {
+        "tags": [
+          "Disbursements"
+        ],
+        "summary": "Get transaction status",
+        "description": "This endpoint is used to get the details of a disbursement transaction including the `status`.",
+        "parameters": [
+          {
+            "name": "transactionId",
+            "in": "path",
+            "description": "The unique identifier of the transaction you want to check. This is the `id` field from the response body returned when you initiated the disbursement.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/disbursements/external-id/{externalId}": {
+      "get": {
+        "tags": [
+          "Disbursements"
+        ],
+        "summary": "Get transaction status by externalId",
+        "description": "This endpoint is used to get the details of a disbursement transaction including the `status` with the use of your own reference ID (`externalId`).",
+        "parameters": [
+          {
+            "name": "externalId",
+            "in": "path",
+            "description": "Your custom unique identifier/reference for the transaction. This is the value you provided in the `externalId` field when initiating the disbursement.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelDocs"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/disbursements/paged-history": {
+      "get": {
+        "tags": [
+          "Disbursements"
+        ],
+        "summary": "Get paged request history",
+        "description": "This endpoint is used to retrieve a paginated list of disbursement requests made.",
+        "parameters": [
+          {
+            "name": "WalletId",
+            "in": "query",
+            "description": "The unique identifier of your ioTec Pay wallet.",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "5e83b187-801e-410e-b76e-f491928547e0"
+            },
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          {
+            "name": "BulkId",
+            "in": "query",
+            "description": "The unique identifier of the parent bulk disbursement transaction that this individual disbursement transaction belongs to.\nOnly provided when this transaction was created as part of a bulk disbursement.",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "5e83b187-801e-410e-b76e-f491928547e0"
+            },
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          {
+            "name": "ExternalId",
+            "in": "query",
+            "description": "Your custom unique identifier/reference for the transaction. This is the value you provide in the `externalId` field when initiating the collection.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Categories",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PaymentCategory"
+              }
+            }
+          },
+          {
+            "name": "Statuses",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/RequestStatus"
+              }
+            }
+          },
+          {
+            "name": "Vendors",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Vendor"
+              }
+            }
+          },
+          {
+            "name": "StatusCodes",
+            "in": "query",
+            "description": "Status codes corresponding to the request status in a machine friendly format.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "PartnerId",
+            "in": "query",
+            "description": "Unique identifier of the partner account.",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "397423fb-7c78-4c4f-a5c3-1d0dae5fd0f1"
+            },
+            "example": "397423fb-7c78-4c4f-a5c3-1d0dae5fd0f1"
+          },
+          {
+            "name": "Query",
+            "in": "query",
+            "description": "Free-text search parameter that searches across multiple fields. \nUse this for general search when you don't need to filter by a specific field.",
+            "schema": {
+              "type": "string",
+              "example": "0111777777"
+            },
+            "example": "0111777777"
+          },
+          {
+            "name": "Skip",
+            "in": "query",
+            "description": "Number of records to skip before starting to return results.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "example": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "Limit",
+            "in": "query",
+            "description": "Maximum number of records to return in a single request.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "example": 5000
+            },
+            "example": 5000
+          },
+          {
+            "name": "Page",
+            "in": "query",
+            "description": "The page number to retrieve when paginating results.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "example": 1
+            },
+            "example": 1
+          },
+          {
+            "name": "PageSize",
+            "in": "query",
+            "description": "Number of records to return per page when using page-based pagination.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "example": 10
+            },
+            "example": 10
+          },
+          {
+            "name": "OrderBy",
+            "in": "query",
+            "description": "Field name to sort results by.",
+            "schema": {
+              "type": "string",
+              "example": "createdAt"
+            },
+            "example": "createdAt"
+          },
+          {
+            "name": "Order",
+            "in": "query",
+            "description": "Sort direction for results.",
+            "schema": {
+              "type": "string",
+              "example": "desc"
+            },
+            "example": "desc"
+          },
+          {
+            "name": "From",
+            "in": "query",
+            "description": "Filter for records created on or after this date and time. Used to specify the start of a date range filter.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "To",
+            "in": "query",
+            "description": "Filter for records created on or before this date and time. Used to specify the end of a date range filter.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelPaginatedListViewModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelPaginatedListViewModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelPaginatedListViewModel"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelPaginatedListViewModel"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisbursementViewModelPaginatedListViewModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/wallet-balance/{walletId}": {
+      "get": {
+        "tags": [
+          "Wallet Balance"
+        ],
+        "summary": "Get wallet balance",
+        "description": "This endpoint retrieves the current balance of a specified wallet.",
+        "parameters": [
+          {
+            "name": "walletId",
+            "in": "path",
+            "description": "The unique identifier of your ioTec Pay wallet.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalance"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalance"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalance"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalance"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/wolverine/stats": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/dead-letters": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "messageType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exceptionType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bodySearch",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/dead-letters/{id}": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "receivedAt",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "receivedAt",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/dead-letters/{id}/replay": {
+      "put": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "receivedAt",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayRequest"
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayRequest"
+              }
+            },
+            "text/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayRequest"
+              }
+            },
+            "application/*+xml": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/dead-letters/replay-multiple": {
+      "put": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReplayRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReplayRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReplayRequest"
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReplayRequest"
+              }
+            },
+            "text/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReplayRequest"
+              }
+            },
+            "application/*+xml": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReplayRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/incoming-envelopes": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "messageType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bodySearch",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/incoming-envelopes/{id}": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "receivedAt",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "receivedAt",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/nodes": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/nodes/{id}": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/node-assignments": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/wolverine/node-assignments/{id}": {
+      "get": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Wolverine"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "OAuth2 bearer token, got from id.iotec.io",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer <jwt-token>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Error message.",
+            "nullable": true,
+            "example": "Invalid wallet"
+          },
+          "code": {
+            "type": "string",
+            "description": "Error code.",
+            "nullable": true,
+            "example": "BadRequest"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BankComboModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique identifier of the bank.",
+            "format": "uuid",
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the bank.",
+            "nullable": true,
+            "example": "Stanbic Bank"
+          },
+          "code": {
+            "type": "string",
+            "description": "The Bank Identification Code, also known as swift code.",
+            "nullable": true,
+            "example": "ABCDUGKAXXX"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BankDisbursementRequest": {
+        "required": [
+          "accountName",
+          "accountNumber",
+          "amount",
+          "walletId"
+        ],
+        "type": "object",
+        "properties": {
+          "bankId": {
+            "type": "string",
+            "description": "The reference BankID from the ioTec platform, set this if you do not have the Bank Identification Code",
+            "format": "uuid",
+            "nullable": true,
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "bankIdentificationCode": {
+            "type": "string",
+            "description": "The Bank Identification Code, also known as swift code",
+            "nullable": true,
+            "example": "ABCDUGKAXXX"
+          },
+          "transferType": {
+            "$ref": "#/components/schemas/BankTransferType"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "walletId": {
+            "type": "string",
+            "description": "The unique identifier of your ioTec Pay wallet from which funds will be withdrawn.",
+            "format": "uuid",
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "A reference to the transaction used by your external system for reconciliation purposes. It is not required to be unique.",
+            "nullable": true,
+            "example": "001"
+          },
+          "accountName": {
+            "minLength": 1,
+            "type": "string",
+            "description": "The full name of the bank account holder as it appears on the recipient's bank account.",
+            "example": "John Doe"
+          },
+          "accountNumber": {
+            "minLength": 1,
+            "type": "string",
+            "description": "The recipient account, this should be a valid account number",
+            "example": "1234567890"
+          },
+          "amount": {
+            "type": "number",
+            "description": "The amount that will be withdrawn from your ioTec Pay wallet. This must be at least 500.",
+            "format": "double",
+            "example": 700
+          },
+          "payeeNote": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A message to be included for payee's reference, in this case, the recipient.",
+            "nullable": true,
+            "example": "Customer ID: 78923, Order #: ABC123"
+          },
+          "channel": {
+            "type": "string",
+            "description": "Specifies the source channel for this transaction. This is optional.",
+            "nullable": true
+          },
+          "sendAt": {
+            "type": "string",
+            "description": "The timestamp when the transaction is to be executed. If not provided, the transaction will be executed immediately.",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-05-29T05:55:36.578Z"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BankTransferType": {
+        "enum": [
+          "InternalTransfer",
+          "Rtgs",
+          "Eft",
+          "Swift"
+        ],
+        "type": "string"
+      },
+      "BankViewModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the bank.",
+            "nullable": true,
+            "example": "Stanbic Bank"
+          },
+          "bankIdentificationCode": {
+            "type": "string",
+            "description": "The Bank Identification Code, also known as swift code.",
+            "nullable": true,
+            "example": "ABCDUGKAXXX"
+          },
+          "stanbicIdentificationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "mainBranchCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "mainBranchName": {
+            "type": "string",
+            "description": "The name of the main branch of the bank.",
+            "nullable": true,
+            "example": "Stanbic Main Branch"
+          },
+          "accountNumberRegex": {
+            "type": "string",
+            "description": "A regular expression that matches valid account numbers for this bank.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BulkReplayRequest": {
+        "type": "object",
+        "properties": {
+          "deadLetters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeadLetterIdentifier"
+            },
+            "nullable": true
+          },
+          "replayable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CardCollectionRequest": {
+        "required": [
+          "amount",
+          "payer"
+        ],
+        "type": "object",
+        "properties": {
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "walletId": {
+            "type": "string",
+            "description": "The unique identifier of your ioTec Pay wallet from which this collection will be credited.",
+            "format": "uuid",
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "externalId": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A reference to the transaction used by your external system for reconciliation purposes. It is not required to be unique.",
+            "nullable": true,
+            "example": "001"
+          },
+          "payerNote": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A message to be included for the payer's reference to this transaction.",
+            "nullable": true,
+            "example": "Payment for Invoice #12345"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount that will be debited from the payer's account. This must be at least 500.",
+            "format": "double",
+            "example": 700
+          },
+          "payeeNote": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A message to be included for payee's reference, in this case, the API user.",
+            "nullable": true,
+            "example": "Customer ID: 78923, Order #: ABC123"
+          },
+          "channel": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "Specifies the source channel for this transaction. This is optional.",
+            "nullable": true
+          },
+          "transactionChargesCategory": {
+            "$ref": "#/components/schemas/TransactionChargesCategory"
+          },
+          "category": {
+            "enum": [
+              "MobileMoney",
+              "WalletToWallet",
+              "BankTransfer",
+              "Card"
+            ],
+            "type": "string",
+            "description": "The category of the transaction. Fixed to Card for this endpoint.",
+            "example": "Card"
+          },
+          "payer": {
+            "minLength": 1,
+            "type": "string",
+            "description": "The customer's email address.",
+            "example": "customer@example.com"
+          },
+          "payerName": {
+            "maxLength": 150,
+            "type": "string",
+            "description": "Customer's name, used to populate the PegPay hosted payment form.",
+            "nullable": true,
+            "example": "John Doe"
+          },
+          "redirectUrl": {
+            "maxLength": 2048,
+            "type": "string",
+            "description": "Optional absolute URL (https) to redirect the customer's browser to once payment completes on PegPay.\nIf omitted, a generic confirmation page is shown.",
+            "format": "uri",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request for a card (Visa/MasterCard) collection, processed via PegPay."
+      },
+      "CollectionRequest": {
+        "required": [
+          "amount",
+          "payer"
+        ],
+        "type": "object",
+        "properties": {
+          "category": {
+            "enum": [
+              "MobileMoney",
+              "WalletToWallet",
+              "BankTransfer",
+              "Card"
+            ],
+            "type": "string",
+            "description": "The category of the transaction"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "walletId": {
+            "type": "string",
+            "description": "The unique identifier of your ioTec Pay wallet from which this collection will be credited.",
+            "format": "uuid",
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "externalId": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A reference to the transaction used by your external system for reconciliation purposes. It is not required to be unique.",
+            "nullable": true,
+            "example": "001"
+          },
+          "payer": {
+            "minLength": 1,
+            "type": "string",
+            "description": "The mobile number of the person making the payment (MSISDN), or for Card payments: the customer's email.",
+            "example": "0111777771"
+          },
+          "payerName": {
+            "maxLength": 150,
+            "type": "string",
+            "description": "Payer's name. For Card payments this is used in the PegPay form; for MoMo it may be set from name verification.",
+            "nullable": true,
+            "example": "John Doe"
+          },
+          "payerNote": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A message to be included for the payer's reference to this transaction.",
+            "nullable": true,
+            "example": "Payment for Invoice #12345"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount that will be debited from the payer's account. This must be at least 500.",
+            "format": "double",
+            "example": 700
+          },
+          "payeeNote": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A message to be included for payee's reference, in this case, the API user.",
+            "nullable": true,
+            "example": "Customer ID: 78923, Order #: ABC123"
+          },
+          "channel": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "Specifies the source channel for this transaction. This is optional.",
+            "nullable": true
+          },
+          "transactionChargesCategory": {
+            "$ref": "#/components/schemas/TransactionChargesCategory"
+          },
+          "redirectUrl": {
+            "maxLength": 2048,
+            "type": "string",
+            "description": "Optional absolute URL (https) to redirect the payer after payment completes.",
+            "format": "uri",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CollectionViewModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "category": {
+            "$ref": "#/components/schemas/PaymentCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "paymentChannel": {
+            "$ref": "#/components/schemas/PaymentChannel"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "Status code corresponding to the request status in a machine friendly format.",
+            "nullable": true,
+            "example": "pending"
+          },
+          "statusMessage": {
+            "type": "string",
+            "description": "Additional details regarding the status received.",
+            "nullable": true,
+            "example": "Request is being processed"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "A reference to the transaction used by your external system for reconciliation purposes. It is not required to be unique.",
+            "nullable": true,
+            "example": "001"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount that will be debited from the payer account.",
+            "format": "double",
+            "example": 700
+          },
+          "payerNote": {
+            "type": "string",
+            "description": "A message to be included for the payer's reference to this transaction.",
+            "nullable": true,
+            "example": "Payment for Invoice #12345"
+          },
+          "payeeNote": {
+            "type": "string",
+            "description": "A message to be included for payee's reference, in this case, the recipient.",
+            "nullable": true,
+            "example": "Customer ID: 78923, Order #: ABC123"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "chargeModel": {
+            "type": "string",
+            "description": "The charging model applied to this transaction",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "The user id that created this transaction",
+            "nullable": true,
+            "example": "2d629907-d515-4943-84b7-da337292bdba"
+          },
+          "createdByData": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "transactionCharge": {
+            "type": "number",
+            "description": "The ioTec transaction charge",
+            "format": "double",
+            "example": 14
+          },
+          "internalRequestId": {
+            "type": "string",
+            "description": "The internal transaction id generated by this system, in case the vendor does not support guid",
+            "nullable": true
+          },
+          "vendorCharge": {
+            "type": "number",
+            "description": "The Vendor transaction charge",
+            "format": "double",
+            "example": 10.5
+          },
+          "totalTransactionCharge": {
+            "type": "number",
+            "description": "The total transaction fee, combining both ioTec transaction charges and vendor transaction charges.",
+            "format": "double",
+            "readOnly": true,
+            "example": 24.5
+          },
+          "vendor": {
+            "$ref": "#/components/schemas/Vendor"
+          },
+          "vendorTransactionId": {
+            "type": "string",
+            "description": "The ID tracked by the vendor",
+            "nullable": true
+          },
+          "lastUpdated": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletTransactionViewModel"
+            },
+            "nullable": true
+          },
+          "payer": {
+            "type": "string",
+            "description": "The mobile number of the person making the payment. This should be an MSISDN (256XXXXXXXXX or 0XXXXXXXXX).",
+            "nullable": true,
+            "example": "0111777771"
+          },
+          "payerName": {
+            "type": "string",
+            "description": "The payer's name",
+            "nullable": true,
+            "example": "John Doe"
+          },
+          "cardRedirectUrl": {
+            "type": "string",
+            "description": "For card/redirect payments: the URL to redirect the customer to complete payment.",
+            "nullable": true
+          },
+          "redirectUrl": {
+            "type": "string",
+            "description": "When set on create, the payer may be redirected here after the payment flow completes.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ComboModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "Currency": {
+        "enum": [
+          "ITX",
+          "UGX",
+          "USD"
+        ],
+        "type": "string"
+      },
+      "DeadLetterIdentifier": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "receivedAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DisbursementDecisionCategory": {
+        "enum": [
+          "Approve",
+          "Reject",
+          "Cancel",
+          "Rollback",
+          "Reschedule"
+        ],
+        "type": "string"
+      },
+      "DisbursementDecisionViewModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "category": {
+            "$ref": "#/components/schemas/DisbursementDecisionCategory"
+          },
+          "disbursementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "nullable": true
+          },
+          "decisionMadeBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "decisionMadeAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "decisionRemarks": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DisbursementRequest": {
+        "required": [
+          "amount",
+          "payee"
+        ],
+        "type": "object",
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/PaymentCategory"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "walletId": {
+            "type": "string",
+            "description": "The unique identifier of your ioTec Pay wallet from which funds will be withdrawn.",
+            "format": "uuid",
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "A reference to the transaction used by your external system for reconciliation purposes. It is not required to be unique.",
+            "nullable": true,
+            "example": "001"
+          },
+          "payeeName": {
+            "type": "string",
+            "description": "The name of the recipient receiving the funds.",
+            "nullable": true,
+            "example": "John Doe"
+          },
+          "payeeEmail": {
+            "type": "string",
+            "description": "Email address of the recipient to be notified on disbursement.",
+            "nullable": true,
+            "example": "johndoe@gmail.com"
+          },
+          "payee": {
+            "minLength": 1,
+            "type": "string",
+            "description": "The recipient's mobile money account, this should be a valid MSISDN",
+            "example": "0111777771"
+          },
+          "amount": {
+            "maximum": 1.7976931348623157e+308,
+            "minimum": 500,
+            "type": "number",
+            "description": "The amount that will be withdrawn from your ioTec Pay wallet. This must be at least 500.",
+            "format": "double",
+            "example": 700
+          },
+          "payerNote": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A message to be included for the payer's reference to this transaction.",
+            "nullable": true,
+            "example": "Payment for Invoice #12345"
+          },
+          "payeeNote": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "A message to be included for payee's reference, in this case, the recipient.",
+            "nullable": true,
+            "example": "Customer ID: 78923, Order #: ABC123"
+          },
+          "channel": {
+            "type": "string",
+            "description": "Specifies the source channel for this transaction. This is optional.",
+            "nullable": true
+          },
+          "bankId": {
+            "type": "string",
+            "description": "The reference BankID from the ioTec platform, set this if you do not have the Bank Identification Code",
+            "format": "uuid",
+            "nullable": true
+          },
+          "bankIdentificationCode": {
+            "type": "string",
+            "description": "The Bank Identification Code, also known as swift code",
+            "nullable": true
+          },
+          "bankTransferType": {
+            "$ref": "#/components/schemas/BankTransferType"
+          },
+          "sendAt": {
+            "type": "string",
+            "description": "The timestamp when the transaction is to be executed. If not provided, the transaction will be executed immediately.",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-05-29T05:55:36.578Z"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DisbursementViewModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "category": {
+            "$ref": "#/components/schemas/PaymentCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "paymentChannel": {
+            "$ref": "#/components/schemas/PaymentChannel"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "Status code corresponding to the request status in a machine friendly format.",
+            "nullable": true,
+            "example": "pending"
+          },
+          "statusMessage": {
+            "type": "string",
+            "description": "Additional details regarding the status received.",
+            "nullable": true,
+            "example": "Request is being processed"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "A reference to the transaction used by your external system for reconciliation purposes. It is not required to be unique.",
+            "nullable": true,
+            "example": "001"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount that will be debited from the payer account.",
+            "format": "double",
+            "example": 700
+          },
+          "payerNote": {
+            "type": "string",
+            "description": "A message to be included for the payer's reference to this transaction.",
+            "nullable": true,
+            "example": "Payment for Invoice #12345"
+          },
+          "payeeNote": {
+            "type": "string",
+            "description": "A message to be included for payee's reference, in this case, the recipient.",
+            "nullable": true,
+            "example": "Customer ID: 78923, Order #: ABC123"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "chargeModel": {
+            "type": "string",
+            "description": "The charging model applied to this transaction",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "The user id that created this transaction",
+            "nullable": true,
+            "example": "2d629907-d515-4943-84b7-da337292bdba"
+          },
+          "createdByData": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "transactionCharge": {
+            "type": "number",
+            "description": "The ioTec transaction charge",
+            "format": "double",
+            "example": 14
+          },
+          "internalRequestId": {
+            "type": "string",
+            "description": "The internal transaction id generated by this system, in case the vendor does not support guid",
+            "nullable": true
+          },
+          "vendorCharge": {
+            "type": "number",
+            "description": "The Vendor transaction charge",
+            "format": "double",
+            "example": 10.5
+          },
+          "totalTransactionCharge": {
+            "type": "number",
+            "description": "The total transaction fee, combining both ioTec transaction charges and vendor transaction charges.",
+            "format": "double",
+            "readOnly": true,
+            "example": 24.5
+          },
+          "vendor": {
+            "$ref": "#/components/schemas/Vendor"
+          },
+          "vendorTransactionId": {
+            "type": "string",
+            "description": "The ID tracked by the vendor",
+            "nullable": true
+          },
+          "lastUpdated": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletTransactionViewModel"
+            },
+            "nullable": true
+          },
+          "payee": {
+            "type": "string",
+            "description": "The recipient's mobile money account, this should be a valid MSISDN.",
+            "nullable": true,
+            "example": "0111777771"
+          },
+          "payeeName": {
+            "type": "string",
+            "description": "The name under which the recipient's mobile money account is registered.",
+            "nullable": true,
+            "example": "JOHN DOE"
+          },
+          "payeeUploadName": {
+            "type": "string",
+            "description": "The name of the recipient receiving the funds. This is the `payeeName` provided when initiating the disbursement.",
+            "nullable": true,
+            "example": "John Doe"
+          },
+          "payeeNameStatus": {
+            "$ref": "#/components/schemas/PayeeNameStatus"
+          },
+          "bulkId": {
+            "type": "string",
+            "description": "The unique identifier of the parent bulk disbursement transaction that this individual disbursement transaction belongs to.\nOnly provided when this transaction was created as part of a bulk disbursement.",
+            "format": "uuid",
+            "nullable": true,
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "bankId": {
+            "type": "string",
+            "description": "The unique identifier of the destination bank for this transfer. This is only for bank transfers",
+            "format": "uuid",
+            "nullable": true,
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "bank": {
+            "$ref": "#/components/schemas/BankViewModel"
+          },
+          "bankTransferType": {
+            "$ref": "#/components/schemas/BankTransferType"
+          },
+          "approvalDecision": {
+            "type": "boolean",
+            "description": "Indicates whether this transaction was approved or rejected.",
+            "nullable": true,
+            "example": true
+          },
+          "decisionMadeBy": {
+            "type": "string",
+            "description": "This identifies the person who approved or rejected the transaction after it was initiated.",
+            "nullable": true,
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "decisionMadeByData": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "decisionMadeAt": {
+            "type": "string",
+            "description": "Timestamp when the transaction was approved or rejected.",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-05-29T05:55:36.578Z"
+          },
+          "decisionRemarks": {
+            "type": "string",
+            "description": "Comments provided by the checker when approving or rejecting the transaction.",
+            "nullable": true,
+            "example": "Approved after verifying recipient details with client."
+          },
+          "sendAt": {
+            "type": "string",
+            "description": "The timestamp when the transaction is to be executed. If not provided, the transaction will be executed immediately.",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-05-29T05:55:36.578Z"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DisbursementDecisionViewModel"
+            },
+            "description": "The decisions made on this disbursement transaction.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DisbursementViewModelDocs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "category": {
+            "$ref": "#/components/schemas/PaymentCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "paymentChannel": {
+            "$ref": "#/components/schemas/PaymentChannel"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "Status code corresponding to the request status in a machine friendly format.",
+            "nullable": true,
+            "example": "pending"
+          },
+          "statusMessage": {
+            "type": "string",
+            "description": "Additional details regarding the status received.",
+            "nullable": true,
+            "example": "Request is being processed"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "A reference to the transaction used by your external system for reconciliation purposes. It is not required to be unique.",
+            "nullable": true,
+            "example": "001"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount that will be debited from the payer account.",
+            "format": "double",
+            "example": 700
+          },
+          "payerNote": {
+            "type": "string",
+            "description": "A message to be included for the payer's reference to this transaction.",
+            "nullable": true,
+            "example": "Payment for Invoice #12345"
+          },
+          "payeeNote": {
+            "type": "string",
+            "description": "A message to be included for payee's reference, in this case, the recipient.",
+            "nullable": true,
+            "example": "Customer ID: 78923, Order #: ABC123"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "chargeModel": {
+            "type": "string",
+            "description": "The charging model applied to this transaction",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "The user id that created this transaction",
+            "nullable": true,
+            "example": "2d629907-d515-4943-84b7-da337292bdba"
+          },
+          "createdByData": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "transactionCharge": {
+            "type": "number",
+            "description": "The ioTec transaction charge",
+            "format": "double",
+            "example": 14
+          },
+          "internalRequestId": {
+            "type": "string",
+            "description": "The internal transaction id generated by this system, in case the vendor does not support guid",
+            "nullable": true
+          },
+          "vendorCharge": {
+            "type": "number",
+            "description": "The Vendor transaction charge",
+            "format": "double",
+            "example": 10.5
+          },
+          "totalTransactionCharge": {
+            "type": "number",
+            "description": "The total transaction fee, combining both ioTec transaction charges and vendor transaction charges.",
+            "format": "double",
+            "readOnly": true,
+            "example": 24.5
+          },
+          "vendor": {
+            "$ref": "#/components/schemas/Vendor"
+          },
+          "vendorTransactionId": {
+            "type": "string",
+            "description": "The ID tracked by the vendor",
+            "nullable": true
+          },
+          "lastUpdated": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "payee": {
+            "type": "string",
+            "description": "The recipient's mobile money account, this should be a valid MSISDN.",
+            "nullable": true,
+            "example": "0111777771"
+          },
+          "payeeName": {
+            "type": "string",
+            "description": "The name under which the recipient's mobile money account is registered.",
+            "nullable": true,
+            "example": "JOHN DOE"
+          },
+          "payeeUploadName": {
+            "type": "string",
+            "description": "The name of the recipient receiving the funds. This is the `payeeName` provided when initiating the disbursement.",
+            "nullable": true,
+            "example": "John Doe"
+          },
+          "payeeNameStatus": {
+            "$ref": "#/components/schemas/PayeeNameStatus"
+          },
+          "bulkId": {
+            "type": "string",
+            "description": "The unique identifier of the parent bulk disbursement transaction that this individual disbursement transaction belongs to.\nOnly provided when this transaction was created as part of a bulk disbursement.",
+            "format": "uuid",
+            "nullable": true,
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "bankId": {
+            "type": "string",
+            "description": "The unique identifier of the destination bank for this transfer. This is only for bank transfers",
+            "format": "uuid",
+            "nullable": true,
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "bank": {
+            "$ref": "#/components/schemas/BankViewModel"
+          },
+          "bankTransferType": {
+            "$ref": "#/components/schemas/BankTransferType"
+          },
+          "approvalDecision": {
+            "type": "boolean",
+            "description": "Indicates whether this transaction was approved or rejected.",
+            "nullable": true,
+            "example": true
+          },
+          "decisionMadeBy": {
+            "type": "string",
+            "description": "This identifies the person who approved or rejected the transaction after it was initiated.",
+            "nullable": true,
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "decisionMadeByData": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "decisionMadeAt": {
+            "type": "string",
+            "description": "Timestamp when the transaction was approved or rejected.",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-05-29T05:55:36.578Z"
+          },
+          "decisionRemarks": {
+            "type": "string",
+            "description": "Comments provided by the checker when approving or rejecting the transaction.",
+            "nullable": true,
+            "example": "Approved after verifying recipient details with client."
+          },
+          "sendAt": {
+            "type": "string",
+            "description": "The timestamp when the transaction is to be executed. If not provided, the transaction will be executed immediately.",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-05-29T05:55:36.578Z"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DisbursementViewModelPaginatedListViewModel": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DisbursementViewModel"
+            },
+            "nullable": true
+          },
+          "hasPreviousPage": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "hasNextPage": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "NotFoundResult": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PayeeNameStatus": {
+        "enum": [
+          "Pending",
+          "Fetched",
+          "Failed",
+          "Matched",
+          "NotMatched",
+          "NotFound",
+          "Barred"
+        ],
+        "type": "string"
+      },
+      "PaymentCategory": {
+        "enum": [
+          "MobileMoney",
+          "WalletToWallet",
+          "BankTransfer"
+        ],
+        "type": "string"
+      },
+      "PaymentChannel": {
+        "enum": [
+          "Api",
+          "Portal",
+          "Link",
+          "Bulk",
+          "Woocommerce"
+        ],
+        "type": "string"
+      },
+      "ReplayRequest": {
+        "type": "object",
+        "properties": {
+          "replayable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RequestStatus": {
+        "enum": [
+          "Pending",
+          "SentToVendor",
+          "Success",
+          "Failed",
+          "AwaitingApproval",
+          "RolledBack",
+          "Scheduled",
+          "Cancelled",
+          "Rejected"
+        ],
+        "type": "string"
+      },
+      "TransactionChargesCategory": {
+        "enum": [
+          "ChargeWallet",
+          "ChargeCustomer"
+        ],
+        "type": "string"
+      },
+      "UnauthorizedResult": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Vendor": {
+        "enum": [
+          "Mock",
+          "Mtn",
+          "Airtel",
+          "Internal",
+          "Stanbic",
+          "MtnMerchant",
+          "AirtelMerchant",
+          "Visa",
+          "MasterCard"
+        ],
+        "type": "string"
+      },
+      "WalletBalance": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "id": {
+            "type": "string",
+            "description": "The unique identifier of the wallet.",
+            "format": "uuid",
+            "example": "5e83b187-801e-410e-b76e-f491928547e0"
+          },
+          "partnerId": {
+            "type": "string",
+            "description": "The partnerID of the wallet",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the wallet.",
+            "nullable": true,
+            "example": "MY WALLET"
+          },
+          "actualBalance": {
+            "type": "number",
+            "description": "The current total balance in the wallet, displayed according to the specified `currency`.",
+            "format": "double"
+          },
+          "availableBalance": {
+            "type": "number",
+            "description": "Balance that can be used for transaction.",
+            "format": "double",
+            "readOnly": true,
+            "deprecated": true
+          },
+          "collectionCallBackUrl": {
+            "type": "string",
+            "description": "Webhook URL where collection transaction status updates will be sent automatically.",
+            "nullable": true,
+            "example": "https://yourapp.com/webhooks/collection-status",
+            "deprecated": true
+          },
+          "disbursementCallBackUrl": {
+            "type": "string",
+            "description": "Webhook URL where disbursement transaction status updates will be sent automatically.",
+            "nullable": true,
+            "example": "https://yourapp.com/webhooks/disbursement-status",
+            "deprecated": true
+          },
+          "callBackSecurityHeaderKey": {
+            "type": "string",
+            "description": "Callback Security Header Key",
+            "nullable": true,
+            "deprecated": true
+          },
+          "callBackSecurityHeaderValue": {
+            "type": "string",
+            "description": "Callback Security Header Value",
+            "nullable": true,
+            "deprecated": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WalletOperation": {
+        "enum": [
+          "TopUp",
+          "Deduct"
+        ],
+        "type": "string"
+      },
+      "WalletTransactionCategory": {
+        "enum": [
+          "Disbursement",
+          "Collection",
+          "Deposit",
+          "Liquidation",
+          "RevenueShare",
+          "Transfer",
+          "TransactionCharge",
+          "Rollback"
+        ],
+        "type": "string"
+      },
+      "WalletTransactionPayment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUpdated": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "isDeleted": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "vendor": {
+            "$ref": "#/components/schemas/Vendor"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "msisdn": {
+            "type": "string",
+            "nullable": true
+          },
+          "vendorTransactionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "transactionCharge": {
+            "type": "number",
+            "format": "double"
+          },
+          "vendorCharge": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WalletTransactionViewModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/WalletOperation"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/ComboModel"
+          },
+          "walletId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestCategory": {
+            "$ref": "#/components/schemas/WalletTransactionCategory"
+          },
+          "transactionNumber": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vendorTransactionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "memo": {
+            "type": "string",
+            "nullable": true
+          },
+          "narration": {
+            "type": "string",
+            "nullable": true
+          },
+          "balance": {
+            "type": "number",
+            "format": "double"
+          },
+          "previousBalance": {
+            "type": "number",
+            "format": "double"
+          },
+          "rollback": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "category": {
+            "$ref": "#/components/schemas/WalletTransactionCategory"
+          },
+          "disbursement": {
+            "$ref": "#/components/schemas/WalletTransactionPayment"
+          },
+          "collection": {
+            "$ref": "#/components/schemas/WalletTransactionPayment"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Collections"
+    },
+    {
+      "name": "Disbursements"
+    },
+    {
+      "name": "Wallet Balance"
+    },
+    {
+      "name": "Wolverine"
+    }
+  ]
+}

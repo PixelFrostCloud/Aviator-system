@@ -3,6 +3,8 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+APP_NAME = os.getenv('APP_NAME', 'Pakabet')
+
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-replace-this-with-a-secure-key')
 
 DEBUG = True
@@ -114,3 +116,15 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels.layers.InMemoryChannelLayer'
     }
 }
+
+IOTEC_PAY_MODE = os.getenv('IOTEC_PAY_MODE', 'sandbox')
+IOTEC_PAY_API_BASE_URL = os.getenv('IOTEC_PAY_API_BASE_URL', 'https://pay.iotec.io')
+IOTEC_PAY_TOKEN_URL = os.getenv('IOTEC_PAY_TOKEN_URL', 'https://id.iotec.io/connect/token')
+IOTEC_PAY_CLIENT_ID = os.getenv('IOTEC_PAY_CLIENT_ID', '')
+IOTEC_PAY_CLIENT_SECRET = os.getenv('IOTEC_PAY_CLIENT_SECRET', '')
+IOTEC_PAY_WALLET_ID = os.getenv('IOTEC_PAY_WALLET_ID', '')
+IOTEC_PAY_CURRENCY = os.getenv('IOTEC_PAY_CURRENCY', 'UGX')
+IOTEC_PAY_CHANNEL = os.getenv('IOTEC_PAY_CHANNEL', 'Api')
+IOTEC_PAY_CHARGE_CATEGORY = os.getenv('IOTEC_PAY_CHARGE_CATEGORY', 'ChargeCustomer')
+IOTEC_PAY_TIMEOUT_SECONDS = int(os.getenv('IOTEC_PAY_TIMEOUT_SECONDS', '20'))
+IOTEC_PAY_CALLBACK_TOKEN = os.getenv('IOTEC_PAY_CALLBACK_TOKEN', '')

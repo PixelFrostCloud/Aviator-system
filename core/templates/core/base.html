@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Aviator System{% endblock %}</title>
+    <title>{% block title %}Pakabet{% endblock %}</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap">
     <link rel="stylesheet" href="{% static 'core/css/styles.css' %}?v=aviator-account-pages-20260607">
     <script src="{% static 'core/js/main.js' %}?v=aviator-account-pages-20260607" defer></script>
@@ -13,7 +13,7 @@
 <body>
     <header class="site-header">
         <div class="container header-grid">
-            <a class="brand" href="{% url 'home' %}">AVIATOR</a>
+            <a class="brand" href="{% url 'home' %}">PAKABET</a>
             <nav class="nav-links">
                 <a href="{% url 'home' %}">Home</a>
                 {% if user.is_authenticated %}
@@ -44,7 +44,7 @@
     </main>
     <footer class="footer">
         <div class="container">
-            <p>© {{ now|date:'Y' }} Aviator System. Built with Django, HTML, CSS, and JavaScript.</p>
+            <p>© {{ now|date:'Y' }} Pakabet. Built with Django, HTML, CSS, and JavaScript.</p>
         </div>
     </footer>
 </body>

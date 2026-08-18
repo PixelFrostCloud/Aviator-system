@@ -35,9 +35,7 @@ class WalletForm(forms.Form):
     PROVIDER_CHOICES = [
         ('mtn_momo', 'MTN Mobile Money'),
         ('airtel_money', 'Airtel Money'),
-        ('card', 'Visa/Mastercard'),
-        ('bank_transfer', 'Bank Transfer'),
-        ('pesapal', 'Pesapal'),
+        ('card', 'Visa/Mastercard via PegPay'),
     ]
 
     amount = forms.DecimalField(
@@ -68,6 +66,8 @@ class WalletForm(forms.Form):
         phone_number = cleaned_data.get('phone_number', '').strip()
         if provider in ['mtn_momo', 'airtel_money'] and not phone_number:
             self.add_error('phone_number', 'Phone number is required for mobile money payments.')
+        if provider == 'card' and self.prefix == 'withdraw':
+            self.add_error('provider', 'Card withdrawals are not supported by this wallet flow.')
         return cleaned_data
 
 

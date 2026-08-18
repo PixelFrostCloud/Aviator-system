@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from .models import ChatMessage, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GameRound, KYCSubmission, PaymentRequest, Profile, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, Transaction
@@ -309,6 +309,49 @@ class WalletComplianceTests(TestCase):
         self.assertEqual(self.profile.balance, Decimal('750.00'))
         self.assertEqual(payment.status, 'pending')
         self.assertEqual(txn.status, 'pending')
+
+    @override_settings(IOTEC_PAY_CALLBACK_TOKEN='test-token')
+    def test_payment_callback_completes_deposit_once(self):
+        payment = PaymentRequest.objects.create(
+            user=self.user,
+            payment_type='deposit',
+            provider='mtn_momo',
+            amount=Decimal('250.00'),
+            phone_number='256700000000',
+            external_reference='DEP-CALLBACK-001',
+            status='pending',
+            metadata={'gateway': 'iotec_pay'},
+        )
+
+        payload = {
+            'id': 'provider-transaction-001',
+            'externalId': payment.external_reference,
+            'status': 'Success',
+            'statusCode': 'success',
+            'statusMessage': 'Completed',
+        }
+
+        first_response = self.client.post(
+            '/api/payments/callback/',
+            data=json.dumps(payload),
+            content_type='application/json',
+            HTTP_X_PAKABET_WEBHOOK_TOKEN='test-token',
+        )
+        second_response = self.client.post(
+            '/api/payments/callback/',
+            data=json.dumps(payload),
+            content_type='application/json',
+            HTTP_X_PAKABET_WEBHOOK_TOKEN='test-token',
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.profile.refresh_from_db()
+        payment.refresh_from_db()
+
+        self.assertEqual(self.profile.balance, Decimal('1250.00'))
+        self.assertEqual(payment.status, 'completed')
+        self.assertEqual(Transaction.objects.filter(reference=payment.external_reference, transaction_type='deposit').count(), 1)
 
 
 class RewardDistributionTests(TestCase):

@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}
-{% block title %}Profile | Aviator{% endblock %}
+{% block title %}Profile | Pakabet{% endblock %}
 {% block content %}
 <section class="account-page account-profile-page">
     <aside class="account-sidebar">
@@ -58,7 +58,7 @@
                     <div class="wallet-identity">
                         <div class="wallet-avatar profile-image">✈</div>
                         <div>
-                            <h2>{{ request.user.username|default:'AviatorMaster' }} <em>VIP 2</em></h2>
+                            <h2>{{ request.user.username|default:'PakabetPlayer' }} <em>VIP 2</em></h2>
                             <p>Player ID: {{ request.user.id|stringformat:"s" }}{{ request.user.username|upper|slice:":9" }}</p>
                             <p>Member since: {{ request.user.date_joined|date:'d M Y' }}</p>
                             <span>✓ Verified</span>

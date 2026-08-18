@@ -83,9 +83,8 @@ class PaymentRequest(models.Model):
     PROVIDERS = [
         ('mtn_momo', 'MTN Mobile Money'),
         ('airtel_money', 'Airtel Money'),
-        ('card', 'Visa/Mastercard'),
+        ('card', 'Visa/Mastercard via PegPay'),
         ('bank_transfer', 'Bank Transfer'),
-        ('pesapal', 'Pesapal'),
     ]
 
     STATUS_CHOICES = [

@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}
-{% block title %}Aviator | Live Crash Betting{% endblock %}
+{% block title %}Pakabet | Live Crash Betting{% endblock %}
 {% block content %}
 <div class="aviator-play-page">
     {% csrf_token %}
@@ -290,7 +290,7 @@
                 <span class="setting-switch" aria-hidden="true"></span>
             </button>
         </div>
-        <nav class="menu-links" aria-label="Aviator menu">
+        <nav class="menu-links" aria-label="Pakabet menu">
             <a href="{% url 'free_bets' %}" data-aviator-modal-open="free-bets"><span class="menu-icon">☆</span>Free Bets</a>
             <a href="{% url 'bet_history' %}" data-aviator-modal-open="bet-history"><span class="menu-icon">↺</span>My Bet History</a>
             <a href="{% url 'game_limits' %}" data-aviator-modal-open="game-limits"><span class="menu-icon">▣</span>Game Limits</a>
@@ -353,7 +353,7 @@
     <section class="aviator-game-modal wide" data-aviator-modal="game-rules" aria-hidden="true">
         <header><h2>GAME RULES</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
         <div class="modal-body rules">
-            <p>Aviator is built on a provably fair system. The multiplier rises from 1x and stops when the plane flies away.</p>
+            <p>Pakabet is built on a provably fair system. The multiplier rises from 1x and stops when the plane flies away.</p>
             <h3>HOW TO PLAY</h3>
             <div class="rules-grid">
                 <div><strong>01</strong><div class="rule-preview bet-preview">Bet<br>1.00 {{ profile.currency }}</div><p><b>BET</b> before take-off.</p></div>

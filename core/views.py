@@ -1,7 +1,9 @@
 import json
 import random
+from hmac import compare_digest
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -10,6 +12,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Count, Sum
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from django.utils import timezone
 from .forms import (
@@ -57,6 +60,8 @@ from .reward_services import (
     stop_event,
     wallet_payload,
 )
+from .payment_gateway import PaymentGatewayResult
+from .payment_services import apply_provider_result, initiate_deposit, initiate_withdrawal, sync_payment
 from .utils import (
     can_deposit,
     can_place_bets,
@@ -345,7 +350,7 @@ def register(request):
             Profile.objects.create(user=user)
             login(request, user)
             log_audit(user, 'user_register', f'User {user.username} registered', request)
-            messages.success(request, 'Welcome to Aviator! Your account is ready.')
+            messages.success(request, 'Welcome to Pakabet! Your account is ready.')
             return redirect('play')
     else:
         form = RegisterForm()
@@ -712,86 +717,56 @@ def wallet(request):
                 if not allowed:
                     deposit_form.add_error('amount', reason)
                 else:
-                    with db_transaction.atomic():
-                        locked_profile = Profile.objects.select_for_update().get(user=request.user)
-                        payment = PaymentRequest.objects.create(
-                            user=request.user,
-                            payment_type='deposit',
-                            provider=provider,
-                            amount=amount,
-                            phone_number=phone_number,
-                            external_reference=generate_payment_reference('DEP'),
-                            provider_reference=generate_payment_reference(provider.upper()[:4]),
-                            status='completed',
-                            completed_at=timezone.now(),
-                            metadata={'sandbox': True, 'message': 'Sandbox provider auto-completed deposit.'},
-                        )
-                        locked_profile.balance += amount
-                        if phone_number and not locked_profile.phone_number:
-                            locked_profile.phone_number = phone_number
-                            locked_profile.kyc_status = 'tier_1'
-                            locked_profile.save(update_fields=['balance', 'phone_number', 'kyc_status'])
-                        else:
-                            locked_profile.save(update_fields=['balance'])
-                        Transaction.objects.create(
-                            user=request.user,
-                            transaction_type='deposit',
-                            amount=amount,
-                            status='completed',
-                            reference=payment.external_reference,
-                            description=f'{payment.get_provider_display()} deposit',
-                        )
-                    log_audit(request.user, 'deposit', f'Deposited {amount:.2f} {profile.currency}', request, {
+                    payment, result, error = initiate_deposit(
+                        user=request.user,
+                        amount=amount,
+                        provider=provider,
+                        phone_number=phone_number,
+                        redirect_url=request.build_absolute_uri('/wallet/'),
+                    )
+                    log_audit(request.user, 'deposit', f'Requested deposit {amount:.2f} {profile.currency}', request, {
                         'provider': provider,
-                        'payment_reference': payment.external_reference,
-                        'sandbox': True,
+                        'payment_reference': payment.external_reference if payment else '',
+                        'provider_status': result.status if result else '',
                     })
                     run_player_risk_checks(request.user)
-                    messages.success(request, f'{amount:.2f} {profile.currency} deposited successfully via {payment.get_provider_display()}.')
-                    return redirect('wallet')
+                    if error:
+                        deposit_form.add_error(None, error)
+                    elif payment.status == 'completed':
+                        messages.success(request, f'{amount:.2f} {profile.currency} deposited successfully via {payment.get_provider_display()}.')
+                        return redirect('wallet')
+                    else:
+                        message = f'{amount:.2f} {profile.currency} deposit sent to {payment.get_provider_display()}. Status: {payment.get_status_display()}.'
+                        redirect_url = (payment.metadata or {}).get('redirect_url')
+                        if redirect_url:
+                            message += ' Complete the card step in the provider page.'
+                        messages.info(request, message)
+                        return redirect(redirect_url or 'wallet')
         elif action == 'withdraw':
             withdraw_form = WalletForm(request.POST, prefix='withdraw')
             if withdraw_form.is_valid():
                 amount = withdraw_form.cleaned_data['amount']
                 provider = withdraw_form.cleaned_data['provider']
                 phone_number = withdraw_form.cleaned_data['phone_number']
-                withdrawal_created = False
-                if amount > profile.balance:
-                    withdraw_form.add_error('amount', 'Insufficient balance for withdrawal.')
+                payment, result, error = initiate_withdrawal(
+                    user=request.user,
+                    amount=amount,
+                    provider=provider,
+                    phone_number=phone_number,
+                )
+                if error:
+                    withdraw_form.add_error(None, error)
                 else:
-                    with db_transaction.atomic():
-                        locked_profile = Profile.objects.select_for_update().get(user=request.user)
-                        if amount > locked_profile.balance:
-                            withdraw_form.add_error('amount', 'Insufficient balance for withdrawal.')
-                        else:
-                            payment = PaymentRequest.objects.create(
-                                user=request.user,
-                                payment_type='withdraw',
-                                provider=provider,
-                                amount=amount,
-                                phone_number=phone_number,
-                                external_reference=generate_payment_reference('WDR'),
-                                status='pending',
-                                metadata={'requires_operator_approval': True},
-                            )
-                            locked_profile.balance -= amount
-                            locked_profile.save(update_fields=['balance'])
-                            Transaction.objects.create(
-                                user=request.user,
-                                transaction_type='withdraw',
-                                amount=amount,
-                                status='pending',
-                                reference=payment.external_reference,
-                                description=f'{payment.get_provider_display()} withdrawal request',
-                            )
-                            log_audit(request.user, 'withdraw', f'Requested withdrawal {amount:.2f} {profile.currency}', request, {
-                                'provider': provider,
-                                'payment_reference': payment.external_reference,
-                            })
-                            messages.success(request, f'{amount:.2f} {profile.currency} withdrawal requested. Operator approval is pending.')
-                            withdrawal_created = True
-                    if withdrawal_created:
-                        return redirect('wallet')
+                    log_audit(request.user, 'withdraw', f'Requested withdrawal {amount:.2f} {profile.currency}', request, {
+                        'provider': provider,
+                        'payment_reference': payment.external_reference,
+                        'provider_status': result.status if result else '',
+                    })
+                    if payment.status == 'completed':
+                        messages.success(request, f'{amount:.2f} {profile.currency} withdrawal completed via {payment.get_provider_display()}.')
+                    else:
+                        messages.success(request, f'{amount:.2f} {profile.currency} withdrawal requested via {payment.get_provider_display()}. Status: {payment.get_status_display()}.')
+                    return redirect('wallet')
 
     transactions = Transaction.objects.filter(user=request.user)
     payment_requests = PaymentRequest.objects.filter(user=request.user)[:10]
@@ -806,6 +781,43 @@ def wallet(request):
         'monthly_deposit_total': monthly_deposit_total,
         'monthly_deposit_limit': monthly_deposit_limit,
     })
+
+
+@csrf_exempt
+@require_POST
+def payment_callback(request):
+    expected_token = getattr(settings, 'IOTEC_PAY_CALLBACK_TOKEN', '')
+    provided_token = request.headers.get('X-Pakabet-Webhook-Token', '') or request.headers.get('X-IOTEC-Webhook-Token', '')
+    if expected_token and not compare_digest(expected_token, provided_token):
+        return JsonResponse({'success': False, 'message': 'Invalid callback token.'}, status=403)
+    if not expected_token and not settings.DEBUG:
+        return JsonResponse({'success': False, 'message': 'Callback token is required in production.'}, status=403)
+
+    payload = request_payload(request)
+    external_reference = payload.get('externalId') or payload.get('external_id') or payload.get('reference')
+    if not external_reference:
+        return JsonResponse({'success': False, 'message': 'Missing externalId.'}, status=400)
+
+    payment = get_object_or_404(PaymentRequest, external_reference=external_reference)
+    result = PaymentGatewayResult(
+        provider_reference=str(payload.get('id') or payload.get('transactionId') or payment.provider_reference or external_reference),
+        status=payload.get('status') or 'Pending',
+        status_code=payload.get('statusCode') or '',
+        status_message=payload.get('statusMessage') or '',
+        redirect_url=payload.get('cardRedirectUrl') or payload.get('redirectUrl') or '',
+        raw=payload,
+    )
+    apply_provider_result(payment, result)
+    return JsonResponse({'success': True, 'reference': external_reference, 'status': result.local_status})
+
+
+@login_required
+@require_POST
+def payment_sync(request, reference):
+    payment = get_object_or_404(PaymentRequest, external_reference=reference, user=request.user)
+    payment = sync_payment(payment)
+    messages.info(request, f'Payment {payment.external_reference} is now {payment.get_status_display()}.')
+    return redirect('wallet')
 
 
 @login_required

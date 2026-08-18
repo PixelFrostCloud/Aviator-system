@@ -22,6 +22,8 @@ from .models import (
     RewardTransaction,
     RewardWallet,
 )
+from .payment_gateway import PaymentGatewayResult
+from .payment_services import apply_provider_result
 from .reward_services import activate_event, stop_event
 
 
@@ -49,30 +51,24 @@ class PaymentRequestAdmin(admin.ModelAdmin):
     @admin.action(description='Mark selected payment requests completed')
     def mark_completed(self, request, queryset):
         for payment in queryset.filter(status__in=['pending', 'processing']):
-            payment.status = 'completed'
-            payment.completed_at = timezone.now()
-            payment.save(update_fields=['status', 'completed_at', 'updated_at'])
-            Transaction.objects.filter(reference=payment.external_reference, status='pending').update(status='completed')
+            apply_provider_result(payment, PaymentGatewayResult(
+                provider_reference=payment.provider_reference or payment.external_reference,
+                status='Success',
+                status_code='manual_success',
+                status_message='Marked completed by operator.',
+                raw={'operator': request.user.username, 'source': 'admin_action'},
+            ))
 
     @admin.action(description='Mark selected payment requests failed and refund withdrawal holds')
     def mark_failed(self, request, queryset):
         for payment in queryset.filter(status__in=['pending', 'processing']):
-            payment.status = 'failed'
-            payment.failure_reason = payment.failure_reason or 'Marked failed by operator.'
-            payment.save(update_fields=['status', 'failure_reason', 'updated_at'])
-            Transaction.objects.filter(reference=payment.external_reference, status='pending').update(status='failed')
-            if payment.payment_type == 'withdraw':
-                profile = Profile.objects.get(user=payment.user)
-                profile.balance += payment.amount
-                profile.save(update_fields=['balance'])
-                Transaction.objects.create(
-                    user=payment.user,
-                    transaction_type='refund',
-                    amount=payment.amount,
-                    status='completed',
-                    reference=payment.external_reference,
-                    description='Withdrawal hold refunded after failed payment request',
-                )
+            apply_provider_result(payment, PaymentGatewayResult(
+                provider_reference=payment.provider_reference or payment.external_reference,
+                status='Failed',
+                status_code='manual_failed',
+                status_message=payment.failure_reason or 'Marked failed by operator.',
+                raw={'operator': request.user.username, 'source': 'admin_action'},
+            ))
 
 
 @admin.register(KYCSubmission)
