@@ -83,8 +83,6 @@ class PaymentRequest(models.Model):
     PROVIDERS = [
         ('mtn_momo', 'MTN Mobile Money'),
         ('airtel_money', 'Airtel Money'),
-        ('card', 'Visa/Mastercard via PegPay'),
-        ('bank_transfer', 'Bank Transfer'),
     ]
 
     STATUS_CHOICES = [
@@ -115,6 +113,12 @@ class PaymentRequest(models.Model):
             models.Index(fields=['user', '-created_at']),
             models.Index(fields=['provider', 'status']),
             models.Index(fields=['payment_type', 'status', '-created_at']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(provider__in=['mtn_momo', 'airtel_money']),
+                name='paymentrequest_mobile_money_only',
+            ),
         ]
 
     @property

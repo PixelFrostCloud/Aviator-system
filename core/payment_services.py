@@ -1,4 +1,5 @@
 from decimal import Decimal
+import re
 
 from django.conf import settings
 from django.db import transaction as db_transaction
@@ -10,9 +11,30 @@ from .utils import generate_payment_reference
 
 
 MOBILE_MONEY_PROVIDERS = {'mtn_momo', 'airtel_money'}
+IOTEC_MINIMUM_AMOUNT = Decimal('500')
+
+
+def normalize_mobile_money_phone(phone_number):
+    value = re.sub(r'[\s()-]', '', str(phone_number or ''))
+    if value.startswith('+'):
+        value = value[1:]
+    if value.startswith('0'):
+        value = f'256{value[1:]}'
+    if not re.fullmatch(r'256\d{9}', value):
+        raise ValueError('Enter a valid Uganda mobile number, for example 0700000000 or 256700000000.')
+    return value
 
 
 def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''):
+    if amount < IOTEC_MINIMUM_AMOUNT:
+        return None, None, 'ioTec Pay mobile-money transactions must be at least 500 UGX.'
+    if provider not in MOBILE_MONEY_PROVIDERS:
+        return None, None, 'Only MTN Mobile Money and Airtel Money are supported.'
+    try:
+        phone_number = normalize_mobile_money_phone(phone_number)
+    except ValueError as exc:
+        return None, None, str(exc)
+
     gateway = IotecPayGateway()
     external_reference = generate_payment_reference('DEP')
 
@@ -28,26 +50,14 @@ def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''
     )
 
     try:
-        if provider == 'card':
-            result = gateway.collect_card(
-                external_id=external_reference,
-                amount=amount,
-                currency=_currency(user),
-                payer_email=user.email,
-                payer_name=user.get_full_name() or user.username,
-                redirect_url=redirect_url,
-            )
-        elif provider in MOBILE_MONEY_PROVIDERS:
-            result = gateway.collect_mobile_money(
-                external_id=external_reference,
-                amount=amount,
-                currency=_currency(user),
-                payer=phone_number,
-                payer_name=user.get_full_name() or user.username,
-                redirect_url=redirect_url,
-            )
-        else:
-            raise PaymentGatewayError('This provider is not configured for ioTec Pay collections.')
+        result = gateway.collect_mobile_money(
+            external_id=external_reference,
+            amount=amount,
+            currency=_currency(user),
+            payer=phone_number,
+            payer_name=user.get_full_name() or user.username,
+            redirect_url=redirect_url,
+        )
     except PaymentGatewayError as exc:
         payment.status = 'failed'
         payment.failure_reason = str(exc)[:255]
@@ -69,8 +79,14 @@ def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''
 
 
 def initiate_withdrawal(*, user, amount, provider, phone_number=''):
+    if amount < IOTEC_MINIMUM_AMOUNT:
+        return None, None, 'ioTec Pay mobile-money transactions must be at least 500 UGX.'
     if provider not in MOBILE_MONEY_PROVIDERS:
         return None, None, 'Withdrawals are currently available for MTN Mobile Money and Airtel Money.'
+    try:
+        phone_number = normalize_mobile_money_phone(phone_number)
+    except ValueError as exc:
+        return None, None, str(exc)
 
     gateway = IotecPayGateway()
     external_reference = generate_payment_reference('WDR')

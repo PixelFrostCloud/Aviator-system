@@ -1,11 +1,23 @@
 from django import forms
+from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
-from .models import ChatMessage, KYCSubmission, PaymentRequest, Room
+from .models import ChatMessage, KYCSubmission, PaymentRequest, Profile, Room
+from .payment_services import IOTEC_MINIMUM_AMOUNT, MOBILE_MONEY_PROVIDERS, normalize_mobile_money_phone
 
 
 class RegisterForm(UserCreationForm):
     email = forms.EmailField(required=True, widget=forms.EmailInput(attrs={'placeholder': 'Email'}))
+    phone_number = forms.CharField(
+        label='Phone number',
+        required=True,
+        max_length=20,
+        widget=forms.TextInput(attrs={
+            'placeholder': '07XXXXXXXX or 2567XXXXXXXX',
+            'autocomplete': 'tel',
+            'inputmode': 'tel',
+        }),
+    )
 
     class Meta:
         model = User
@@ -17,6 +29,42 @@ class RegisterForm(UserCreationForm):
         if commit:
             user.save()
         return user
+
+    def clean_phone_number(self):
+        phone_number = self.cleaned_data['phone_number']
+        try:
+            phone_number = normalize_mobile_money_phone(phone_number)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        if Profile.objects.filter(phone_number=phone_number).exists():
+            raise forms.ValidationError('An account with this phone number already exists.')
+        return phone_number
+
+
+class PhoneOrUsernameAuthenticationForm(AuthenticationForm):
+    username = forms.CharField(
+        label='Username or phone number',
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Username or 07XXXXXXXX',
+            'autocomplete': 'username',
+            'autofocus': True,
+        }),
+    )
+
+    def clean(self):
+        identifier = self.cleaned_data.get('username', '').strip()
+        if identifier:
+            try:
+                phone_number = normalize_mobile_money_phone(identifier)
+            except ValueError:
+                phone_number = ''
+            if phone_number:
+                profile = Profile.objects.select_related('user').filter(phone_number=phone_number).first()
+                if profile:
+                    self.cleaned_data['username'] = profile.user.get_username()
+            else:
+                self.cleaned_data['username'] = identifier
+        return super().clean()
 
 
 class PlayForm(forms.Form):
@@ -35,13 +83,12 @@ class WalletForm(forms.Form):
     PROVIDER_CHOICES = [
         ('mtn_momo', 'MTN Mobile Money'),
         ('airtel_money', 'Airtel Money'),
-        ('card', 'Visa/Mastercard via PegPay'),
     ]
 
     amount = forms.DecimalField(
         max_digits=12,
         decimal_places=2,
-        min_value=1,
+        min_value=IOTEC_MINIMUM_AMOUNT,
         widget=forms.NumberInput(attrs={
             'placeholder': 'Amount in UGX',
             'class': 'form-control',
@@ -64,10 +111,15 @@ class WalletForm(forms.Form):
         cleaned_data = super().clean()
         provider = cleaned_data.get('provider')
         phone_number = cleaned_data.get('phone_number', '').strip()
-        if provider in ['mtn_momo', 'airtel_money'] and not phone_number:
+        if provider not in MOBILE_MONEY_PROVIDERS:
+            self.add_error('provider', 'Only MTN Mobile Money and Airtel Money are supported.')
+        elif not phone_number:
             self.add_error('phone_number', 'Phone number is required for mobile money payments.')
-        if provider == 'card' and self.prefix == 'withdraw':
-            self.add_error('provider', 'Card withdrawals are not supported by this wallet flow.')
+        else:
+            try:
+                cleaned_data['phone_number'] = normalize_mobile_money_phone(phone_number)
+            except ValueError as exc:
+                self.add_error('phone_number', str(exc))
         return cleaned_data
 
 
@@ -89,6 +141,15 @@ class ProfileComplianceForm(forms.Form):
         min_value=1,
         widget=forms.NumberInput(attrs={'placeholder': 'Daily loss limit', 'class': 'form-control'})
     )
+
+    def clean_phone_number(self):
+        phone_number = self.cleaned_data.get('phone_number', '').strip()
+        if not phone_number:
+            return ''
+        try:
+            return normalize_mobile_money_phone(phone_number)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
 
 
 class KYCSubmissionForm(forms.ModelForm):

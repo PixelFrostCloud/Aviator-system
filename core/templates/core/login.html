@@ -1,29 +1,46 @@
 {% extends 'core/base.html' %}
 {% block title %}Login | Pakabet{% endblock %}
 {% block content %}
-<section class="panel-panel">
-    <div class="auth-panel">
-        <h1>Login</h1>
-        <form method="post" class="form-card">
+<section class="auth-screen">
+    <div class="auth-showcase">
+        <a class="auth-brand" href="{% url 'home' %}">PAKABET</a>
+        <div class="auth-showcase-copy">
+            <span class="auth-kicker">Aviator gaming</span>
+            <h1>Play with confidence.</h1>
+            <p>Fast mobile-money funding, clear wallet tracking, and a fair game experience in one place.</p>
+        </div>
+        <div class="auth-showcase-stats">
+            <span><strong>MTN</strong><small>Mobile Money</small></span>
+            <span><strong>Airtel</strong><small>Mobile Money</small></span>
+            <span><strong>24/7</strong><small>Wallet access</small></span>
+        </div>
+    </div>
+
+    <div class="auth-card">
+        <span class="auth-kicker">Secure access</span>
+        <h2>Welcome back</h2>
+        <p class="auth-intro">Log in to continue to your Pakabet account.</p>
+        <form method="post" class="auth-form">
             {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
             {% if form.non_field_errors %}
-                <div class="alert alert-error">
-                    {% for error in form.non_field_errors %}
-                        <p>{{ error }}</p>
-                    {% endfor %}
+                <div class="auth-error">
+                    {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
                 </div>
             {% endif %}
             <label>
-                Username
-                <input type="text" name="username" required autofocus>
+                Username or phone number
+                {{ form.username }}
+                {% for error in form.username.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
             </label>
             <label>
                 Password
-                <input type="password" name="password" required>
+                {{ form.password }}
+                {% for error in form.password.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
             </label>
-            <button class="button button-primary">Login</button>
+            <button class="auth-submit" type="submit">Log in</button>
         </form>
-        <p class="form-foot">New here? <a href="{% url 'register' %}">Create an account</a></p>
+        <p class="auth-foot">New to Pakabet? <a href="{% url 'register' %}">Create an account</a></p>
     </div>
 </section>
 {% endblock %}

@@ -1,14 +1,125 @@
 import json
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from .models import ChatMessage, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GameRound, KYCSubmission, PaymentRequest, Profile, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, Transaction
+from .payment_gateway import IotecPayGateway
 from .reward_services import claim_reward
 from .utils import calculate_crash_point, can_deposit, generate_financial_report, hash_server_seed, verify_game_round
+
+
+class AuthenticationTests(TestCase):
+    def test_registration_requires_phone_number(self):
+        response = self.client.post('/register/', {
+            'username': 'new-player',
+            'email': 'new-player@example.com',
+            'password1': 'strong-test-pass',
+            'password2': 'strong-test-pass',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'This field is required.')
+        self.assertFalse(User.objects.filter(username='new-player').exists())
+
+    def test_user_can_register_and_login_with_phone_number(self):
+        registration = self.client.post('/register/', {
+            'username': 'phone-player',
+            'phone_number': '0700 000 001',
+            'email': 'phone-player@example.com',
+            'password1': 'strong-test-pass',
+            'password2': 'strong-test-pass',
+        })
+
+        self.assertRedirects(registration, '/play/')
+        user = User.objects.get(username='phone-player')
+        self.assertEqual(user.profile.phone_number, '256700000001')
+
+        self.client.logout()
+        login_response = self.client.post('/login/', {
+            'username': '0700000001',
+            'password': 'strong-test-pass',
+        })
+
+        self.assertRedirects(login_response, '/play/')
+        self.assertEqual(int(self.client.session['_auth_user_id']), user.id)
+
+
+class IotecGatewayRequestTests(TestCase):
+    @override_settings(
+        IOTEC_PAY_MODE='live',
+        IOTEC_PAY_WALLET_ID='wallet-001',
+    )
+    @patch.object(IotecPayGateway, '_post')
+    def test_collection_uses_iotec_mobile_money_endpoint(self, post):
+        post.return_value = {
+            'id': 'provider-collection-001',
+            'status': 'Pending',
+            'statusCode': 'pending',
+        }
+
+        result = IotecPayGateway().collect_mobile_money(
+            external_id='DEP-001',
+            amount=Decimal('500.00'),
+            currency='UGX',
+            payer='256700000001',
+            payer_name='Phone Player',
+        )
+
+        self.assertEqual(result.status, 'Pending')
+        post.assert_called_once_with('/api/collections/collect', {
+            'category': 'MobileMoney',
+            'currency': 'UGX',
+            'walletId': 'wallet-001',
+            'externalId': 'DEP-001',
+            'payer': '256700000001',
+            'payerName': 'Phone Player',
+            'payerNote': 'Pakabet wallet deposit',
+            'amount': 500.0,
+            'payeeNote': 'Pakabet deposit DEP-001',
+            'channel': 'Api',
+            'transactionChargesCategory': 'ChargeCustomer',
+        })
+
+    @override_settings(
+        IOTEC_PAY_MODE='live',
+        IOTEC_PAY_WALLET_ID='wallet-001',
+    )
+    @patch.object(IotecPayGateway, '_post')
+    def test_disbursement_uses_iotec_mobile_money_endpoint(self, post):
+        post.return_value = {
+            'id': 'provider-disbursement-001',
+            'status': 'Pending',
+            'statusCode': 'pending',
+        }
+
+        result = IotecPayGateway().disburse_mobile_money(
+            external_id='WDR-001',
+            amount=Decimal('500.00'),
+            currency='UGX',
+            payee='256750000001',
+            payee_name='Phone Player',
+            payee_email='phone-player@example.com',
+        )
+
+        self.assertEqual(result.status, 'Pending')
+        post.assert_called_once_with('/api/disbursements/disburse', {
+            'category': 'MobileMoney',
+            'currency': 'UGX',
+            'walletId': 'wallet-001',
+            'externalId': 'WDR-001',
+            'payee': '256750000001',
+            'payeeName': 'Phone Player',
+            'payeeEmail': 'phone-player@example.com',
+            'amount': 500.0,
+            'payerNote': 'Pakabet withdrawal WDR-001',
+            'payeeNote': 'Pakabet withdrawal',
+            'channel': 'Api',
+        })
 
 
 class ProvablyFairTests(TestCase):
@@ -196,7 +307,7 @@ class PlayEndpointTests(TestCase):
             'bet_data': json.dumps([10]),
         }).json()
         game_round = GameRound.objects.get(public_id=start['round_id'])
-        game_round.started_at = timezone.now() - timedelta(seconds=float(game_round.crash_point) + 1)
+        game_round.started_at = timezone.now() - timedelta(seconds=(float(game_round.crash_point) - 1) / 0.10 + 1)
         game_round.save(update_fields=['started_at'])
 
         response = self.client.post('/play/', {
@@ -296,7 +407,7 @@ class WalletComplianceTests(TestCase):
     def test_withdrawal_creates_pending_payment_and_holds_balance(self):
         response = self.client.post('/wallet/', {
             'action': 'withdraw',
-            'withdraw-amount': '250',
+            'withdraw-amount': '500',
             'withdraw-provider': 'airtel_money',
             'withdraw-phone_number': '256750000000',
         })
@@ -306,9 +417,33 @@ class WalletComplianceTests(TestCase):
         payment = PaymentRequest.objects.get(user=self.user, payment_type='withdraw')
         txn = Transaction.objects.get(reference=payment.external_reference)
 
-        self.assertEqual(self.profile.balance, Decimal('750.00'))
+        self.assertEqual(self.profile.balance, Decimal('500.00'))
         self.assertEqual(payment.status, 'pending')
         self.assertEqual(txn.status, 'pending')
+
+    def test_card_deposit_is_rejected(self):
+        response = self.client.post('/wallet/', {
+            'action': 'deposit',
+            'deposit-amount': '500',
+            'deposit-provider': 'card',
+            'deposit-phone_number': '256700000000',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Select a valid choice')
+        self.assertFalse(PaymentRequest.objects.filter(user=self.user).exists())
+
+    def test_amount_below_iotec_minimum_is_rejected(self):
+        response = self.client.post('/wallet/', {
+            'action': 'deposit',
+            'deposit-amount': '499',
+            'deposit-provider': 'mtn_momo',
+            'deposit-phone_number': '256700000000',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Ensure this value is greater than or equal to 500')
+        self.assertFalse(PaymentRequest.objects.filter(user=self.user).exists())
 
     @override_settings(IOTEC_PAY_CALLBACK_TOKEN='test-token')
     def test_payment_callback_completes_deposit_once(self):

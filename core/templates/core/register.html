@@ -1,65 +1,61 @@
 {% extends 'core/base.html' %}
 {% block title %}Register | Pakabet{% endblock %}
 {% block content %}
-<section class="panel-panel">
-    <div class="auth-panel">
-        <h1>Create your account</h1>
-        <form method="post" class="form-card">
+<section class="auth-screen">
+    <div class="auth-showcase">
+        <a class="auth-brand" href="{% url 'home' %}">PAKABET</a>
+        <div class="auth-showcase-copy">
+            <span class="auth-kicker">Start playing</span>
+            <h1>Your next round starts here.</h1>
+            <p>Create your account with a verified mobile number for secure wallet deposits and withdrawals.</p>
+        </div>
+        <div class="auth-showcase-stats">
+            <span><strong>UGX</strong><small>Local currency</small></span>
+            <span><strong>PIN</strong><small>Mobile confirmation</small></span>
+            <span><strong>Fair</strong><small>Provably fair play</small></span>
+        </div>
+    </div>
+
+    <div class="auth-card auth-card-register">
+        <span class="auth-kicker">Create account</span>
+        <h2>Join Pakabet</h2>
+        <p class="auth-intro">Your phone number is required for mobile-money wallet payments.</p>
+        <form method="post" class="auth-form">
             {% csrf_token %}
             {% if form.non_field_errors %}
-                <div class="alert alert-error">
-                    {% for error in form.non_field_errors %}
-                        <p>{{ error }}</p>
-                    {% endfor %}
+                <div class="auth-error">
+                    {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
                 </div>
             {% endif %}
             <label>
                 Username
                 {{ form.username }}
-                {% if form.username.errors %}
-                    <div class="field-errors">
-                        {% for error in form.username.errors %}
-                            <small class="error">{{ error }}</small>
-                        {% endfor %}
-                    </div>
-                {% endif %}
+                {% for error in form.username.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
+            </label>
+            <label>
+                Phone number
+                {{ form.phone_number }}
+                <small class="auth-hint">Use 07XXXXXXXX or 2567XXXXXXXX.</small>
+                {% for error in form.phone_number.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
             </label>
             <label>
                 Email
                 {{ form.email }}
-                {% if form.email.errors %}
-                    <div class="field-errors">
-                        {% for error in form.email.errors %}
-                            <small class="error">{{ error }}</small>
-                        {% endfor %}
-                    </div>
-                {% endif %}
+                {% for error in form.email.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
             </label>
             <label>
                 Password
                 {{ form.password1 }}
-                {% if form.password1.errors %}
-                    <div class="field-errors">
-                        {% for error in form.password1.errors %}
-                            <small class="error">{{ error }}</small>
-                        {% endfor %}
-                    </div>
-                {% endif %}
+                {% for error in form.password1.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
             </label>
             <label>
-                Confirm Password
+                Confirm password
                 {{ form.password2 }}
-                {% if form.password2.errors %}
-                    <div class="field-errors">
-                        {% for error in form.password2.errors %}
-                            <small class="error">{{ error }}</small>
-                        {% endfor %}
-                    </div>
-                {% endif %}
+                {% for error in form.password2.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
             </label>
-            <button class="button button-primary">Register</button>
+            <button class="auth-submit" type="submit">Create account</button>
         </form>
-        <p class="form-foot">Already have an account? <a href="{% url 'login' %}">Login</a></p>
+        <p class="auth-foot">Already have an account? <a href="{% url 'login' %}">Log in</a></p>
     </div>
 </section>
 {% endblock %}

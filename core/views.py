@@ -76,6 +76,15 @@ from .utils import (
 )
 
 
+ROUND_MULTIPLIER_RATE = Decimal('0.10')
+
+
+def multiplier_at_elapsed_time(started_at):
+    """Return the authoritative multiplier from elapsed wall-clock time."""
+    elapsed = max((timezone.now() - started_at).total_seconds(), 0)
+    return (Decimal('1.00') + (Decimal(str(elapsed)) * ROUND_MULTIPLIER_RATE)).quantize(Decimal('0.01'))
+
+
 def home(request):
     return render(request, 'core/home.html')
 
@@ -347,7 +356,7 @@ def register(request):
         form = RegisterForm(request.POST)
         if form.is_valid():
             user = form.save()
-            Profile.objects.create(user=user)
+            Profile.objects.create(user=user, phone_number=form.cleaned_data['phone_number'])
             login(request, user)
             log_audit(user, 'user_register', f'User {user.username} registered', request)
             messages.success(request, 'Welcome to Pakabet! Your account is ready.')
@@ -586,8 +595,7 @@ def play(request):
             if not game_round:
                 return JsonResponse({'success': False, 'message': 'This round cannot be verified.'}, status=400)
 
-            elapsed = max((timezone.now() - game_round.started_at).total_seconds(), 0)
-            server_multiplier = Decimal('1.00') + Decimal(str(elapsed)).quantize(Decimal('0.01'))
+            server_multiplier = multiplier_at_elapsed_time(game_round.started_at)
             effective_multiplier = min(requested_cashout_multiplier, server_multiplier).quantize(Decimal('0.01'))
             round_has_crashed = server_multiplier >= game_round.crash_point
 
@@ -664,8 +672,7 @@ def play(request):
     if action == 'settle_crash':
         round_id = request.POST.get('round_id', '')
         game_round = get_object_or_404(GameRound.objects.filter(bets__user=request.user).distinct(), public_id=round_id)
-        elapsed = max((timezone.now() - game_round.started_at).total_seconds(), 0)
-        server_multiplier = Decimal('1.00') + Decimal(str(elapsed)).quantize(Decimal('0.01'))
+        server_multiplier = multiplier_at_elapsed_time(game_round.started_at)
         if server_multiplier < game_round.crash_point:
             return JsonResponse({
                 'success': False,
@@ -737,11 +744,10 @@ def wallet(request):
                         return redirect('wallet')
                     else:
                         message = f'{amount:.2f} {profile.currency} deposit sent to {payment.get_provider_display()}. Status: {payment.get_status_display()}.'
-                        redirect_url = (payment.metadata or {}).get('redirect_url')
-                        if redirect_url:
-                            message += ' Complete the card step in the provider page.'
+                        if payment.status in ['pending', 'processing']:
+                            message += ' Check your phone and approve the ioTec Pay prompt with your PIN.'
                         messages.info(request, message)
-                        return redirect(redirect_url or 'wallet')
+                        return redirect('wallet')
         elif action == 'withdraw':
             withdraw_form = WalletForm(request.POST, prefix='withdraw')
             if withdraw_form.is_valid():
@@ -804,7 +810,7 @@ def payment_callback(request):
         status=payload.get('status') or 'Pending',
         status_code=payload.get('statusCode') or '',
         status_message=payload.get('statusMessage') or '',
-        redirect_url=payload.get('cardRedirectUrl') or payload.get('redirectUrl') or '',
+        redirect_url=payload.get('redirectUrl') or '',
         raw=payload,
     )
     apply_provider_result(payment, result)
@@ -987,8 +993,7 @@ def room_action(request, room_id):
             return JsonResponse({'success': False, 'message': 'You already cashed out.'}, status=400)
 
         requested_cashout_multiplier = Decimal(request.POST.get('cashout_multiplier') or '0')
-        elapsed = max((timezone.now() - room.started_at).total_seconds(), 0)
-        server_multiplier = Decimal('1.00') + Decimal(str(elapsed)).quantize(Decimal('0.01'))
+        server_multiplier = multiplier_at_elapsed_time(room.started_at)
         effective_multiplier = min(requested_cashout_multiplier, server_multiplier).quantize(Decimal('0.01'))
         round_has_crashed = server_multiplier >= room.crash_point
 
@@ -1025,8 +1030,7 @@ def room_action(request, room_id):
 def room_status(request, room_id):
     room = get_object_or_404(Room, id=room_id)
     if room.status == 'running' and room.started_at and room.crash_point is not None:
-        elapsed = max((timezone.now() - room.started_at).total_seconds(), 0)
-        server_multiplier = Decimal('1.00') + Decimal(str(elapsed)).quantize(Decimal('0.01'))
+        server_multiplier = multiplier_at_elapsed_time(room.started_at)
         if server_multiplier >= room.crash_point:
             room.status = 'ended'
             room.ended_at = room.ended_at or timezone.now()

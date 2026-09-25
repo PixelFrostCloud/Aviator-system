@@ -90,12 +90,18 @@
                 <div class="ground-markers">
                     <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
                 </div>
-                <div class="flight-fill" id="flight-fill"></div>
-                <div class="flight-curve" id="flight-curve"></div>
+                <svg class="flight-trail" id="flight-curve" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <path class="flight-trail__fill" id="flight-fill"></path>
+                    <path class="flight-trail__line" id="flight-line"></path>
+                </svg>
                 <div class="plane-silhouette" id="plane-silhouette">
-                    <span class="plane-wing"></span>
-                    <span class="plane-body"></span>
-                    <span class="plane-tail"></span>
+                    <svg class="plane-art" viewBox="0 0 180 80" aria-hidden="true">
+                        <path class="plane-art__body" d="M18 47c21-5 51-10 84-10l28-19 18 2-12 20 27 4 10 5-10 5-28-1 10 16-17-3-26-13c-33 1-63-1-84-5Z"/>
+                        <path class="plane-art__wing" d="m75 42 31-30 17 2-15 30Z"/>
+                        <path class="plane-art__tail" d="m39 43-12-15-10 2 8 17Z"/>
+                        <path class="plane-art__mark" d="m112 33 13 4-10 6M115 53l12-5-8 10"/>
+                        <path class="plane-art__prop" d="M165 34c8 2 10 7 5 11m-5 1c8 2 10 8 4 13M165 46l-3 2"/>
+                    </svg>
                 </div>
                 <strong class="stage-multiplier" id="multiplier">1.00x</strong>
                 <div class="round-countdown" id="round-countdown">
@@ -302,14 +308,35 @@
 
     <div class="aviator-modal-backdrop" id="aviator-modal-backdrop" hidden></div>
 
-    <section class="aviator-game-modal aviator-how-modal" data-aviator-modal="how-to-play" aria-hidden="true">
-        <header><h2>HOW TO PLAY?</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
-        <div class="aviator-how-steps">
-            <div><strong>01</strong><span class="pink-token">▱</span><p>Make a bet, or even two at same time and wait for the round to start.</p></div>
-            <div><strong>02</strong><span class="pink-token">◉</span><p>Look after the lucky plane. Your win is bet multiplied by a coefficient of lucky plane.</p></div>
-            <div><strong>03</strong><span class="pink-token">▰</span><p>Cash Out before plane flies away and money is yours.</p></div>
+    <section class="aviator-game-modal aviator-how-modal" data-aviator-modal="how-to-play" aria-hidden="true" aria-labelledby="how-to-play-title">
+        <header><h2 id="how-to-play-title">How to play</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
+        <div class="aviator-how-content">
+            <p class="aviator-how-intro">Three quick steps to make every round count.</p>
+            <ol class="aviator-how-steps">
+                <li class="how-step how-step--bet">
+                    <span class="how-step__number" aria-hidden="true">01</span>
+                    <span class="how-step__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="7" rx="6.5" ry="2.5"/><path d="M5.5 7v5c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5V7M5.5 12v5c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-5"/><path d="M12 7v10"/></svg>
+                    </span>
+                    <div class="how-step__copy"><span class="how-step__label">Step 1</span><h3>Place your bet</h3><p>Pick your stake and join the next round. You can play up to two bets at once.</p></div>
+                </li>
+                <li class="how-step how-step--fly">
+                    <span class="how-step__number" aria-hidden="true">02</span>
+                    <span class="how-step__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16.5 13.5 12l-3-8.5-1.8.7 1.2 8.3-6.4 2.1-.8 2 8-.4 3.1 4.3 1.5-.6-1.6-4 6.2 1.3Z"/><path d="M3 5.5h4M2 9h3"/></svg>
+                    </span>
+                    <div class="how-step__copy"><span class="how-step__label">Step 2</span><h3>Watch it climb</h3><p>Follow the plane as the multiplier grows. Your potential win rises with it.</p></div>
+                </li>
+                <li class="how-step how-step--cashout">
+                    <span class="how-step__number" aria-hidden="true">03</span>
+                    <span class="how-step__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="6" width="17" height="12" rx="2.5"/><path d="M15 12h3M11.5 3.5v9M8.5 6.5l3 3 3-3"/></svg>
+                    </span>
+                    <div class="how-step__copy"><span class="how-step__label">Step 3</span><h3>Cash out in time</h3><p>Secure your winnings before the plane flies away. Once it crashes, the round is over.</p></div>
+                </li>
+            </ol>
         </div>
-        <button class="modal-footer-link" type="button" data-aviator-modal-switch="game-rules">detailed rules</button>
+        <button class="modal-footer-link" type="button" data-aviator-modal-switch="game-rules"><span>View detailed rules</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
     </section>
 
     <section class="aviator-game-modal" data-aviator-modal="free-bets" aria-hidden="true">

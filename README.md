@@ -17,10 +17,13 @@ Professional Django web application built with Django, HTML, CSS, JavaScript, an
 The app reads the ioTec Pay OpenAPI files from `Payment APIs/` and integrates the main production rails:
 
 - Mobile money collections: `/api/collections/collect`
-- Card collections: `/api/collections/collect/card`
 - Mobile money disbursements: `/api/disbursements/disburse`
 - Status lookup by external ID
 - Provider callbacks at `/api/payments/callback/`
+
+The wallet accepts only MTN Mobile Money and Airtel Money. ioTec identifies the mobile-money network from the submitted Uganda MSISDN; card and bank-transfer methods are not exposed or accepted. Collection and disbursement amounts must be at least 500 UGX.
+
+In live mode, a deposit calls ioTec's mobile-money collection endpoint and the customer receives the network prompt on the submitted phone. The wallet is credited only after ioTec reports `Success` through the callback or a status sync. Withdrawals create a mobile-money disbursement and hold the balance until the provider completes or fails it; failed withdrawals automatically refund the hold. Sandbox mode does not send a real phone prompt.
 
 Local development defaults to `IOTEC_PAY_MODE=sandbox`, so the app runs without live credentials. For live payments set:
 

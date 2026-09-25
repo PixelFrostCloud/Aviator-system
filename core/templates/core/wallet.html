@@ -42,7 +42,7 @@
                 <div class="account-title-row">
                     <div>
                         <h1>Wallet</h1>
-                        <p>Manage ioTec Pay deposits, withdrawals, and transaction activity</p>
+                        <p>Manage ioTec Pay MTN and Airtel Mobile Money deposits, withdrawals, and transaction activity</p>
                     </div>
                     <span class="account-status-pill">Tier 1</span>
                 </div>
@@ -118,7 +118,7 @@
                 <section class="account-card account-money-card">
                     <div class="section-heading">
                         <h2>Funding</h2>
-                        <span>ioTec Pay collections and disbursements</span>
+                        <span>Only MTN and Airtel Mobile Money</span>
                     </div>
                     <div class="money-form-grid">
                         <form id="deposit-form" method="post">
@@ -129,7 +129,7 @@
                             {{ deposit_form.provider }}
                             {{ deposit_form.phone_number }}
                             {% if deposit_form.errors %}<div class="field-errors">{{ deposit_form.errors }}</div>{% endif %}
-                            <button class="account-primary-btn" type="submit">Start deposit</button>
+                            <button class="account-primary-btn" type="submit">Start mobile-money deposit</button>
                         </form>
                         <form id="withdraw-form" method="post">
                             {% csrf_token %}
@@ -139,7 +139,7 @@
                             {{ withdraw_form.provider }}
                             {{ withdraw_form.phone_number }}
                             {% if withdraw_form.errors %}<div class="field-errors">{{ withdraw_form.errors }}</div>{% endif %}
-                            <button class="account-secondary-btn" type="submit">Request withdrawal</button>
+                            <button class="account-secondary-btn" type="submit">Request mobile-money withdrawal</button>
                         </form>
                     </div>
                 </section>

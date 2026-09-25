@@ -13,8 +13,10 @@ function escapeHtml(value) {
   return element.innerHTML;
 }
 
-const FLIGHT_INCREMENT = 0.04;
-const FLIGHT_TICK_MS = 40;
+// Match the server's measured 0.10x-per-second round pace. At this rate 1.70x
+// takes roughly seven seconds, giving players a usable cash-out window.
+const FLIGHT_INCREMENT = 0.01;
+const FLIGHT_TICK_MS = 100;
 
 function calculateMaskedFlightProgress(tick) {
   const elapsedSeconds = tick * (FLIGHT_TICK_MS / 1000);
@@ -631,7 +633,6 @@ function attachPlayWidget() {
     const slips = [...playForm.querySelectorAll('.aviator-bet-slip')];
     const startButtons = [...playForm.querySelectorAll('.start-bet')];
     const cashoutButtons = [...playForm.querySelectorAll('.cashout-bet')];
-    const movingParts = [flightCurve, flightFill, plane].filter(Boolean);
     const fairnessStrip = document.getElementById('fairness-strip');
     const flightStage = document.querySelector('.flight-stage');
     const countdown = document.getElementById('round-countdown');
@@ -655,15 +656,25 @@ function attachPlayWidget() {
     let flightAnimationFrame = null;
     let flightStartedAt = 0;
 
+    function drawFlightTrail(motion) {
+      if (!flightCurve || !flightFill) {
+        return;
+      }
+      const x = Math.min(Math.max(motion.x, 0), 94);
+      const y = Math.min(Math.max(motion.y, 0), 78);
+      const endY = 100 - y;
+      const curve = `M 0 100 C ${(x * 0.28).toFixed(3)} 100, ${(x * 0.7).toFixed(3)} ${(100 - (y * 0.38)).toFixed(3)}, ${x.toFixed(3)} ${endY.toFixed(3)}`;
+      flightFill.setAttribute('d', `${curve} L ${x.toFixed(3)} 100 Z`);
+      flightCurve.querySelector('#flight-line')?.setAttribute('d', curve);
+    }
+
     function setFlightProgress(progress, elapsedMs = 0, isFinal = false) {
       const motion = calculateFlightMotion(progress, elapsedMs, isFinal);
-      movingParts.forEach((part) => {
-        part.style.setProperty('--progress', progress.toFixed(4));
-      });
+      drawFlightTrail(motion);
       if (plane) {
-        plane.style.setProperty('--plane-x', motion.x.toFixed(4));
-        plane.style.setProperty('--plane-y', motion.y.toFixed(4));
-        plane.style.setProperty('--plane-angle', motion.angle.toFixed(3));
+        plane.style.setProperty('--plane-x', `${motion.x.toFixed(4)}%`);
+        plane.style.setProperty('--plane-y', `${motion.y.toFixed(4)}%`);
+        plane.style.setProperty('--plane-angle', `${(-motion.angle).toFixed(3)}deg`);
       }
     }
 
@@ -693,11 +704,15 @@ function attachPlayWidget() {
     function syncBetLabels() {
       slips.forEach((slip) => {
         const input = slip.querySelector('.stake-input');
+        const startLabel = slip.querySelector('.start-bet span');
         const start = slip.querySelector('.start-bet strong');
         const cashout = slip.querySelector('.cashout-bet strong');
         const stake = Math.max(parseFloat(input.value) || 0, 0);
         if (start) {
-          start.textContent = queuedSlips.has(slip) ? 'WAITING' : `${stake.toFixed(2)} ${currency}`;
+          start.textContent = queuedSlips.has(slip) ? 'NEXT ROUND' : `${stake.toFixed(2)} ${currency}`;
+        }
+        if (startLabel) {
+          startLabel.textContent = queuedSlips.has(slip) ? 'CANCEL' : 'BET';
         }
         if (cashout) {
           cashout.textContent = `${(stake * currentMultiplier).toFixed(2)} ${currency}`;
@@ -715,7 +730,7 @@ function attachPlayWidget() {
       });
       startButtons.forEach((button) => {
         const slip = button.closest('.aviator-bet-slip');
-        button.disabled = phase !== 'betting' || queuedSlips.has(slip);
+        button.disabled = phase !== 'betting' && phase !== 'flying';
       });
       syncBetLabels();
     }
@@ -913,15 +928,24 @@ function attachPlayWidget() {
     }
 
     function queueBet(slip) {
-      if (phase !== 'betting') {
+      if (phase !== 'betting' && phase !== 'flying') {
         gameMessage.textContent = 'Wait for the next betting window.';
         return;
       }
       if (activeSlipSessions.has(slip)) {
         return;
       }
+      if (queuedSlips.has(slip)) {
+        queuedSlips.delete(slip);
+        gameMessage.textContent = 'Bet removed from the next round.';
+        syncSlipStates();
+        renderLedger();
+        return;
+      }
       queuedSlips.add(slip);
-      gameMessage.textContent = 'Bet accepted for the next flight.';
+      gameMessage.textContent = phase === 'flying'
+        ? 'Bet accepted for the next round.'
+        : 'Bet accepted for the next flight.';
       syncSlipStates();
       renderLedger();
     }

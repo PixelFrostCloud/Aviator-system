@@ -88,36 +88,10 @@ class IotecPayGateway:
             'payeeNote': f'Pakabet deposit {external_id}',
             'channel': self.channel,
             'transactionChargesCategory': self.charge_category,
-            'redirectUrl': redirect_url,
         }
+        if redirect_url:
+            body['redirectUrl'] = redirect_url
         return self._result_from_payload(self._post('/api/collections/collect', body), external_id)
-
-    def collect_card(self, *, external_id, amount, currency, payer_email, payer_name='', redirect_url=''):
-        if self.is_sandbox:
-            return PaymentGatewayResult(
-                provider_reference=f'SBX-{external_id}',
-                status='SentToVendor',
-                status_code='sent_to_vendor',
-                status_message='Sandbox card collection created.',
-                redirect_url=redirect_url,
-                raw={'sandbox': True, 'externalId': external_id, 'category': 'Card'},
-            )
-
-        body = {
-            'category': 'Card',
-            'currency': currency,
-            'walletId': self._wallet_id(),
-            'externalId': external_id,
-            'payer': payer_email,
-            'payerName': payer_name,
-            'payerNote': 'Pakabet card deposit',
-            'amount': self._amount(amount),
-            'payeeNote': f'Pakabet card deposit {external_id}',
-            'channel': self.channel,
-            'transactionChargesCategory': self.charge_category,
-            'redirectUrl': redirect_url,
-        }
-        return self._result_from_payload(self._post('/api/collections/collect/card', body), external_id)
 
     def disburse_mobile_money(self, *, external_id, amount, currency, payee, payee_name='', payee_email=''):
         if self.is_sandbox:
@@ -238,7 +212,7 @@ class IotecPayGateway:
             status=payload.get('status') or 'Pending',
             status_code=payload.get('statusCode') or '',
             status_message=payload.get('statusMessage') or '',
-            redirect_url=payload.get('cardRedirectUrl') or payload.get('redirectUrl') or '',
+            redirect_url=payload.get('redirectUrl') or '',
             raw=payload,
         )
 
