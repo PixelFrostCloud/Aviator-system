@@ -9,10 +9,10 @@
             <section class="account-content">
                 <div class="account-title-row">
                     <div>
-                        <h1>Top</h1>
-                        <p>Track active rooms, recent results, and your current wallet position.</p>
+                        <h1>Overview</h1>
+                        <p>Your play activity and current account position.</p>
                     </div>
-                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                    <a class="account-close-link" href="{% url 'play' %}" aria-label="Back to game"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></a>
                 </div>
 
                 <section class="account-hero-card compact-hero">
@@ -20,19 +20,15 @@
                         <div class="wallet-avatar">{{ request.user.username|first|upper }}</div>
                         <div>
                             <h2>{{ request.user.username }}</h2>
-                            <p>Balance: {{ profile.balance|floatformat:2 }} {{ profile.currency }}</p>
-                            <span>Ready to play</span>
+                            <p>Account balance: {{ profile.balance|floatformat:2 }} {{ profile.currency }}</p>
+                            <span>{{ settled_count }} settled bets</span>
                         </div>
                     </div>
-                    <div class="wallet-level">
-                        <strong>Level 23</strong>
-                        <i><b style="width: 58%"></b></i>
-                        <p>12,450 / 20,000 XP</p>
-                    </div>
                     <div class="account-stat-row">
-                        <article><span>▣</span><small>Recent Bets</small><strong>{{ sessions|length }}</strong></article>
-                        <article><span>▤</span><small>Balance</small><strong>{{ profile.balance|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span>◎</span><small>Open Rooms</small><strong>{{ rooms|length }}</strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg></span><small>Total Bets</small><strong>{{ total_bets }}</strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><small>Win Rate</small><strong>{{ win_rate|floatformat:1 }}%</strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Settled Stake</small><strong>{{ total_staked|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Net Result</small><strong class="{% if net_result >= 0 %}positive{% else %}negative{% endif %}">{{ net_result|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
                     </div>
                 </section>
 
@@ -45,12 +41,12 @@
                         <ul class="account-activity-list">
                             {% for session in sessions %}
                                 <li>
-                                    <span class="activity-icon {% if session.is_winner %}positive{% else %}negative{% endif %}">{% if session.is_winner %}✓{% else %}×{% endif %}</span>
-                                    <div><strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong><small>{{ session.created_at|date:'M d, H:i' }}</small></div>
-                                    <em class="{% if session.is_winner %}positive{% else %}negative{% endif %}">{{ session.is_winner|yesno:'Won,Lost' }}</em>
+                                    <span class="activity-icon {% if session.is_winner %}positive{% elif session.round.status == 'crashed' %}negative{% else %}neutral{% endif %}"><svg class="ui-icon" aria-hidden="true"><use href="{% if session.is_winner %}#icon-check{% elif session.round.status == 'crashed' %}#icon-plane{% else %}#icon-refresh{% endif %}"></use></svg></span>
+                                    <div><strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong><small>{% if session.is_winner %}Won at {{ session.cashed_out_at|floatformat:2 }}x{% elif session.round.status == 'crashed' %}Lost · crashed at {{ session.round.crash_point|floatformat:2 }}x{% elif session.round.status == 'void' %}Round voided{% else %}Round in progress{% endif %} · {{ session.created_at|date:'M d, H:i' }}</small></div>
+                                    <em class="{% if session.is_winner %}positive{% elif session.round.status == 'crashed' %}negative{% endif %}">{% if session.is_winner %}+{{ session.won_amount|floatformat:2 }} {{ profile.currency }}{% elif session.round.status == 'crashed' %}-{{ session.stake|floatformat:2 }} {{ profile.currency }}{% else %}Open{% endif %}</em>
                                 </li>
                             {% empty %}
-                                <li class="account-empty-state">No sessions yet.</li>
+                                <li class="account-empty-state account-activity-empty">No bets recorded yet. Place a bet to see your results here.</li>
                             {% endfor %}
                         </ul>
                     </section>
@@ -58,17 +54,17 @@
                     <section class="account-card account-activity-card">
                         <div class="section-heading">
                             <h2>Open Rooms</h2>
-                            <a href="{% url 'room_list' %}">Browse</a>
+                            <a href="{% url 'play' %}">Play</a>
                         </div>
                         <ul class="account-activity-list">
                             {% for room in rooms %}
                                 <li>
-                                    <span class="activity-icon positive">◎</span>
+                                    <span class="activity-icon positive"><svg class="ui-icon" aria-hidden="true"><use href="#icon-users"></use></svg></span>
                                     <div><strong>{{ room.name }}</strong><small>{{ room.status|title }}</small></div>
-                                    <em>{{ room.players.count }} / {{ room.max_players }}</em>
+                                    <em>{{ room.player_count }} / {{ room.max_players }} players</em>
                                 </li>
                             {% empty %}
-                                <li class="account-empty-state">No active rooms available yet.</li>
+                                <li class="account-empty-state account-activity-empty">No open rooms right now. Browse rooms to see scheduled games.</li>
                             {% endfor %}
                         </ul>
                     </section>
@@ -77,7 +73,7 @@
 
             <aside class="account-right-rail">
                 <section class="account-card">
-                    <div class="vip-head"><span>▤</span><strong>Wallet</strong></div>
+                    <div class="vip-head"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><strong>Wallet</strong></div>
                     <strong class="wallet-balance-large">{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong>
                     <div class="wallet-action-tabs">
                         <a href="{% url 'wallet' %}#deposit-form">Deposit</a>

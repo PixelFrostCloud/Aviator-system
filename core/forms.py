@@ -86,24 +86,33 @@ class WalletForm(forms.Form):
     ]
 
     amount = forms.DecimalField(
+        label='Amount (UGX)',
         max_digits=12,
         decimal_places=2,
         min_value=IOTEC_MINIMUM_AMOUNT,
         widget=forms.NumberInput(attrs={
-            'placeholder': 'Amount in UGX',
+            'placeholder': 'Minimum 500 UGX',
             'class': 'form-control',
+            'min': str(IOTEC_MINIMUM_AMOUNT),
+            'step': '0.01',
+            'inputmode': 'decimal',
+            'autocomplete': 'off',
         })
     )
     provider = forms.ChoiceField(
+        label='Mobile Money network',
         choices=PROVIDER_CHOICES,
         widget=forms.Select(attrs={'class': 'form-control'})
     )
     phone_number = forms.CharField(
+        label='Mobile Money number',
         max_length=20,
         required=False,
         widget=forms.TextInput(attrs={
-            'placeholder': 'Phone number for MoMo/Airtel',
+            'placeholder': '07XXXXXXXX or 2567XXXXXXXX',
             'class': 'form-control',
+            'autocomplete': 'tel',
+            'inputmode': 'tel',
         })
     )
 

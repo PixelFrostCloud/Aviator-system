@@ -12,35 +12,54 @@
                         <h1>Support</h1>
                         <p>Fast help for gameplay, wallet activity, and responsible play.</p>
                     </div>
-                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                    <a class="account-close-link" href="{% url 'play' %}" aria-label="Back to game"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></a>
                 </div>
 
-                <div class="account-feature-grid">
+                <div class="account-feature-grid support-steps">
                     <section class="account-card support-tile">
-                        <span class="activity-icon positive">1</span>
+                        <span class="activity-icon positive" aria-hidden="true">01</span>
                         <h2>Place a Bet</h2>
                         <p>Choose a stake during countdown and confirm before the round launches.</p>
+                        <a class="account-action-button" href="{% url 'play' %}">Open the game</a>
                     </section>
                     <section class="account-card support-tile">
-                        <span class="activity-icon gold">2</span>
+                        <span class="activity-icon positive" aria-hidden="true">02</span>
                         <h2>Cash Out</h2>
                         <p>Cash out before the plane flies away to secure the visible multiplier.</p>
+                        <a class="account-action-button" href="{% url 'game_rules' %}">Read game rules</a>
                     </section>
                     <section class="account-card support-tile">
-                        <span class="activity-icon blue">3</span>
+                        <span class="activity-icon positive" aria-hidden="true">03</span>
                         <h2>Check Fairness</h2>
                         <p>Use the fairness log to verify completed rounds and crash outcomes.</p>
+                        <a class="account-action-button" href="{% url 'provably_fair' %}">Verify a round</a>
                     </section>
                 </div>
+
+                <section class="account-card support-faq">
+                    <div class="section-heading"><h2>Common questions</h2></div>
+                    <details>
+                        <summary>Where can I review a deposit or withdrawal?</summary>
+                        <p>Open Transactions to check payment status and activity recorded on your account.</p>
+                        <a href="{% url 'transactions' %}">View transactions</a>
+                    </details>
+                    <details>
+                        <summary>How do I set a spending or loss limit?</summary>
+                        <p>Open Settings to update daily deposit and loss limits, or choose a self-exclusion period.</p>
+                        <a href="{% url 'game_limits' %}">Open responsible play settings</a>
+                    </details>
+                </section>
             </section>
 
             <aside class="account-right-rail">
                 <section class="account-card">
-                    <div class="vip-head"><span>?</span><strong>Need Help?</strong></div>
+                    <div class="vip-head"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-help"></use></svg></span><strong>Quick actions</strong></div>
                     <ul class="rail-list">
                         <li><span>Wallet</span><strong><a href="{% url 'wallet' %}">Open</a></strong></li>
+                        <li><span>Transactions</span><strong><a href="{% url 'transactions' %}">Review</a></strong></li>
+                        <li><span>Game rules</span><strong><a href="{% url 'game_rules' %}">Read</a></strong></li>
                         <li><span>Fairness</span><strong><a href="{% url 'provably_fair' %}">Verify</a></strong></li>
-                        <li><span>Limits</span><strong><a href="{% url 'game_limits' %}">Set</a></strong></li>
+                        <li><span>Responsible play</span><strong><a href="{% url 'game_limits' %}">Manage</a></strong></li>
                     </ul>
                 </section>
             </aside>

@@ -16,6 +16,7 @@ from .models import (
     ChatMessage,
     ChatRain,
     ChatRainRecipient,
+    GamePresence,
     Profile,
     RewardClaim,
     RewardEvent,
@@ -212,26 +213,42 @@ def claim_reward(user, event_uuid, ip_address='', device_identifier='', idempote
     return claim, True
 
 
-def recent_rain_recipients(sender, player_count):
-    recent_user_ids = []
-    for user_id in ChatMessage.objects.filter(flagged=False).exclude(user=sender).values_list('user_id', flat=True)[:80]:
-        if user_id not in recent_user_ids:
-            recent_user_ids.append(user_id)
-
-    candidates = list(User.objects.select_related('profile').filter(id__in=recent_user_ids, profile__isnull=False))
+def active_rain_recipients(sender, player_count):
+    active_since = timezone.now() - timedelta(seconds=PARTICIPANT_TTL_SECONDS)
+    active_user_ids = GamePresence.objects.filter(
+        last_seen__gte=active_since,
+        user__profile__isnull=False,
+    ).exclude(user=sender).values_list('user_id', flat=True).distinct()
+    candidates = list(User.objects.filter(id__in=active_user_ids).order_by('id'))
     if len(candidates) < player_count:
-        fallback = User.objects.select_related('profile').filter(profile__isnull=False).exclude(id=sender.id)
-        known_ids = {user.id for user in candidates}
-        candidates.extend([user for user in fallback if user.id not in known_ids])
-    if not candidates:
-        return []
-    return random.sample(candidates, min(player_count, len(candidates)))
+        available_word = 'player' if len(candidates) == 1 else 'players'
+        available_verb = 'is' if len(candidates) == 1 else 'are'
+        required_verb = 'is' if player_count == 1 else 'are'
+        raise RewardError(
+            f'Only {len(candidates)} other {available_word} {available_verb} currently in the game; '
+            f'{player_count} {required_verb} needed.',
+            400,
+        )
+    return random.SystemRandom().sample(candidates, player_count)
+
+
+def record_game_presence(user, presence_key):
+    now = timezone.now()
+    GamePresence.objects.update_or_create(
+        user=user,
+        presence_key=presence_key,
+        defaults={'last_seen': now},
+    )
+    if cache.add('game-presence:cleanup-lock', True, timeout=300):
+        GamePresence.objects.filter(
+            last_seen__lt=now - timedelta(seconds=PARTICIPANT_TTL_SECONDS),
+        ).delete()
 
 
 def send_chat_rain(sender, total_amount, player_count, ip_address='', device_identifier=''):
     total_amount = quantize_money(total_amount)
-    player_count = min(max(int(player_count), 1), 20)
-    if total_amount < Decimal('1.00') or player_count < 1:
+    player_count = int(player_count)
+    if total_amount < Decimal('1.00') or not 1 <= player_count <= 20:
         raise RewardError('Enter a valid rain amount and player count.', 400)
 
     per_player = quantize_money(total_amount / Decimal(player_count))
@@ -240,15 +257,16 @@ def send_chat_rain(sender, total_amount, player_count, ip_address='', device_ide
         raise RewardError('Rain amount per player is too low.', 400)
 
     with transaction.atomic():
-        sender_profile = Profile.objects.select_for_update().get(user=sender)
-        if sender_profile.balance < actual_total:
-            raise RewardError('You do not have sufficient balance on your wallet.', 400)
-
-        recipients = recent_rain_recipients(sender, player_count)
-        if not recipients:
-            raise RewardError('No eligible chat players are available for rain yet.', 400)
-
-        actual_total = quantize_money(per_player * Decimal(len(recipients)))
+        recipients = active_rain_recipients(sender, player_count)
+        profiles = {
+            profile.user_id: profile
+            for profile in Profile.objects.select_for_update()
+            .filter(user_id__in=[sender.id, *(recipient.id for recipient in recipients)])
+            .order_by('user_id')
+        }
+        sender_profile = profiles.get(sender.id)
+        if sender_profile is None:
+            raise RewardError('Your wallet is unavailable.', 400)
         if sender_profile.balance < actual_total:
             raise RewardError('You do not have sufficient balance on your wallet.', 400)
 
@@ -281,7 +299,9 @@ def send_chat_rain(sender, total_amount, player_count, ip_address='', device_ide
 
         claims = []
         for recipient in recipients:
-            recipient_profile = Profile.objects.select_for_update().get(user=recipient)
+            recipient_profile = profiles.get(recipient.id)
+            if recipient_profile is None:
+                raise RewardError('A selected player wallet is no longer available.', 400)
             recipient_profile.balance += per_player
             recipient_profile.save(update_fields=['balance'])
             Transaction.objects.create(
@@ -417,8 +437,10 @@ def mark_participant(user, channel_name, session_id=''):
 
 
 def active_participant_count():
-    # LocMemCache cannot enumerate keys. Keep this conservative for local dev.
-    return 0
+    active_since = timezone.now() - timedelta(seconds=PARTICIPANT_TTL_SECONDS)
+    return GamePresence.objects.filter(
+        last_seen__gte=active_since,
+    ).values('user_id').distinct().count()
 
 
 def expire_due_events():

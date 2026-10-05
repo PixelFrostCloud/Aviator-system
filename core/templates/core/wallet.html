@@ -2,49 +2,19 @@
 {% block title %}Wallet | Pakabet{% endblock %}
 {% block content %}
 <section class="account-page account-wallet-page">
-    <aside class="account-sidebar">
-        <a class="account-side-link" href="{% url 'play' %}"><span>⌂</span> All Bets</a>
-        <a class="account-side-link" href="{% url 'bet_history' %}"><span>▣</span> My Bets</a>
-        <a class="account-side-link" href="{% url 'dashboard' %}"><span>◎</span> Top</a>
-        <hr>
-        <a class="account-side-link" href="{% url 'profile' %}"><span>◉</span> Profile</a>
-        <a class="account-side-link active" href="{% url 'wallet' %}"><span>▤</span> Wallet</a>
-        <a class="account-side-link" href="{% url 'transactions' %}"><span>▦</span> Transactions</a>
-        <a class="account-side-link" href="{% url 'free_bets' %}"><span>◇</span> Bonuses</a>
-        <a class="account-side-link" href="{% url 'profile' %}"><span>♧</span> Referrals</a>
-        <a class="account-side-link" href="{% url 'vip_club' %}"><span>☆</span> VIP Club</a>
-        <hr>
-        <a class="account-side-link" href="{% url 'game_limits' %}"><span>⚙</span> Settings</a>
-        <a class="account-side-link" href="{% url 'how_to_play' %}"><span>?</span> Support</a>
-        <a class="account-side-link" href="{% url 'logout' %}"><span>↪</span> Logout</a>
-
-        <div class="account-invite-card">
-            <div class="invite-art">☂<small>◔</small></div>
-            <strong>Invite & Earn</strong>
-            <p>Get 5% of every bet your friends place!</p>
-            <a href="{% url 'profile' %}">Invite Now</a>
-        </div>
-    </aside>
+    {% include 'core/partials/account_sidebar.html' %}
 
     <div class="account-workspace">
-        <header class="account-topbar">
-            <a class="help-chip" href="{% url 'how_to_play' %}">How to play?</a>
-            <div>
-                <strong>{{ profile.balance|floatformat:2 }}</strong>
-                <span>{{ profile.currency }}</span>
-                <a href="{% url 'wallet' %}">Wallet</a>
-                <button type="button" aria-label="Menu">☰</button>
-            </div>
-        </header>
+        {% include 'core/partials/account_topbar.html' %}
 
         <main class="account-main">
             <section class="account-content">
                 <div class="account-title-row">
                     <div>
                         <h1>Wallet</h1>
-                        <p>Manage ioTec Pay MTN and Airtel Mobile Money deposits, withdrawals, and transaction activity</p>
+                        <p>Secure deposits and withdrawals through ioTec Pay Mobile Money.</p>
                     </div>
-                    <span class="account-status-pill">Tier 1</span>
+                    <span class="account-status-pill">{{ profile.currency }} wallet</span>
                 </div>
 
                 <section class="account-hero-card">
@@ -52,20 +22,15 @@
                         <div class="wallet-avatar">{{ request.user.username|first|upper }}</div>
                         <div>
                             <h2>{{ request.user.username }}</h2>
-                            <p>Player ID: {{ request.user.id|stringformat:"s" }}{{ request.user.username|upper|slice:":6" }}</p>
+                            <p>Player ID: {{ request.user.id }}</p>
                             <span>✓ {{ profile.get_kyc_status_display }}</span>
                         </div>
                     </div>
-                    <div class="wallet-level">
-                        <strong>Level 23</strong>
-                        <i><b style="width: 58%"></b></i>
-                        <p>12,450 / 20,000 XP</p>
-                    </div>
                     <div class="account-stat-row">
-                        <article><span>▣</span><small>Total Balance</small><strong>{{ profile.balance|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span>▤</span><small>Monthly Deposits</small><strong>{{ monthly_deposit_total|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span>◈</span><small>Deposit Limit</small><strong>{{ monthly_deposit_limit|floatformat:0 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span>♕</span><small>KYC Status</small><strong>{{ profile.kyc_status|upper }}</strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Total Balance</small><strong>{{ profile.balance|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Monthly Deposits</small><strong>{{ monthly_deposit_total|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><small>Deposit Limit</small><strong>{{ monthly_deposit_limit|floatformat:0 }} <em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg></span><small>KYC Status</small><strong>{{ profile.get_kyc_status_display }}</strong></article>
                     </div>
                 </section>
 
@@ -82,7 +47,6 @@
                         </div>
                         <dl class="wallet-metrics">
                             <div><dt>Main Balance</dt><dd>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</dd></div>
-                            <div><dt>Bonus Balance</dt><dd>0.00 {{ profile.currency }}</dd></div>
                             <div><dt>Monthly Deposits</dt><dd>{{ monthly_deposit_total|floatformat:2 }} {{ profile.currency }}</dd></div>
                             <div><dt>KYC Tier</dt><dd>{{ profile.get_kyc_status_display }}</dd></div>
                         </dl>
@@ -96,15 +60,15 @@
                         <ul class="account-activity-list">
                             {% for txn in transactions|slice:":5" %}
                                 <li>
-                                    <span class="activity-icon {% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' %}positive{% else %}negative{% endif %}">
-                                        {% if txn.transaction_type == 'deposit' %}↓{% elif txn.transaction_type == 'win' or txn.transaction_type == 'bonus' %}✓{% else %}✈{% endif %}
+                                    <span class="activity-icon {% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}positive{% else %}negative{% endif %}">
+                                        <svg class="ui-icon" aria-hidden="true"><use href="{% if txn.transaction_type == 'deposit' %}#icon-wallet{% elif txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}#icon-check{% else %}#icon-plane{% endif %}"></use></svg>
                                     </span>
                                     <div>
                                         <strong>{{ txn.transaction_type|title }}</strong>
                                         <small>{{ txn.description|default:"Main Balance" }}</small>
                                     </div>
-                                    <b class="{% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' %}positive{% else %}negative{% endif %}">
-                                        {% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' %}+{% else %}-{% endif %}{{ txn.amount|floatformat:2 }} {{ profile.currency }}
+                                    <b class="{% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}positive{% else %}negative{% endif %}">
+                                        {% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}+{% else %}-{% endif %}{{ txn.amount|floatformat:2 }} {{ profile.currency }}
                                     </b>
                                     <time>{{ txn.created_at|date:'M d, H:i' }}</time>
                                 </li>
@@ -117,60 +81,68 @@
 
                 <section class="account-card account-money-card">
                     <div class="section-heading">
-                        <h2>Funding</h2>
-                        <span>Only MTN and Airtel Mobile Money</span>
+                        <div>
+                            <h2>Deposit and withdraw</h2>
+                            <p>Choose MTN or Airtel. Requests are confirmed by ioTec Pay.</p>
+                        </div>
+                        <span class="gateway-mode gateway-mode--{{ payment_mode }}">ioTec Pay · {{ payment_mode|title }}</span>
                     </div>
+                    {% if payment_mode != 'live' %}
+                        <p class="gateway-notice" role="status">Sandbox mode is active. Test requests do not move real money.</p>
+                    {% endif %}
                     <div class="money-form-grid">
-                        <form id="deposit-form" method="post">
+                        <form id="deposit-form" class="payment-form" method="post" data-payment-form>
                             {% csrf_token %}
                             <input type="hidden" name="action" value="deposit">
-                            <h3>Deposit funds</h3>
-                            {{ deposit_form.amount }}
-                            {{ deposit_form.provider }}
-                            {{ deposit_form.phone_number }}
-                            {% if deposit_form.errors %}<div class="field-errors">{{ deposit_form.errors }}</div>{% endif %}
-                            <button class="account-primary-btn" type="submit">Start mobile-money deposit</button>
+                            <h3>Deposit</h3>
+                            <p>We will send a payment prompt to your phone. Approve it with your Mobile Money PIN.</p>
+                            {% for field in deposit_form %}
+                                <label class="payment-field" for="{{ field.id_for_label }}">{{ field.label }}{{ field }}
+                                    {% for error in field.errors %}<small class="payment-field-error">{{ error }}</small>{% endfor %}
+                                </label>
+                            {% endfor %}
+                            {% for error in deposit_form.non_field_errors %}<div class="field-errors">{{ error }}</div>{% endfor %}
+                            <button class="account-primary-btn" type="submit" data-submitting-label="Sending request…">Send deposit request</button>
                         </form>
-                        <form id="withdraw-form" method="post">
+                        <form id="withdraw-form" class="payment-form" method="post" data-payment-form>
                             {% csrf_token %}
                             <input type="hidden" name="action" value="withdraw">
-                            <h3>Withdraw funds</h3>
-                            {{ withdraw_form.amount }}
-                            {{ withdraw_form.provider }}
-                            {{ withdraw_form.phone_number }}
-                            {% if withdraw_form.errors %}<div class="field-errors">{{ withdraw_form.errors }}</div>{% endif %}
-                            <button class="account-secondary-btn" type="submit">Request mobile-money withdrawal</button>
+                            <h3>Withdraw</h3>
+                            <p>The amount stays on hold until ioTec Pay confirms or rejects the payout.</p>
+                            {% for field in withdraw_form %}
+                                <label class="payment-field" for="{{ field.id_for_label }}">{{ field.label }}{{ field }}
+                                    {% for error in field.errors %}<small class="payment-field-error">{{ error }}</small>{% endfor %}
+                                </label>
+                            {% endfor %}
+                            {% for error in withdraw_form.non_field_errors %}<div class="field-errors">{{ error }}</div>{% endfor %}
+                            <button class="account-secondary-btn" type="submit" data-submitting-label="Sending request…">Request withdrawal</button>
                         </form>
                     </div>
                 </section>
             </section>
 
             <aside class="account-right-rail">
-                <section class="account-card vip-card">
-                    <div class="vip-head"><span>♛</span><strong>VIP Club</strong><b>VIP 2</b></div>
-                    <p>Enjoy exclusive benefits and higher rewards!</p>
-                    <div class="vip-progress"><span>Next Level</span><strong>VIP 3</strong><i><b style="width: 56%"></b></i><small>12,450 / 25,000 XP</small></div>
-                    <ul>
-                        <li>Higher cashback <b>✓</b></li>
-                        <li>Monthly reload bonus <b>✓</b></li>
-                        <li>Exclusive promotions <b>✓</b></li>
-                        <li>Priority support <b>⌕</b></li>
-                    </ul>
-                    <a href="{% url 'game_limits' %}">View VIP Benefits</a>
-                </section>
-
                 <section class="account-card">
                     <h2>Payment Requests</h2>
                     <ul class="rail-list">
                         {% for payment in payment_requests|slice:":4" %}
-                            <li>
-                                <span>{{ payment.get_provider_display }}</span>
-                                <strong>{{ payment.amount|floatformat:2 }} {{ profile.currency }}</strong>
-                                <small>{{ payment.status|title }} · {{ payment.external_reference }}</small>
+                            <li class="payment-request-row">
+                                <div class="payment-request-details">
+                                    <div class="payment-request-heading">
+                                        <strong>{{ payment.get_payment_type_display }} · {{ payment.get_provider_display }}</strong>
+                                        <b>{{ payment.amount|floatformat:2 }} {{ profile.currency }}</b>
+                                    </div>
+                                    <div class="payment-request-meta">
+                                        <span class="payment-status payment-status--{{ payment.status }}">{{ payment.get_status_display }}</span>
+                                        <code>{{ payment.external_reference }}</code>
+                                        <time>Updated {{ payment.updated_at|date:'M j, H:i' }}</time>
+                                    </div>
+                                    {% if payment.failure_reason %}<small class="payment-failure">{{ payment.failure_reason }}</small>{% endif %}
+                                </div>
                                 {% if payment.status == 'pending' or payment.status == 'processing' %}
                                     <form method="post" action="{% url 'payment_sync' payment.external_reference %}">
                                         {% csrf_token %}
-                                        <button class="rail-button" type="submit">Sync</button>
+                                        <button class="payment-refresh-button" type="submit" aria-label="Refresh status for {{ payment.external_reference }}" title="Refresh payment status"><svg class="ui-icon" aria-hidden="true"><use href="#icon-refresh"></use></svg><span>Refresh</span></button>
                                     </form>
                                 {% endif %}
                             </li>
@@ -181,13 +153,14 @@
                 </section>
 
                 <section class="account-card">
-                    <h2>Preferences</h2>
+                    <h2>Wallet settings</h2>
                     <ul class="rail-list">
-                        <li><span>Currency</span><strong>{{ profile.currency }}</strong></li>
-                        <li><span>Odds Format</span><strong>Decimal</strong></li>
-                        <li><span>Security</span><strong>Enabled</strong></li>
+                        <li><span>Payment currency</span><strong>{{ profile.currency }}</strong></li>
+                        <li><span>Daily deposit limit</span><strong>{{ profile.daily_deposit_limit|floatformat:2 }}</strong></li>
+                        <li><span>Daily loss limit</span><strong>{{ profile.daily_loss_limit|floatformat:2 }}</strong></li>
                     </ul>
-                    <a class="rail-button" href="{% url 'profile' %}">Edit Preferences</a>
+                    <a class="rail-button" href="{% url 'game_limits' %}">Manage limits</a>
+                    <a class="rail-button" href="{% url 'password_change' %}">Change password</a>
                 </section>
             </aside>
         </main>

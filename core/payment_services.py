@@ -59,21 +59,16 @@ def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''
             redirect_url=redirect_url,
         )
     except PaymentGatewayError as exc:
-        payment.status = 'failed'
-        payment.failure_reason = str(exc)[:255]
-        payment.metadata = {**payment.metadata, 'gateway_error': str(exc)}
-        payment.save(update_fields=['status', 'failure_reason', 'metadata', 'updated_at'])
-        Transaction.objects.create(
-            user=user,
-            transaction_type='deposit',
-            amount=amount,
-            status='failed',
-            reference=external_reference,
-            description='ioTec Pay deposit failed',
-        )
+        payment = apply_provider_result(payment, PaymentGatewayResult(
+            provider_reference=payment.provider_reference or external_reference,
+            status='Pending' if exc.retryable else 'Failed',
+            status_code='gateway_error',
+            status_message='Provider response is delayed.' if exc.retryable else 'Provider rejected the request.',
+            raw={'gateway_error': str(exc)},
+        ))
         return payment, None, str(exc)
 
-    apply_provider_result(payment, result)
+    payment = apply_provider_result(payment, result)
     payment.refresh_from_db()
     return payment, result, ''
 
@@ -130,15 +125,15 @@ def initiate_withdrawal(*, user, amount, provider, phone_number=''):
         payment.refresh_from_db()
         result = PaymentGatewayResult(
             provider_reference=payment.provider_reference or external_reference,
-            status='Failed',
+            status='Pending' if exc.retryable else 'Failed',
             status_code='gateway_error',
-            status_message=str(exc),
+            status_message='Provider response is delayed.' if exc.retryable else 'Provider rejected the request.',
             raw={'gateway_error': str(exc)},
         )
-        apply_provider_result(payment, result)
+        payment = apply_provider_result(payment, result)
         return payment, None, str(exc)
 
-    apply_provider_result(payment, result)
+    payment = apply_provider_result(payment, result)
     payment.refresh_from_db()
     return payment, result, ''
 
@@ -149,6 +144,9 @@ def apply_provider_result(payment, result):
     with db_transaction.atomic():
         locked_payment = PaymentRequest.objects.select_for_update().get(pk=payment.pk)
         previous_status = locked_payment.status
+        terminal_statuses = {'completed', 'failed', 'cancelled'}
+        if previous_status in terminal_statuses and next_status != previous_status:
+            return locked_payment
         metadata = dict(locked_payment.metadata or {})
         metadata['gateway'] = 'iotec_pay'
         metadata['provider_status'] = result.status
@@ -160,6 +158,9 @@ def apply_provider_result(payment, result):
         locked_payment.provider_reference = result.provider_reference[:100]
         locked_payment.status = next_status
         locked_payment.failure_reason = result.status_message[:255] if result.is_failed else ''
+        if result.raw and result.raw.get('gateway_error'):
+            metadata['gateway_error'] = result.raw['gateway_error'][:500]
+            locked_payment.metadata = metadata
         locked_payment.metadata = metadata
         if next_status == 'completed':
             locked_payment.completed_at = locked_payment.completed_at or timezone.now()

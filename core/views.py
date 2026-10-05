@@ -1,15 +1,18 @@
 import json
 import random
+import re
 from hmac import compare_digest
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import login, update_session_auth_hash
+from django.contrib.auth.forms import PasswordChangeForm
+from django.core.paginator import Paginator
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.db import transaction as db_transaction
-from django.db.models import Count, Sum
+from django.db.models import Count, F, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -56,11 +59,12 @@ from .reward_services import (
     ensure_reward_wallet,
     event_payload,
     reward_statistics,
+    record_game_presence,
     send_chat_rain,
     stop_event,
     wallet_payload,
 )
-from .payment_gateway import PaymentGatewayResult
+from .payment_gateway import PaymentGatewayError, PaymentGatewayResult
 from .payment_services import apply_provider_result, initiate_deposit, initiate_withdrawal, sync_payment
 from .utils import (
     can_deposit,
@@ -369,28 +373,66 @@ def register(request):
 @login_required
 def dashboard(request):
     profile = get_object_or_404(Profile, user=request.user)
-    sessions = GameSession.objects.filter(user=request.user).order_by('-created_at')[:8]
-    rooms = Room.objects.filter(status='waiting').order_by('-created_at')[:4]
+    player_sessions = GameSession.objects.filter(user=request.user).select_related('round')
+    sessions = player_sessions.order_by('-created_at')[:8]
+    settled_filter = Q(cashed_out_at__isnull=False) | Q(round__status__in=['crashed', 'void'])
+    settled_stats = player_sessions.aggregate(
+        settled_count=Count('id', filter=settled_filter),
+        win_count=Count('id', filter=Q(cashed_out_at__lt=F('crash_point'))),
+        total_staked=Sum('stake', filter=settled_filter),
+        total_returned=Sum('won_amount', filter=settled_filter),
+    )
+    settled_count = settled_stats['settled_count'] or 0
+    total_staked = settled_stats['total_staked'] or Decimal('0.00')
+    total_returned = settled_stats['total_returned'] or Decimal('0.00')
+    net_result = total_returned - total_staked
+    win_rate = (settled_stats['win_count'] or 0) / settled_count * 100 if settled_count else 0
+    rooms = Room.objects.filter(status='waiting').annotate(player_count=Count('players')).order_by('-created_at')[:4]
     form = PlayForm()
     return render(request, 'core/dashboard.html', {
         'profile': profile,
         'sessions': sessions,
         'rooms': rooms,
         'form': form,
+        'total_bets': player_sessions.count(),
+        'total_staked': total_staked,
+        'total_returned': total_returned,
+        'net_result': net_result,
+        'settled_count': settled_count,
+        'win_rate': win_rate,
     })
 
 
-@login_required
 def play(request):
-    profile = get_object_or_404(Profile, user=request.user)
+    profile = get_object_or_404(Profile, user=request.user) if request.user.is_authenticated else None
     highest_stakers = GameSession.objects.filter(stake__gt=0).order_by('-stake')[:6]
-    recent_sessions = GameSession.objects.filter(user=request.user).order_by('-created_at')[:5]
-    recent_crashes = GameRound.objects.filter(status='crashed').order_by('-started_at')[:10]
+    recent_sessions = (
+        GameSession.objects.filter(user=request.user).order_by('-created_at')[:5]
+        if request.user.is_authenticated
+        else GameSession.objects.none()
+    )
+    my_bet_rows = [
+        {
+            'user': 'You',
+            'avatar': 'Y',
+            'bet': float(session.stake),
+            'multiplier': float(session.cashed_out_at) if session.cashed_out_at is not None else None,
+            'win': float(session.won_amount),
+            'status': 'won' if session.is_winner else 'lost',
+        }
+        for session in GameSession.objects.filter(
+            user=request.user,
+            round__status='crashed',
+        ).select_related('round').order_by('-created_at')[:20]
+    ] if request.user.is_authenticated else []
+    recent_crashes = GameRound.objects.filter(status='crashed').order_by('-started_at')[:50]
     chat_messages = ChatMessage.objects.select_related('user').annotate(reaction_count=Count('reactions')).filter(flagged=False)[:20]
 
     if request.method == 'GET':
         return render(request, 'core/play.html', {
             'profile': profile,
+            'currency': profile.currency if profile else 'UGX',
+            'my_bet_rows': my_bet_rows,
             'recent_sessions': recent_sessions,
             'highest_stakers': highest_stakers,
             'recent_crashes': recent_crashes,
@@ -398,7 +440,17 @@ def play(request):
             'chat_form': ChatMessageForm(),
         })
 
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'message': 'Log in to use game features.'}, status=401)
+
     action = request.POST.get('action')
+    if action == 'presence':
+        presence_key = request.POST.get('presence_key', '')
+        if not re.fullmatch(r'[0-9a-f]{32}', presence_key):
+            return JsonResponse({'success': False, 'message': 'Invalid game presence key.'}, status=400)
+        record_game_presence(request.user, presence_key)
+        return JsonResponse({'success': True})
+
     if action == 'chat':
         form = ChatMessageForm(request.POST)
         if not form.is_valid():
@@ -708,8 +760,9 @@ def play(request):
 @login_required
 def wallet(request):
     profile = get_object_or_404(Profile, user=request.user)
-    deposit_form = WalletForm(prefix='deposit')
-    withdraw_form = WalletForm(prefix='withdraw')
+    initial_phone = {'phone_number': profile.phone_number}
+    deposit_form = WalletForm(prefix='deposit', initial=initial_phone)
+    withdraw_form = WalletForm(prefix='withdraw', initial=initial_phone)
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -738,9 +791,18 @@ def wallet(request):
                     })
                     run_player_risk_checks(request.user)
                     if error:
+                        if payment:
+                            if payment.status in ['pending', 'processing']:
+                                messages.warning(request, 'Your deposit request is being confirmed by the provider. Do not submit it again; refresh its status below.')
+                            else:
+                                messages.error(request, 'The provider rejected the deposit request. No deposit was credited; review the request details before trying again.')
+                            return redirect('wallet')
                         deposit_form.add_error(None, error)
                     elif payment.status == 'completed':
                         messages.success(request, f'{amount:.2f} {profile.currency} deposited successfully via {payment.get_provider_display()}.')
+                        return redirect('wallet')
+                    elif payment.status in ['failed', 'cancelled']:
+                        messages.error(request, 'The provider did not complete the deposit. No funds were credited; review the payment request for details.')
                         return redirect('wallet')
                     else:
                         message = f'{amount:.2f} {profile.currency} deposit sent to {payment.get_provider_display()}. Status: {payment.get_status_display()}.'
@@ -761,6 +823,17 @@ def wallet(request):
                     phone_number=phone_number,
                 )
                 if error:
+                    if payment:
+                        log_audit(request.user, 'withdraw', f'Requested withdrawal {amount:.2f} {profile.currency}', request, {
+                            'provider': provider,
+                            'payment_reference': payment.external_reference,
+                            'provider_status': result.status if result else payment.status,
+                        })
+                        if payment.status in ['pending', 'processing']:
+                            messages.warning(request, 'Your withdrawal request is awaiting provider confirmation. The amount remains on hold; do not submit it again.')
+                        else:
+                            messages.error(request, 'The provider rejected the withdrawal request. The amount has been returned to your balance.')
+                        return redirect('wallet')
                     withdraw_form.add_error(None, error)
                 else:
                     log_audit(request.user, 'withdraw', f'Requested withdrawal {amount:.2f} {profile.currency}', request, {
@@ -770,14 +843,17 @@ def wallet(request):
                     })
                     if payment.status == 'completed':
                         messages.success(request, f'{amount:.2f} {profile.currency} withdrawal completed via {payment.get_provider_display()}.')
+                    elif payment.status in ['failed', 'cancelled']:
+                        messages.error(request, 'The provider did not complete the withdrawal. The held funds have been returned to your balance.')
                     else:
-                        messages.success(request, f'{amount:.2f} {profile.currency} withdrawal requested via {payment.get_provider_display()}. Status: {payment.get_status_display()}.')
+                        messages.info(request, f'{amount:.2f} {profile.currency} withdrawal requested via {payment.get_provider_display()}. Status: {payment.get_status_display()}.')
                     return redirect('wallet')
 
     transactions = Transaction.objects.filter(user=request.user)
     payment_requests = PaymentRequest.objects.filter(user=request.user)[:10]
     monthly_deposit_total = get_monthly_deposit_total(request.user)
     monthly_deposit_limit = get_kyc_monthly_deposit_limit(profile)
+    payment_mode = getattr(settings, 'IOTEC_PAY_MODE', 'sandbox').lower()
     return render(request, 'core/wallet.html', {
         'profile': profile,
         'deposit_form': deposit_form,
@@ -786,6 +862,7 @@ def wallet(request):
         'payment_requests': payment_requests,
         'monthly_deposit_total': monthly_deposit_total,
         'monthly_deposit_limit': monthly_deposit_limit,
+        'payment_mode': payment_mode,
     })
 
 
@@ -813,16 +890,20 @@ def payment_callback(request):
         redirect_url=payload.get('redirectUrl') or '',
         raw=payload,
     )
-    apply_provider_result(payment, result)
-    return JsonResponse({'success': True, 'reference': external_reference, 'status': result.local_status})
+    payment = apply_provider_result(payment, result)
+    return JsonResponse({'success': True, 'reference': external_reference, 'status': payment.status})
 
 
 @login_required
 @require_POST
 def payment_sync(request, reference):
     payment = get_object_or_404(PaymentRequest, external_reference=reference, user=request.user)
-    payment = sync_payment(payment)
-    messages.info(request, f'Payment {payment.external_reference} is now {payment.get_status_display()}.')
+    try:
+        payment = sync_payment(payment)
+    except PaymentGatewayError:
+        messages.error(request, 'The provider could not return a payment update. Please try again shortly.')
+    else:
+        messages.info(request, f'Payment {payment.external_reference} is now {payment.get_status_display()}.')
     return redirect('wallet')
 
 
@@ -885,14 +966,8 @@ def admin_dashboard(request):
     })
 
 
-@login_required
 def room_list(request):
-    rooms = Room.objects.filter(status__in=['waiting', 'running']).order_by('-created_at')[:12]
-    create_form = RoomCreateForm()
-    return render(request, 'core/room_list.html', {
-        'rooms': rooms,
-        'create_form': create_form,
-    })
+    return redirect('play')
 
 
 @login_required
@@ -951,6 +1026,9 @@ def room_action(request, room_id):
             return JsonResponse({'success': False, 'errors': form.errors}, status=400)
 
         stake = form.cleaned_data['stake']
+        allowed, reason = can_place_bets(profile, stake)
+        if not allowed:
+            return JsonResponse({'success': False, 'message': reason}, status=403)
         if stake > profile.balance:
             return JsonResponse({'success': False, 'message': 'Insufficient balance to join.'}, status=400)
 
@@ -1100,6 +1178,8 @@ def profile_view(request):
                 'daily_loss_limit': profile.daily_loss_limit,
             })
             exclusion_form = SelfExclusionForm(request.POST)
+            if not request.POST.get('confirm_exclusion'):
+                exclusion_form.add_error(None, 'Confirm that you understand this action before continuing.')
             if exclusion_form.is_valid():
                 duration = exclusion_form.cleaned_data['duration']
                 permanent = duration == 'permanent'
@@ -1125,6 +1205,7 @@ def profile_view(request):
         })
     kyc_submissions = KYCSubmission.objects.filter(user=request.user)[:5]
     exclusions = SelfExclusion.objects.filter(user=request.user)[:5]
+    transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')[:5]
     return render(request, 'core/profile.html', {
         'profile': profile,
         'form': form,
@@ -1132,16 +1213,52 @@ def profile_view(request):
         'exclusion_form': exclusion_form,
         'kyc_submissions': kyc_submissions,
         'exclusions': exclusions,
+        'transactions': transactions,
     })
 
 
 @login_required
 def bet_history(request):
     profile = get_object_or_404(Profile, user=request.user)
-    sessions = GameSession.objects.filter(user=request.user).select_related('round').order_by('-created_at')[:100]
+    all_sessions = GameSession.objects.filter(user=request.user).select_related('round').order_by('-created_at')
+    outcome = request.GET.get('outcome', 'all')
+    if outcome == 'won':
+        filtered_sessions = all_sessions.filter(cashed_out_at__lt=F('crash_point'))
+    elif outcome == 'lost':
+        filtered_sessions = all_sessions.filter(cashed_out_at__isnull=True, round__status='crashed')
+    elif outcome == 'live':
+        filtered_sessions = all_sessions.filter(cashed_out_at__isnull=True, round__status__in=['betting', 'flying'])
+    elif outcome == 'void':
+        filtered_sessions = all_sessions.filter(round__status='void')
+    else:
+        outcome = 'all'
+        filtered_sessions = all_sessions
+
+    settled_filter = Q(cashed_out_at__isnull=False) | Q(round__status__in=['crashed', 'void'])
+    summary = all_sessions.aggregate(
+        total_bets=Count('id'),
+        settled_bets=Count('id', filter=settled_filter),
+        winning_bets=Count('id', filter=Q(cashed_out_at__lt=F('crash_point'))),
+        total_staked=Sum('stake', filter=settled_filter),
+        total_returned=Sum('won_amount', filter=settled_filter),
+    )
+    total_staked = summary['total_staked'] or Decimal('0.00')
+    total_returned = summary['total_returned'] or Decimal('0.00')
+    settled_bets = summary['settled_bets'] or 0
+    winning_bets = summary['winning_bets'] or 0
+    page_obj = Paginator(filtered_sessions, 20).get_page(request.GET.get('page'))
     return render(request, 'core/bet_history.html', {
         'profile': profile,
-        'sessions': sessions,
+        'sessions': page_obj.object_list,
+        'page_obj': page_obj,
+        'outcome': outcome,
+        'total_bets': summary['total_bets'],
+        'settled_bets': summary['settled_bets'],
+        'winning_bets': summary['winning_bets'],
+        'total_staked': total_staked,
+        'total_returned': total_returned,
+        'net_result': total_returned - total_staked,
+        'win_rate': winning_bets / settled_bets * 100 if settled_bets else 0,
     })
 
 
@@ -1158,37 +1275,81 @@ def transactions_view(request):
 @login_required
 def game_limits(request):
     profile = get_object_or_404(Profile, user=request.user)
+    exclusion_form = SelfExclusionForm()
+    password_form = PasswordChangeForm(request.user)
     if request.method == 'POST':
-        form = ProfileComplianceForm(request.POST)
-        if form.is_valid():
-            profile.phone_number = form.cleaned_data['phone_number']
-            profile.daily_deposit_limit = form.cleaned_data['daily_deposit_limit']
-            profile.daily_loss_limit = form.cleaned_data['daily_loss_limit']
-            profile.save(update_fields=['phone_number', 'daily_deposit_limit', 'daily_loss_limit'])
-            messages.success(request, 'Game limits updated.')
-            return redirect('game_limits')
+        action = request.POST.get('action')
+        if action == 'password':
+            password_form = PasswordChangeForm(request.user, request.POST)
+            if password_form.is_valid():
+                password_form.save()
+                update_session_auth_hash(request, request.user)
+                messages.success(request, 'Your password has been changed.')
+                return redirect('game_limits')
+            form = ProfileComplianceForm(initial={
+                'phone_number': profile.phone_number,
+                'daily_deposit_limit': profile.daily_deposit_limit,
+                'daily_loss_limit': profile.daily_loss_limit,
+            })
+        elif action == 'self_exclude':
+            exclusion_form = SelfExclusionForm(request.POST)
+            if not request.POST.get('confirm_exclusion'):
+                exclusion_form.add_error(None, 'Confirm that you understand this action before continuing.')
+            if exclusion_form.is_valid():
+                duration = exclusion_form.cleaned_data['duration']
+                permanent = duration == 'permanent'
+                ends_at = None if permanent else timezone.now() + timedelta(hours=int(duration))
+                exclusion = SelfExclusion.objects.create(
+                    user=request.user,
+                    ends_at=ends_at,
+                    permanent=permanent,
+                    reason=exclusion_form.cleaned_data['reason'],
+                )
+                profile.self_excluded_until = None if permanent else ends_at
+                profile.save(update_fields=['self_excluded_until'])
+                log_audit(request.user, 'self_exclude', 'Created self-exclusion', request, {
+                    'exclusion_id': exclusion.id,
+                    'permanent': permanent,
+                })
+                messages.warning(request, 'Self-exclusion is now active.')
+                return redirect('game_limits')
+        else:
+            form = ProfileComplianceForm(request.POST)
+            if form.is_valid():
+                profile.phone_number = form.cleaned_data['phone_number']
+                profile.daily_deposit_limit = form.cleaned_data['daily_deposit_limit']
+                profile.daily_loss_limit = form.cleaned_data['daily_loss_limit']
+                profile.save(update_fields=['phone_number', 'daily_deposit_limit', 'daily_loss_limit'])
+                messages.success(request, 'Your limits have been updated.')
+                return redirect('game_limits')
     else:
         form = ProfileComplianceForm(initial={
             'phone_number': profile.phone_number,
             'daily_deposit_limit': profile.daily_deposit_limit,
             'daily_loss_limit': profile.daily_loss_limit,
         })
-    return render(request, 'core/game_limits.html', {'profile': profile, 'form': form})
-
-
-@login_required
-def free_bets(request):
-    profile = get_object_or_404(Profile, user=request.user)
-    return render(request, 'core/free_bets.html', {'profile': profile})
-
-
-@login_required
-def vip_club(request):
-    profile = get_object_or_404(Profile, user=request.user)
-    transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')[:5]
-    return render(request, 'core/vip_club.html', {
+    if request.method == 'POST' and request.POST.get('action') == 'self_exclude':
+        form = ProfileComplianceForm(initial={
+            'phone_number': profile.phone_number,
+            'daily_deposit_limit': profile.daily_deposit_limit,
+            'daily_loss_limit': profile.daily_loss_limit,
+        })
+    if request.method == 'POST' and request.POST.get('action') == 'password':
+        form = ProfileComplianceForm(initial={
+            'phone_number': profile.phone_number,
+            'daily_deposit_limit': profile.daily_deposit_limit,
+            'daily_loss_limit': profile.daily_loss_limit,
+        })
+    now = timezone.now()
+    active_exclusion = SelfExclusion.objects.filter(user=request.user).filter(
+        Q(permanent=True) | Q(ends_at__isnull=True) | Q(ends_at__gt=now)
+    ).order_by('-created_at').first()
+    return render(request, 'core/game_limits.html', {
         'profile': profile,
-        'transactions': transactions,
+        'form': form,
+        'exclusion_form': exclusion_form,
+        'active_exclusion': active_exclusion,
+        'password_form': password_form,
     })
 
 

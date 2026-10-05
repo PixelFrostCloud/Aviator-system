@@ -1,29 +1,65 @@
-{% extends 'core/base.html' %}
-{% block title %}Home | Pakabet{% endblock %}
-{% block content %}
-<section class="hero">
-    <div>
-        <p class="eyebrow">Professional Django platform</p>
-        <h1>Play Pakabet and manage your wallet end to end.</h1>
-        <p class="lead">Responsive account flow, real-time crash rounds, ioTec Pay funding, and a clean control dashboard that works across devices.</p>
-        <div class="hero-actions">
-            {% if user.is_authenticated %}
-                <a class="button button-primary" href="{% url 'play' %}">Start Playing</a>
-            {% else %}
-                <a class="button button-primary" href="{% url 'register' %}">Create account</a>
-                <a class="button button-secondary" href="{% url 'login' %}">Login</a>
-            {% endif %}
-        </div>
-    </div>
-    <div class="hero-panel">
-        <div class="panel-card">
-            <h2>Real-time game engine</h2>
-            <p>Play Pakabet crash rounds and cash out before the flight crashes.</p>
-        </div>
-        <div class="panel-card panel-card-secondary">
-            <h2>Account balance</h2>
-            <p>Track your balance, session history, and winnings in one polished interface.</p>
-        </div>
-    </div>
-</section>
-{% endblock %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="2;url={% url 'play' %}">
+    <meta name="theme-color" content="#171819">
+    <link rel="icon" type="image/png" href="{% static 'logo icon.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'logo icon.png' %}">
+    <title>Pakabet</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { min-height: 100%; margin: 0; }
+        body {
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #171819;
+            color: #f4f6fb;
+            font-family: "DM Sans", "Segoe UI", sans-serif;
+        }
+        .splash {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 2rem;
+            animation: reveal 700ms ease-out both;
+        }
+        .splash img {
+            width: clamp(5rem, 13vw, 7.5rem);
+            height: clamp(5rem, 13vw, 7.5rem);
+            object-fit: contain;
+            margin-bottom: 1.15rem;
+        }
+        .splash h1 {
+            margin: 0;
+            font-size: clamp(2rem, 6vw, 3.25rem);
+            font-weight: 700;
+            letter-spacing: 0.16em;
+        }
+        .splash p {
+            margin: 1.25rem 0 0;
+            color: #8b93a4;
+            font-size: 0.85rem;
+            letter-spacing: 0.025em;
+        }
+        @keyframes reveal {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .splash { animation: none; }
+        }
+    </style>
+</head>
+<body>
+    <main class="splash" aria-label="Pakabet loading">
+        <img src="{% static 'logo icon.png' %}" alt="Pakabet logo">
+        <h1>PAKABET</h1>
+        <p>Powered by Pixelfrost Cloud Co.</p>
+    </main>
+</body>
+</html>

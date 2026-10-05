@@ -1,9 +1,9 @@
 <header class="account-topbar">
-    <a class="help-chip" href="{% url 'how_to_play' %}">How to play?</a>
+    <a class="help-chip" href="{% url 'how_to_play' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-help"></use></svg><span>How to play</span></a>
     <div>
         <strong>{{ profile.balance|floatformat:2 }}</strong>
         <span>{{ profile.currency }}</span>
         <a href="{% url 'wallet' %}">Wallet</a>
-        <button type="button" aria-label="Menu">☰</button>
+        <button class="account-nav-toggle" id="account-nav-toggle" type="button" aria-label="Open account navigation" aria-controls="account-sidebar" aria-expanded="false"><svg class="ui-icon" aria-hidden="true"><use href="#icon-menu"></use></svg></button>
     </div>
 </header>

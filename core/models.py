@@ -39,6 +39,18 @@ class Profile(models.Model):
         return self.transactions.count()
 
 
+class GamePresence(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='game_presences')
+    presence_key = models.CharField(max_length=32)
+    last_seen = models.DateTimeField(db_index=True)
+
+    class Meta:
+        unique_together = ('user', 'presence_key')
+
+    def __str__(self):
+        return f'{self.user.username} in game'
+
+
 class Transaction(models.Model):
     TRANSACTION_TYPES = [
         ('deposit', 'Deposit'),

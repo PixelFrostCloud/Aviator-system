@@ -10,7 +10,7 @@
                 <div class="account-title-row">
                     <div>
                         <h1>Transactions</h1>
-                        <p>Deposits, withdrawals, bets, wins, refunds, and bonuses.</p>
+                        <p>Deposits, withdrawals, bets, wins, and refunds.</p>
                     </div>
                     <a class="account-close-link" href="{% url 'play' %}">×</a>
                 </div>
@@ -45,7 +45,7 @@
 
             <aside class="account-right-rail">
                 <section class="account-card">
-                    <div class="vip-head"><span>▤</span><strong>Current Balance</strong></div>
+                    <div class="vip-head"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><strong>Current Balance</strong></div>
                     <strong class="wallet-balance-large">{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong>
                     <div class="wallet-action-tabs">
                         <a href="{% url 'wallet' %}#deposit-form">Deposit</a>

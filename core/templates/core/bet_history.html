@@ -10,46 +10,68 @@
                 <div class="account-title-row">
                     <div>
                         <h1>My Bets</h1>
-                        <p>Review your recent stakes, multipliers, and outcomes.</p>
+                        <p>Review actual round outcomes, payouts, and stake history.</p>
                     </div>
-                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                    <a class="account-close-link" href="{% url 'play' %}" aria-label="Back to game"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></a>
                 </div>
+
+                <section class="bet-history-summary" aria-label="Bet performance summary">
+                    <article><span>Total bets</span><strong>{{ total_bets }}</strong></article>
+                    <article><span>Win rate</span><strong>{{ win_rate|floatformat:1 }}%</strong></article>
+                    <article><span>Settled stake</span><strong>{{ total_staked|floatformat:2 }} {{ profile.currency }}</strong></article>
+                    <article><span>Net result</span><strong class="{% if net_result >= 0 %}positive{% else %}negative{% endif %}">{{ net_result|floatformat:2 }} {{ profile.currency }}</strong></article>
+                </section>
 
                 <section class="account-card account-table-card">
                     <div class="section-heading">
                         <h2>Bet History</h2>
-                        <a href="{% url 'provably_fair' %}">Fairness log</a>
+                        <a href="{% url 'provably_fair' %}">Verify rounds</a>
                     </div>
-                    <div class="account-table">
-                        <div class="account-table-head">
-                            <span>Time</span>
-                            <span>Stake</span>
-                            <span>Multiplier</span>
-                            <span>Result</span>
+                    <nav class="bet-outcome-filters" aria-label="Filter bets by result">
+                        <a class="{% if outcome == 'all' %}active{% endif %}" href="?outcome=all">All <span>{{ total_bets }}</span></a>
+                        <a class="{% if outcome == 'won' %}active{% endif %}" href="?outcome=won">Won</a>
+                        <a class="{% if outcome == 'lost' %}active{% endif %}" href="?outcome=lost">Lost</a>
+                        <a class="{% if outcome == 'live' %}active{% endif %}" href="?outcome=live">Live</a>
+                        <a class="{% if outcome == 'void' %}active{% endif %}" href="?outcome=void">Voided</a>
+                    </nav>
+                    <div class="account-table bet-history-table">
+                        <div class="account-table-head bet-history-head">
+                            <span>Time</span><span>Stake</span><span>Round</span><span>Multiplier</span><span>Payout</span><span>Status</span>
                         </div>
                         {% for session in sessions %}
-                            <article class="account-table-row">
-                                <span>{{ session.created_at|date:'M d, H:i' }}</span>
-                                <strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong>
-                                <span>{{ session.cashed_out_at|default:session.crash_point|floatformat:2 }}x</span>
-                                <em class="{% if session.is_winner %}positive{% else %}negative{% endif %}">
-                                    {% if session.is_winner %}+{% endif %}{{ session.won_amount|floatformat:2 }} {{ profile.currency }}
+                            <article class="account-table-row bet-history-row">
+                                <span class="bet-time" data-label="Time">{{ session.created_at|date:'M d, H:i' }}</span>
+                                <strong data-label="Stake">{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong>
+                                <span class="bet-round" data-label="Round">{% if session.round %}{{ session.round.public_id }}{% else %}Unavailable{% endif %}</span>
+                                <span data-label="Multiplier">{% if session.cashed_out_at %}{{ session.cashed_out_at|floatformat:2 }}x{% elif session.round.status == 'crashed' %}{{ session.round.crash_point|floatformat:2 }}x{% else %}--{% endif %}</span>
+                                <em class="{% if session.is_winner %}positive{% elif session.round.status == 'crashed' %}negative{% endif %}" data-label="Payout">
+                                    {% if session.is_winner %}+{{ session.won_amount|floatformat:2 }} {{ profile.currency }}{% elif session.round.status == 'crashed' %}-{{ session.stake|floatformat:2 }} {{ profile.currency }}{% else %}--{% endif %}
                                 </em>
+                                <span data-label="Status"><span class="bet-status {% if session.is_winner %}won{% elif session.round.status == 'crashed' %}lost{% elif session.round.status == 'void' %}void{% else %}live{% endif %}">{% if session.is_winner %}Won{% elif session.round.status == 'crashed' %}Lost{% elif session.round.status == 'void' %}Voided{% else %}Live{% endif %}</span></span>
                             </article>
                         {% empty %}
-                            <div class="account-empty-state">No bets yet. Your completed rounds will appear here.</div>
+                            <div class="account-empty-state">{% if outcome == 'all' %}No bets yet. Your rounds will appear here after you play.{% else %}No {{ outcome }} bets found.{% endif %}</div>
                         {% endfor %}
                     </div>
+                    {% if page_obj.paginator.num_pages > 1 %}
+                        <nav class="bet-history-pagination" aria-label="Bet history pages">
+                            <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                            <div>
+                                {% if page_obj.has_previous %}<a href="?outcome={{ outcome }}&page={{ page_obj.previous_page_number }}" aria-label="Previous page">Previous</a>{% endif %}
+                                {% if page_obj.has_next %}<a href="?outcome={{ outcome }}&page={{ page_obj.next_page_number }}" aria-label="Next page">Next</a>{% endif %}
+                            </div>
+                        </nav>
+                    {% endif %}
                 </section>
             </section>
 
             <aside class="account-right-rail">
                 <section class="account-card">
-                    <div class="vip-head"><span>◎</span><strong>Summary</strong></div>
+                    <div class="vip-head"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><strong>All-time summary</strong></div>
                     <ul class="rail-list">
                         <li><span>Total balance</span><strong>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</strong></li>
-                        <li><span>Rows shown</span><strong>{{ sessions|length }}</strong></li>
-                        <li><span>Status</span><strong>Live</strong></li>
+                        <li><span>Settled bets</span><strong>{{ settled_bets }}</strong></li>
+                        <li><span>Total returned</span><strong>{{ total_returned|floatformat:2 }} {{ profile.currency }}</strong></li>
                     </ul>
                 </section>
             </aside>

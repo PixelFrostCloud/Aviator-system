@@ -27,6 +27,10 @@ PAYMENT_STATUS_MAP = {
 class PaymentGatewayError(Exception):
     """Raised when ioTec Pay rejects a request or cannot be reached."""
 
+    def __init__(self, message, *, retryable=False):
+        super().__init__(message)
+        self.retryable = retryable
+
 
 class PaymentGatewayConfigurationError(PaymentGatewayError):
     """Raised when live credentials are required but missing."""
@@ -186,16 +190,31 @@ class IotecPayGateway:
         try:
             with request.urlopen(http_request, timeout=self.timeout) as response:
                 raw = response.read().decode() or '{}'
+        except TimeoutError as exc:
+            raise PaymentGatewayError(
+                'Could not confirm the ioTec Pay request before the timeout.',
+                retryable=True,
+            ) from exc
         except error.HTTPError as exc:
             body = exc.read().decode(errors='replace')
-            raise PaymentGatewayError(f'ioTec Pay returned HTTP {exc.code}: {body[:300]}') from exc
+            retryable = exc.code >= 500 or exc.code in {408, 429}
+            raise PaymentGatewayError(
+                f'ioTec Pay returned HTTP {exc.code}: {body[:300]}',
+                retryable=retryable,
+            ) from exc
         except error.URLError as exc:
-            raise PaymentGatewayError(f'Could not reach ioTec Pay: {exc.reason}') from exc
+            raise PaymentGatewayError(
+                f'Could not reach ioTec Pay: {exc.reason}',
+                retryable=True,
+            ) from exc
 
         try:
             return json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise PaymentGatewayError('ioTec Pay returned an invalid JSON response.') from exc
+            raise PaymentGatewayError(
+                'ioTec Pay returned an invalid JSON response.',
+                retryable=True,
+            ) from exc
 
     def _result_from_payload(self, payload, fallback_reference):
         if isinstance(payload, list):

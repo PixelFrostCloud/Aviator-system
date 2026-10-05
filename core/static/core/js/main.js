@@ -143,6 +143,36 @@ function attachPlayWidget() {
     return;
   }
 
+  if (window.aviatorConfig?.isAuthenticated) {
+    const presenceKey = 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+      const value = Math.floor(Math.random() * 16);
+      return (character === 'x' ? value : (value & 0x3) | 0x8).toString(16);
+    });
+    const sendPresence = () => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      const formData = new FormData();
+      formData.append('action', 'presence');
+      formData.append('presence_key', presenceKey);
+      fetch(window.aviatorConfig.playUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+        body: formData,
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Game presence update failed (${response.status}).`);
+        }
+      }).catch((error) => {
+        console.error('Unable to update game presence.', error);
+      });
+    };
+    sendPresence();
+    const presenceInterval = setInterval(sendPresence, 30000);
+    document.addEventListener('visibilitychange', sendPresence);
+    window.addEventListener('pagehide', () => clearInterval(presenceInterval), { once: true });
+  }
+
   if (chatForm && chatList) {
     const chatPanel = document.querySelector('[data-chat-panel]');
     const chatInput = chatForm.querySelector('input[name="message"]');
@@ -177,7 +207,7 @@ function attachPlayWidget() {
     emojiPicker.hidden = true;
     emojiPicker.innerHTML = `
       <div class="emoji-search-wrap">
-        <span aria-hidden="true">⌕</span>
+        <span aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 4.3 4.3"></path></svg></span>
         <input type="search" placeholder="Search emoji.." aria-label="Search emoji">
       </div>
       <div class="emoji-grid" role="listbox" aria-label="Emoji picker"></div>
@@ -277,12 +307,24 @@ function attachPlayWidget() {
 
     function toggleEmojiPicker(forceOpen = null) {
       const shouldOpen = forceOpen === null ? emojiPicker.hidden : forceOpen;
+      if (shouldOpen && rainForm && !rainForm.hidden) {
+        rainForm.hidden = true;
+        chatPanel?.classList.remove('rain-open');
+      }
       emojiPicker.hidden = !shouldOpen;
       chatPanel?.classList.toggle('emoji-open', shouldOpen);
       if (shouldOpen) {
         renderEmojiGrid(emojiSearch?.value || '');
         emojiSearch?.focus({ preventScroll: true });
       }
+    }
+
+    function closeRainPanel() {
+      if (!rainForm || rainForm.hidden) {
+        return;
+      }
+      rainForm.hidden = true;
+      chatPanel?.classList.remove('rain-open');
     }
 
     function insertEmoji(emoji) {
@@ -326,7 +368,7 @@ function attachPlayWidget() {
       if (!rainHelper) {
         return;
       }
-      rainHelper.textContent = message || 'This feature will give selected amount to random users in chat.';
+      rainHelper.textContent = message || 'Randomly distributes to players currently in the game.';
       rainHelper.dataset.state = state;
     }
 
@@ -434,17 +476,6 @@ function attachPlayWidget() {
       newMessagePill.hidden = true;
     });
 
-    document.querySelectorAll('[data-chat-emoji]').forEach((button) => {
-      button.addEventListener('click', () => {
-        if (!chatInput) {
-          return;
-        }
-        chatInput.value = `${chatInput.value} 👏`.slice(0, maxChatLength);
-        chatInput.focus();
-        updateCharCount();
-      });
-    });
-
     renderEmojiGrid();
     document.querySelectorAll('[data-chat-emoji]').forEach((button) => {
       button.addEventListener('click', (event) => {
@@ -462,13 +493,16 @@ function attachPlayWidget() {
       insertEmoji(choice.textContent);
     });
     document.addEventListener('pointerdown', (event) => {
-      if (emojiPicker.hidden) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
         return;
       }
-      if (emojiPicker.contains(event.target) || event.target.closest('[data-chat-emoji]')) {
-        return;
+      if (!emojiPicker.hidden && !emojiPicker.contains(target) && !target.closest('[data-chat-emoji]')) {
+        toggleEmojiPicker(false);
       }
-      toggleEmojiPicker(false);
+      if (rainForm && !rainForm.hidden && !rainForm.contains(target) && !target.closest('[data-chat-rain-open]')) {
+        closeRainPanel();
+      }
     });
 
     function closeChatRules() {
@@ -565,13 +599,17 @@ function attachPlayWidget() {
     syncChatDrawerBackdrop();
 
     document.querySelector('[data-chat-rain-open]')?.addEventListener('click', () => {
+      if (rainForm && !rainForm.hidden) {
+        closeRainPanel();
+        return;
+      }
+      toggleEmojiPicker(false);
       rainForm.hidden = false;
-      chatForm.hidden = true;
+      chatPanel?.classList.add('rain-open');
       syncRainAmounts('open');
     });
     document.querySelector('[data-chat-rain-close]')?.addEventListener('click', () => {
-      rainForm.hidden = true;
-      chatForm.hidden = false;
+      closeRainPanel();
     });
 
     rainTotal?.addEventListener('input', () => syncRainAmounts('total'));
@@ -617,7 +655,7 @@ function attachPlayWidget() {
         window.aviatorConfig.walletBalance = payload.balance;
       }
       rainForm.hidden = true;
-      chatForm.hidden = false;
+      chatPanel?.classList.remove('rain-open');
     });
 
     if (onlineCount) {
@@ -637,9 +675,12 @@ function attachPlayWidget() {
     const flightStage = document.querySelector('.flight-stage');
     const countdown = document.getElementById('round-countdown');
     const roundStrip = document.querySelector('.round-strip');
+    const roundHistoryList = document.getElementById('round-history-list');
+    const roundHistoryToggle = document.querySelector('.round-history-toggle');
     const ledgerList = document.getElementById('ledger-list');
     const totalBetsCount = document.getElementById('total-bets-count');
     const ledgerTabs = [...document.querySelectorAll('[data-ledger-tab]')];
+    const ledgerPanel = document.getElementById('ledger-list');
     const currency = window.aviatorConfig.currency || 'UGX';
     let currentMultiplier = 1.0;
     let queuedSlips = new Set();
@@ -652,9 +693,30 @@ function attachPlayWidget() {
     let publicRound = null;
     let currentLedgerTab = 'all';
     let publicRows = [];
-    let myRows = [];
+    const myBetData = document.getElementById('my-bet-data');
+    let myRows = myBetData ? JSON.parse(myBetData.textContent) : [];
+    let currentRoundRows = [];
     let flightAnimationFrame = null;
     let flightStartedAt = 0;
+
+    if (roundStrip && roundHistoryToggle) {
+      const setRoundHistoryExpanded = (expanded) => {
+        roundStrip.classList.toggle('is-expanded', expanded);
+        roundHistoryToggle.setAttribute('aria-expanded', String(expanded));
+        roundHistoryToggle.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} odds history`);
+      };
+
+      roundHistoryToggle.addEventListener('click', () => {
+        setRoundHistoryExpanded(roundHistoryToggle.getAttribute('aria-expanded') !== 'true');
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && roundHistoryToggle.getAttribute('aria-expanded') === 'true') {
+          setRoundHistoryExpanded(false);
+          roundHistoryToggle.focus();
+        }
+      });
+    }
 
     function drawFlightTrail(motion) {
       if (!flightCurve || !flightFill) {
@@ -738,6 +800,7 @@ function attachPlayWidget() {
     function resetRound() {
       currentSession = null;
       currentMultiplier = 1.0;
+      currentRoundRows = [];
       activeSlipSessions.clear();
       activeSlipRows.clear();
       cashedOutSlips.clear();
@@ -764,14 +827,14 @@ function attachPlayWidget() {
     }
 
     function addHistoryPill(crashPoint) {
-      if (!roundStrip) {
+      if (!roundHistoryList) {
         return;
       }
       const pill = document.createElement('span');
       pill.className = `round-pill ${crashPoint >= 10 ? 'hot' : crashPoint >= 2 ? 'mid' : ''}`;
       pill.textContent = formatMultiplier(crashPoint);
-      roundStrip.prepend(pill);
-      [...roundStrip.querySelectorAll('.round-pill')].slice(18).forEach((item) => item.remove());
+      roundHistoryList.prepend(pill);
+      [...roundHistoryList.querySelectorAll('.round-pill')].slice(50).forEach((item) => item.remove());
     }
 
     function shortName(index) {
@@ -779,13 +842,18 @@ function attachPlayWidget() {
       return `${letters[index % letters.length]}***${(index % 9) + 1}`;
     }
 
+    const ledgerMoneyFormatter = new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
     function rowTemplate(row) {
       return `
         <div class="ledger-row ${row.status === 'won' ? 'won' : 'muted'}">
           <span class="ledger-user"><span class="player-avatar">${row.avatar || ''}</span>${row.user}</span>
-          <span>${row.bet.toFixed(2)}</span>
+          <span>${ledgerMoneyFormatter.format(row.bet)}</span>
           <span>${row.multiplier ? formatMultiplier(row.multiplier) : ''}</span>
-          <span>${row.win ? row.win.toFixed(2) : ''}</span>
+          <span>${row.win ? ledgerMoneyFormatter.format(row.win) : ''}</span>
         </div>
       `;
     }
@@ -794,24 +862,53 @@ function attachPlayWidget() {
       if (!ledgerList) {
         return;
       }
-      let rows = publicRows;
+      let rows = [...publicRows, ...currentRoundRows];
       if (currentLedgerTab === 'mine') {
         rows = myRows;
       }
       if (currentLedgerTab === 'top') {
-        rows = [...publicRows, ...myRows].sort((a, b) => b.bet - a.bet).slice(0, 28);
+        rows = rows
+          .sort((a, b) => (b.win || 0) - (a.win || 0) || b.bet - a.bet)
+          .slice(0, 28);
       }
       ledgerList.innerHTML = rows.length ? rows.map(rowTemplate).join('') : '<div class="ledger-empty">No bets in this view yet.</div>';
       if (totalBetsCount) {
-        totalBetsCount.textContent = publicRows.length + queuedSlips.size + activeSlipSessions.size;
+        totalBetsCount.textContent = rows.length;
       }
+      ledgerPanel?.setAttribute(
+        'aria-labelledby',
+        `ledger-tab-${currentLedgerTab}`,
+      );
     }
 
     ledgerTabs.forEach((tab) => {
       tab.addEventListener('click', () => {
         currentLedgerTab = tab.dataset.ledgerTab || 'all';
-        ledgerTabs.forEach((item) => item.classList.toggle('active', item === tab));
+        ledgerTabs.forEach((item) => {
+          const selected = item === tab;
+          item.classList.toggle('active', selected);
+          item.setAttribute('aria-selected', String(selected));
+          item.tabIndex = selected ? 0 : -1;
+        });
         renderLedger();
+      });
+      tab.addEventListener('keydown', (event) => {
+        const currentIndex = ledgerTabs.indexOf(tab);
+        let nextIndex = currentIndex;
+        if (event.key === 'ArrowRight') {
+          nextIndex = (currentIndex + 1) % ledgerTabs.length;
+        } else if (event.key === 'ArrowLeft') {
+          nextIndex = (currentIndex - 1 + ledgerTabs.length) % ledgerTabs.length;
+        } else if (event.key === 'Home') {
+          nextIndex = 0;
+        } else if (event.key === 'End') {
+          nextIndex = ledgerTabs.length - 1;
+        } else {
+          return;
+        }
+        event.preventDefault();
+        ledgerTabs[nextIndex].focus();
+        ledgerTabs[nextIndex].click();
       });
     });
 
@@ -983,6 +1080,7 @@ function attachPlayWidget() {
               status: 'pending',
               sessionId: payload.session_ids[index],
             };
+            currentRoundRows.unshift(row);
             myRows.unshift(row);
             activeSlipRows.set(slip, row);
           }
@@ -1521,6 +1619,79 @@ function attachAviatorMenu() {
   });
 }
 
+function attachAccountNavigation() {
+  const toggle = document.getElementById('account-nav-toggle');
+  const sidebar = document.getElementById('account-sidebar');
+  const closeButton = document.getElementById('account-sidebar-close');
+  const backdrop = document.getElementById('account-nav-backdrop');
+
+  if (!toggle || !sidebar || !closeButton || !backdrop) {
+    return;
+  }
+
+  function closeNavigation(restoreFocus = false) {
+    sidebar.classList.remove('is-open');
+    backdrop.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('account-nav-open');
+    if (restoreFocus) {
+      toggle.focus();
+    }
+  }
+
+  function openNavigation() {
+    sidebar.classList.add('is-open');
+    backdrop.hidden = false;
+    toggle.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('account-nav-open');
+    closeButton.focus();
+  }
+
+  toggle.addEventListener('click', () => {
+    if (sidebar.classList.contains('is-open')) {
+      closeNavigation(true);
+    } else {
+      openNavigation();
+    }
+  });
+  closeButton.addEventListener('click', () => closeNavigation(true));
+  backdrop.addEventListener('click', () => closeNavigation(true));
+  sidebar.querySelectorAll('a').forEach((link) => {
+    link.addEventListener('click', () => closeNavigation());
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && sidebar.classList.contains('is-open')) {
+      closeNavigation(true);
+    }
+  });
+}
+
+function attachPaymentForms() {
+  document.querySelectorAll('[data-payment-form]').forEach((form) => {
+    form.addEventListener('submit', () => {
+      const button = form.querySelector('button[type="submit"]');
+      if (!button || button.disabled) {
+        return;
+      }
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      button.dataset.originalLabel = button.textContent.trim();
+      button.textContent = button.dataset.submittingLabel || 'Sending…';
+    });
+  });
+}
+
+function attachDismissibleAlerts() {
+  document.querySelectorAll('[data-dismissible-alert]').forEach((alert) => {
+    const dismissButton = alert.querySelector('.alert-dismiss');
+    dismissButton?.addEventListener('click', () => {
+      alert.classList.add('is-dismissed');
+      alert.addEventListener('transitionend', () => alert.remove(), { once: true });
+      window.setTimeout(() => alert.remove(), 220);
+    });
+  });
+}
+
 function attachAviatorModals() {
   const backdrop = document.getElementById('aviator-modal-backdrop');
   const modals = Array.from(document.querySelectorAll('[data-aviator-modal]'));
@@ -1609,6 +1780,9 @@ function attachAviatorModals() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  attachAccountNavigation();
+  attachPaymentForms();
+  attachDismissibleAlerts();
   attachPlayWidget();
   attachRoomWidget();
   attachAviatorMenu();

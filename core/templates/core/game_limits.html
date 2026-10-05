@@ -5,40 +5,99 @@
     {% include 'core/partials/account_sidebar.html' %}
     <div class="account-workspace">
         {% include 'core/partials/account_topbar.html' %}
-        <main class="account-main account-main-wide">
+        <main class="account-main account-main-wide account-settings-main">
             <section class="account-content">
                 <div class="account-title-row">
                     <div>
                         <h1>Settings</h1>
                         <p>Responsible play controls and account preferences.</p>
                     </div>
-                    <a class="account-close-link" href="{% url 'play' %}">×</a>
+                    <a class="account-close-link" href="{% url 'play' %}" aria-label="Back to game"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></a>
                 </div>
 
                 <section class="account-card account-form-panel">
                     <div class="section-heading">
-                        <h2>Game Limits</h2>
-                        <span>Protection controls</span>
+                        <div>
+                            <h2>Limits</h2>
+                            <p>These caps apply to deposits and bets placed through the game.</p>
+                        </div>
                     </div>
                     <form class="account-form-grid" method="post">
                         {% csrf_token %}
-                        <label><span>Phone Number</span>{{ form.phone_number }}</label>
-                        <label><span>Daily Deposit Limit</span>{{ form.daily_deposit_limit }}</label>
-                        <label><span>Daily Loss Limit</span>{{ form.daily_loss_limit }}</label>
+                        <input type="hidden" name="action" value="limits">
+                        <label><span>Mobile Money Phone</span>{{ form.phone_number }}<small>Used for account contact and mobile-money transactions.</small></label>
+                        <label><span>Daily Deposit Limit <em>{{ profile.currency }}</em></span>{{ form.daily_deposit_limit }}<small>Deposits above this amount are declined for the day.</small></label>
+                        <label><span>Daily Loss Limit <em>{{ profile.currency }}</em></span>{{ form.daily_loss_limit }}<small>New bets are blocked once your net daily loss reaches this cap.</small></label>
                         {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}
-                        <button class="account-action-button primary" type="submit">Save Limits</button>
+                        <button class="account-action-button primary" type="submit"><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg> Save limits</button>
+                    </form>
+                </section>
+
+                <section class="account-card exclusion-panel">
+                    <div class="section-heading">
+                        <div>
+                            <h2>Take a break</h2>
+                            <p>Self-exclusion blocks new bets for the period you choose.</p>
+                        </div>
+                    </div>
+                    {% if active_exclusion %}
+                        <div class="exclusion-status" role="status">
+                            <strong>Self-exclusion is active</strong>
+                            {% if active_exclusion.permanent %}
+                                <p>This exclusion has no end date. Contact support if you need help with your account.</p>
+                            {% else %}
+                                <p>Access is restricted until {{ active_exclusion.ends_at|date:'M j, Y, H:i' }}.</p>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <form class="account-form-grid exclusion-form" method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="self_exclude">
+                            <label><span>Exclusion period</span>{{ exclusion_form.duration }}</label>
+                            <label><span>Reason <em>Optional</em></span>{{ exclusion_form.reason }}</label>
+                            <p class="exclusion-warning">This takes effect immediately. You will not be able to place bets until the period ends. Permanent exclusion cannot be undone from Settings.</p>
+                            <label class="exclusion-confirm"><input type="checkbox" name="confirm_exclusion" required><span>I understand that this will restrict my access to betting.</span></label>
+                            {% if exclusion_form.errors %}<div class="field-errors">{{ exclusion_form.errors }}</div>{% endif %}
+                            <button class="account-action-button danger" type="submit">Start self-exclusion</button>
+                        </form>
+                    {% endif %}
+                </section>
+
+                <section class="account-card password-panel" id="password-settings">
+                    <div class="section-heading">
+                        <div>
+                            <h2>Password and security</h2>
+                            <p>Change your password. You will stay signed in on this device.</p>
+                        </div>
+                    </div>
+                    <form class="account-form-grid password-settings-form" method="post" autocomplete="on">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="password">
+                        {% for field in password_form %}
+                            <label><span>{{ field.label }}</span>{{ field }}
+                                {% for error in field.errors %}<small class="payment-field-error">{{ error }}</small>{% endfor %}
+                            </label>
+                        {% endfor %}
+                        {% if password_form.non_field_errors %}<div class="field-errors">{{ password_form.non_field_errors }}</div>{% endif %}
+                        <button class="account-action-button primary" type="submit">Update password</button>
                     </form>
                 </section>
             </section>
 
             <aside class="account-right-rail">
                 <section class="account-card">
-                    <div class="vip-head"><span>⚙</span><strong>Preferences</strong></div>
+                    <div class="vip-head"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg></span><strong>Account details</strong></div>
                     <ul class="rail-list">
                         <li><span>Currency</span><strong>{{ profile.currency }}</strong></li>
                         <li><span>KYC</span><strong>{{ profile.get_kyc_status_display }}</strong></li>
-                        <li><span>Security</span><strong>Enabled</strong></li>
+                        <li><span>Mobile Money Phone</span><strong>{{ profile.phone_number|default:'Not added' }}</strong></li>
                     </ul>
+                    <a class="rail-button" href="{% url 'profile' %}#preferences">Manage verification</a>
+                </section>
+                <section class="account-card settings-help-card">
+                    <h2>Need help?</h2>
+                    <p>Review responsible play guidance or contact the support team through your account.</p>
+                    <a class="rail-button" href="{% url 'how_to_play' %}">Open support</a>
                 </section>
             </aside>
         </main>

@@ -1,17 +1,33 @@
 {% extends 'core/base.html' %}
+{% load static %}
 {% block title %}Pakabet | Live Crash Betting{% endblock %}
 {% block content %}
 <div class="aviator-play-page">
     {% csrf_token %}
     <header class="aviator-topbar">
-        <button class="help-chip" type="button" data-aviator-modal-open="how-to-play">How to play?</button>
-        <div class="topbar-spacer"></div>
+        <a class="game-brand" href="{% url 'play' %}" aria-label="Pakabet home">
+            <img src="{% static 'logo icon.png' %}" alt="">
+            <span>Pakabet</span>
+        </a>
+        <button class="help-chip" type="button" data-aviator-modal-open="how-to-play">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-help"></use></svg>
+            <span>How to play</span>
+        </button>
         <div class="topbar-right">
             <div class="balance-pill" id="play-balance">
+                {% if user.is_authenticated %}
                 <strong>{{ profile.balance|floatformat:2 }}</strong>
-                <span>{{ profile.currency }}</span>
+                <span>{{ currency }}</span>
+                {% else %}
+                <strong>Guest</strong>
+                <span>Log in to play</span>
+                {% endif %}
             </div>
+            {% if user.is_authenticated %}
             <a class="wallet-link" href="{% url 'wallet' %}">Wallet</a>
+            {% else %}
+            <a class="wallet-link" href="{% url 'login' %}?next={% url 'wallet' %}">Log in</a>
+            {% endif %}
             <button class="menu-button" id="aviator-menu-button" type="button" aria-label="Menu" aria-expanded="false">
                 <span></span>
                 <span></span>
@@ -23,9 +39,9 @@
     <section class="aviator-shell">
         <aside class="live-bets-panel">
             <div class="panel-tabs" role="tablist" aria-label="Bet history">
-                <button class="panel-tab active" type="button" data-ledger-tab="all">All Bets</button>
-                <button class="panel-tab" type="button" data-ledger-tab="mine">My Bets</button>
-                <button class="panel-tab" type="button" data-ledger-tab="top">Top</button>
+                <button class="panel-tab active" id="ledger-tab-all" type="button" role="tab" aria-selected="true" aria-controls="ledger-list" tabindex="0" data-ledger-tab="all">All Bets</button>
+                <button class="panel-tab" id="ledger-tab-mine" type="button" role="tab" aria-selected="false" aria-controls="ledger-list" tabindex="-1" data-ledger-tab="mine">My Bets</button>
+                <button class="panel-tab" id="ledger-tab-top" type="button" role="tab" aria-selected="false" aria-controls="ledger-list" tabindex="-1" data-ledger-tab="top">Top</button>
             </div>
 
             <div class="total-bets-line">
@@ -43,13 +59,13 @@
                 <span>Win</span>
             </div>
 
-            <div class="ledger-list" id="ledger-list">
+            <div class="ledger-list" id="ledger-list" role="tabpanel" aria-labelledby="ledger-tab-all" tabindex="0">
                 {% for session in highest_stakers %}
-                    <div class="ledger-row {% if session.won_amount %}won{% endif %}">
+                    <div class="ledger-row {% if session.cashed_out_at is not None %}won{% else %}muted{% endif %}">
                         <span class="ledger-user"><span class="player-avatar">{{ session.user.username|slice:":1"|upper }}</span>{{ session.user.username|truncatechars:5 }}</span>
                         <span>{{ session.stake|floatformat:2 }}</span>
-                        <span>{{ session.crash_point|floatformat:2 }}x</span>
-                        <span>{{ session.won_amount|floatformat:2 }}</span>
+                        <span>{% if session.cashed_out_at is not None %}{{ session.cashed_out_at|floatformat:2 }}x{% endif %}</span>
+                        <span>{% if session.cashed_out_at is not None %}{{ session.won_amount|floatformat:2 }}{% endif %}</span>
                     </div>
                 {% endfor %}
                 {% for _ in "123456789012345678" %}
@@ -61,24 +77,27 @@
                     </div>
                 {% endfor %}
             </div>
+            {{ my_bet_rows|json_script:"my-bet-data" }}
         </aside>
 
         <main class="aviator-main">
-            <div class="round-strip" aria-label="Recent multipliers">
-                {% for session in recent_crashes %}
-                    <span class="round-pill {% if session.crash_point >= 10 %}hot{% elif session.crash_point >= 2 %}mid{% endif %}">
-                        {{ session.crash_point|floatformat:2 }}x
-                    </span>
-                {% empty %}
-                    <span class="round-pill mid">6.91x</span>
-                    <span class="round-pill">1.84x</span>
-                    <span class="round-pill hot">80.74x</span>
-                    <span class="round-pill">1.32x</span>
-                {% endfor %}
-                <span class="round-actions">
-                    <button type="button" aria-label="Sound"></button>
-                    <button type="button" aria-label="Round menu"></button>
-                </span>
+            <div class="round-strip" aria-label="Round history">
+                <div class="round-history-header">
+                    <span class="round-history-title">Round History</span>
+                    <button class="round-history-toggle" type="button" aria-label="Expand odds history" aria-expanded="false" aria-controls="round-history-list"></button>
+                </div>
+                <div class="round-history-list" id="round-history-list" aria-label="Recent odds">
+                    {% for session in recent_crashes %}
+                        <span class="round-pill {% if session.crash_point >= 10 %}hot{% elif session.crash_point >= 2 %}mid{% endif %}">
+                            {{ session.crash_point|floatformat:2 }}x
+                        </span>
+                    {% empty %}
+                        <span class="round-pill mid">6.91x</span>
+                        <span class="round-pill">1.84x</span>
+                        <span class="round-pill hot">80.74x</span>
+                        <span class="round-pill">1.32x</span>
+                    {% endfor %}
+                </div>
             </div>
 
             <section class="flight-stage" aria-live="polite">
@@ -116,6 +135,7 @@
             </section>
 
             <section class="betting-dock" id="play-form" data-play-widget>
+                {% if user.is_authenticated %}
                 <div class="bet-slip aviator-bet-slip">
                     <div class="bet-slip-tabs">
                         <button class="bet-mode-toggle active" type="button" data-mode="manual">Bet</button>
@@ -187,6 +207,16 @@
                         </button>
                     </div>
                 </div>
+                {% else %}
+                <div class="guest-betting-prompt">
+                    <strong>Ready to play?</strong>
+                    <span>Log in or create an account to place bets and access your wallet.</span>
+                    <div>
+                        <a class="guest-login-link" href="{% url 'login' %}?next={% url 'play' %}">Log in</a>
+                        <a class="guest-register-link" href="{% url 'register' %}">Create account</a>
+                    </div>
+                </div>
+                {% endif %}
             </section>
         </main>
 
@@ -205,7 +235,11 @@
                             <div class="chat-meta"><strong>{{ chat.user.username|truncatechars:8 }}</strong><time>{{ chat.created_at|date:"H:i:s" }}</time></div>
                             <p>{{ chat.message }}</p>
                         </div>
-                        <button class="chat-like" type="button" data-message-id="{{ chat.id }}" aria-label="Like"><span>&hearts;</span><b>{{ chat.reaction_count|default:0 }}</b></button>
+                        {% if user.is_authenticated %}
+                            <button class="chat-like" type="button" data-message-id="{{ chat.id }}" aria-label="Like"><span>&hearts;</span><b>{{ chat.reaction_count|default:0 }}</b></button>
+                        {% else %}
+                            <span class="chat-like chat-like-count" role="img" aria-label="{{ chat.reaction_count|default:0 }} reactions"><span>&hearts;</span><b>{{ chat.reaction_count|default:0 }}</b></span>
+                        {% endif %}
                     </article>
                 {% empty %}
                     <div class="chat-empty">No chat messages yet.</div>
@@ -219,6 +253,7 @@
                 <i></i>
             </div>
 
+            {% if user.is_authenticated %}
             <form class="chat-form" id="chat-form">
                 <input type="hidden" name="action" value="chat">
                 <label class="chat-text-wrap">
@@ -226,7 +261,12 @@
                 </label>
                 <div class="chat-tools">
                     <button type="button" data-chat-emoji aria-label="Emoji">&#9786;</button>
-                    <button type="button" data-chat-rain-open aria-label="Rain">&#9748;</button>
+                    <button type="button" data-chat-rain-open aria-label="Make it rain">
+                        <svg class="ui-icon rain-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 11.2a7.2 7.2 0 0 1 14.3-1.1A4.2 4.2 0 0 1 21 14H5.7A3.7 3.7 0 0 1 3 11.2Z"/>
+                            <path d="m8 17-1 2m6-2-1 2m6-2-1 2"/>
+                        </svg>
+                    </button>
                     <span>AA <b id="chat-char-count">160</b></span>
                     <button type="submit" aria-label="Send message">&#10148;</button>
                 </div>
@@ -238,7 +278,10 @@
                     <button type="button" data-chat-rain-close aria-label="Back">&#8249;</button>
                     <span></span>
                     <button type="button" data-chat-emoji aria-label="Emoji">&#9786;</button>
-                    <strong>&#9748;</strong>
+                    <svg class="ui-icon rain-icon rain-toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 11.2a7.2 7.2 0 0 1 14.3-1.1A4.2 4.2 0 0 1 21 14H5.7A3.7 3.7 0 0 1 3 11.2Z"/>
+                        <path d="m8 17-1 2m6-2-1 2m6-2-1 2"/>
+                    </svg>
                     <button class="rain-submit" type="submit">Send Rain</button>
                 </div>
                 <label class="rain-total-label">Total amount
@@ -251,8 +294,13 @@
                 <label>Amount per player
                     <span class="rain-stepper"><button type="button" data-rain-step="amount" data-step="-10">&minus;</button><input id="rain-amount" type="number" min="0.01" step="0.01" value="300.00"><button type="button" data-rain-step="amount" data-step="10">+</button></span>
                 </label>
-                <p id="rain-helper">This feature will give selected amount to random users in chat.</p>
+                <p id="rain-helper">Randomly distributes to the selected number of players currently in the game.</p>
             </form>
+            {% else %}
+            <div class="guest-chat-prompt">
+                <a href="{% url 'login' %}?next={% url 'play' %}">Log in to join the chat</a>
+            </div>
+            {% endif %}
 
             <section class="chat-rules-modal" id="chat-rules-modal" aria-hidden="true">
                 <header><h2>CHAT RULES</h2><button type="button" data-chat-rules-close aria-label="Close">&times;</button></header>
@@ -274,35 +322,26 @@
     <div class="aviator-menu-backdrop" id="aviator-menu-backdrop" hidden></div>
     <aside class="aviator-menu-drawer" id="aviator-menu-drawer" aria-hidden="true">
         <div class="menu-profile">
+            {% if user.is_authenticated %}
             <span class="menu-avatar">{{ request.user.username|slice:":1"|upper }}</span>
-            <strong>{{ request.user.username }}</strong>
-            <a href="{% url 'profile' %}">Change Avatar</a>
-            <button class="menu-close" id="aviator-menu-close" type="button" aria-label="Close menu">...</button>
-        </div>
-        <div class="menu-section">
-            <button class="menu-toggle-row" type="button" data-setting-toggle="sound">
-                <span class="menu-icon">♪</span>
-                <strong>Sound</strong>
-                <span class="setting-switch" aria-hidden="true"></span>
-            </button>
-            <button class="menu-toggle-row" type="button" data-setting-toggle="music">
-                <span class="menu-icon">♫</span>
-                <strong>Music</strong>
-                <span class="setting-switch" aria-hidden="true"></span>
-            </button>
-            <button class="menu-toggle-row" type="button" data-setting-toggle="animation">
-                <span class="menu-icon">✦</span>
-                <strong>Animation</strong>
-                <span class="setting-switch" aria-hidden="true"></span>
-            </button>
+            <a class="menu-profile-name" href="{% url 'profile' %}">{{ request.user.username }}</a>
+            {% else %}
+            <span class="menu-avatar">G</span>
+            <strong>Guest</strong>
+            <a href="{% url 'login' %}?next={% url 'play' %}">Log in</a>
+            {% endif %}
+            <button class="menu-close" id="aviator-menu-close" type="button" aria-label="Close menu"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></button>
         </div>
         <nav class="menu-links" aria-label="Pakabet menu">
-            <a href="{% url 'free_bets' %}" data-aviator-modal-open="free-bets"><span class="menu-icon">☆</span>Free Bets</a>
-            <a href="{% url 'bet_history' %}" data-aviator-modal-open="bet-history"><span class="menu-icon">↺</span>My Bet History</a>
-            <a href="{% url 'game_limits' %}" data-aviator-modal-open="game-limits"><span class="menu-icon">▣</span>Game Limits</a>
-            <a href="{% url 'how_to_play' %}" data-aviator-modal-open="how-to-play"><span class="menu-icon">?</span>How To Play</a>
-            <a href="{% url 'game_rules' %}" data-aviator-modal-open="game-rules"><span class="menu-icon">☷</span>Game Rules</a>
-            <a href="{% url 'provably_fair' %}" data-aviator-modal-open="provably-fair"><span class="menu-icon">◇</span>Provably Fair Settings</a>
+            {% if user.is_authenticated %}
+            <a href="{% url 'bet_history' %}" data-aviator-modal-open="bet-history"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg>My Bet History</a>
+            <a href="{% url 'game_limits' %}" data-aviator-modal-open="game-limits"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg>Game Limits</a>
+            {% endif %}
+            <a href="{% url 'how_to_play' %}" data-aviator-modal-open="how-to-play"><svg class="ui-icon" aria-hidden="true"><use href="#icon-help"></use></svg>How To Play</a>
+            <a href="{% url 'game_rules' %}" data-aviator-modal-open="game-rules"><svg class="ui-icon" aria-hidden="true"><use href="#icon-list"></use></svg>Game Rules</a>
+            {% if user.is_authenticated %}
+            <a href="{% url 'provably_fair' %}" data-aviator-modal-open="provably-fair"><svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg>Provably Fair Settings</a>
+            {% endif %}
         </nav>
     </aside>
 
@@ -316,21 +355,21 @@
                 <li class="how-step how-step--bet">
                     <span class="how-step__number" aria-hidden="true">01</span>
                     <span class="how-step__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="7" rx="6.5" ry="2.5"/><path d="M5.5 7v5c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5V7M5.5 12v5c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-5"/><path d="M12 7v10"/></svg>
+                        <svg class="ui-icon" aria-hidden="true"><use href="#icon-receipt"></use></svg>
                     </span>
                     <div class="how-step__copy"><span class="how-step__label">Step 1</span><h3>Place your bet</h3><p>Pick your stake and join the next round. You can play up to two bets at once.</p></div>
                 </li>
                 <li class="how-step how-step--fly">
                     <span class="how-step__number" aria-hidden="true">02</span>
                     <span class="how-step__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16.5 13.5 12l-3-8.5-1.8.7 1.2 8.3-6.4 2.1-.8 2 8-.4 3.1 4.3 1.5-.6-1.6-4 6.2 1.3Z"/><path d="M3 5.5h4M2 9h3"/></svg>
+                        <svg class="ui-icon" aria-hidden="true"><use href="#icon-plane"></use></svg>
                     </span>
                     <div class="how-step__copy"><span class="how-step__label">Step 2</span><h3>Watch it climb</h3><p>Follow the plane as the multiplier grows. Your potential win rises with it.</p></div>
                 </li>
                 <li class="how-step how-step--cashout">
                     <span class="how-step__number" aria-hidden="true">03</span>
                     <span class="how-step__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="6" width="17" height="12" rx="2.5"/><path d="M15 12h3M11.5 3.5v9M8.5 6.5l3 3 3-3"/></svg>
+                        <svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg>
                     </span>
                     <div class="how-step__copy"><span class="how-step__label">Step 3</span><h3>Cash out in time</h3><p>Secure your winnings before the plane flies away. Once it crashes, the round is over.</p></div>
                 </li>
@@ -339,31 +378,19 @@
         <button class="modal-footer-link" type="button" data-aviator-modal-switch="game-rules"><span>View detailed rules</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
     </section>
 
-    <section class="aviator-game-modal" data-aviator-modal="free-bets" aria-hidden="true">
-        <header><h2>FREE BETS MANAGEMENT</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
-        <div class="modal-body">
-            <div class="cash-option"><span></span>Play with cash</div>
-            <div class="modal-row-title"><strong>ACTIVE FREE BETS</strong><button type="button">↺ Archive</button></div>
-            <div class="empty-ticket">
-                <div class="ticket-icon">☆</div>
-                <strong>No Active Free Bets. Yet!</strong>
-            </div>
-        </div>
-    </section>
-
     <section class="aviator-game-modal" data-aviator-modal="game-limits" aria-hidden="true">
         <header><h2>GAME LIMITS</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
         <div class="modal-body compact">
-            <div class="limit-line"><span>Minimum bet {{ profile.currency }}:</span><strong>1.00</strong></div>
-            <div class="limit-line"><span>Maximum bet {{ profile.currency }}:</span><strong>{{ profile.daily_loss_limit|floatformat:2 }}</strong></div>
-            <div class="limit-line"><span>Maximum win for one bet {{ profile.currency }}:</span><strong>450,000,000.00</strong></div>
+            <div class="limit-line"><span>Minimum bet {{ currency }}:</span><strong>1.00</strong></div>
+            <div class="limit-line"><span>Maximum bet {{ currency }}:</span><strong>{% if profile %}{{ profile.daily_loss_limit|floatformat:2 }}{% else %}200,000.00{% endif %}</strong></div>
+            <div class="limit-line"><span>Maximum win for one bet {{ currency }}:</span><strong>450,000,000.00</strong></div>
         </div>
     </section>
 
     <section class="aviator-game-modal" data-aviator-modal="bet-history" aria-hidden="true">
         <header><h2>MY BET HISTORY</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
         <div class="modal-table">
-            <div class="modal-table-head"><span>Date</span><span>Bet {{ profile.currency }}</span><span>X</span><span>Cash out {{ profile.currency }}</span></div>
+            <div class="modal-table-head"><span>Date</span><span>Bet {{ currency }}</span><span>X</span><span>Cash out {{ currency }}</span></div>
             {% for session in recent_sessions %}
                 <div class="modal-table-row">
                     <span>{{ session.created_at|date:'M d, H:i' }}</span>
@@ -383,7 +410,7 @@
             <p>Pakabet is built on a provably fair system. The multiplier rises from 1x and stops when the plane flies away.</p>
             <h3>HOW TO PLAY</h3>
             <div class="rules-grid">
-                <div><strong>01</strong><div class="rule-preview bet-preview">Bet<br>1.00 {{ profile.currency }}</div><p><b>BET</b> before take-off.</p></div>
+                <div><strong>01</strong><div class="rule-preview bet-preview">Bet<br>1.00 {{ currency }}</div><p><b>BET</b> before take-off.</p></div>
                 <div><strong>02</strong><div class="rule-preview">2.25x</div><p><b>WATCH</b> as your winnings increase.</p></div>
                 <div><strong>03</strong><div class="rule-preview cash-preview">Cash Out</div><p><b>CASH OUT</b> before the plane disappears.</p></div>
             </div>
@@ -417,8 +444,9 @@
 <script>
 window.aviatorConfig = {
     playUrl: "{% url 'play' %}",
-    currency: "{{ profile.currency }}",
-    walletBalance: {{ profile.balance|floatformat:2 }}
+    currency: "{{ currency }}",
+    isAuthenticated: {% if user.is_authenticated %}true{% else %}false{% endif %},
+    walletBalance: {% if profile %}{{ profile.balance|floatformat:2 }}{% else %}0{% endif %}
 };
 </script>
 {% endblock %}

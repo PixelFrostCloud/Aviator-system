@@ -7,13 +7,36 @@ from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from .models import ChatMessage, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GameRound, KYCSubmission, PaymentRequest, Profile, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, Transaction
-from .payment_gateway import IotecPayGateway
+from .models import ChatMessage, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GamePresence, GameRound, KYCSubmission, PaymentRequest, Profile, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, Transaction
+from .payment_gateway import IotecPayGateway, PaymentGatewayError
 from .reward_services import claim_reward
 from .utils import calculate_crash_point, can_deposit, generate_financial_report, hash_server_seed, verify_game_round
 
 
 class AuthenticationTests(TestCase):
+    def test_protected_account_pages_redirect_to_project_login(self):
+        response = self.client.get('/profile/')
+
+        self.assertRedirects(response, '/login/?next=/profile/')
+
+    def test_guest_game_actions_require_login(self):
+        bet_response = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([10]),
+        })
+
+        self.assertEqual(bet_response.status_code, 401)
+        self.assertFalse(GameRound.objects.exists())
+
+    def test_wallet_requires_login_and_rooms_page_returns_to_game(self):
+        wallet_response = self.client.get('/wallet/')
+        rooms_response = self.client.get('/rooms/')
+
+        self.assertEqual(wallet_response.status_code, 302)
+        self.assertEqual(wallet_response.url, '/login/?next=/wallet/')
+        self.assertEqual(rooms_response.status_code, 302)
+        self.assertEqual(rooms_response.url, '/play/')
+
     def test_registration_requires_phone_number(self):
         response = self.client.post('/register/', {
             'username': 'new-player',
@@ -50,6 +73,17 @@ class AuthenticationTests(TestCase):
 
 
 class IotecGatewayRequestTests(TestCase):
+    @patch('core.payment_gateway.request.urlopen', side_effect=TimeoutError('timed out'))
+    def test_socket_timeout_is_retryable(self, urlopen):
+        gateway = IotecPayGateway()
+        gateway.token_cache = {'access_token': 'test-token', 'expires_at': 9999999999}
+
+        with self.assertRaises(PaymentGatewayError) as raised:
+            gateway._json_request('https://pay.example.test/status', data=None, headers={})
+
+        self.assertTrue(raised.exception.retryable)
+        urlopen.assert_called_once()
+
     @override_settings(
         IOTEC_PAY_MODE='live',
         IOTEC_PAY_WALLET_ID='wallet-001',
@@ -195,7 +229,26 @@ class PlayEndpointTests(TestCase):
         self.assertEqual(payload['status'], 'won')
         self.assertIsNone(payload['crash_point'])
 
-    def test_chat_rain_debits_sender_and_credits_recent_chat_player(self):
+    def test_game_presence_endpoint_records_authenticated_page_presence(self):
+        response = self.client.post('/play/', {
+            'action': 'presence',
+            'presence_key': 'a' * 32,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(GamePresence.objects.filter(user=self.user, presence_key='a' * 32).exists())
+
+    def test_game_presence_endpoint_rejects_invalid_presence_key(self):
+        response = self.client.post('/play/', {
+            'action': 'presence',
+            'presence_key': 'not-a-valid-presence-key',
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(GamePresence.objects.exists())
+
+    @patch('core.reward_services.random.SystemRandom')
+    def test_chat_rain_debits_sender_and_credits_active_chat_player(self, system_random):
         recipient = User.objects.create_user(
             username='rain-recipient',
             email='rain-recipient@example.com',
@@ -203,6 +256,16 @@ class PlayEndpointTests(TestCase):
         )
         recipient_profile = Profile.objects.create(user=recipient, balance=Decimal('20.00'))
         ChatMessage.objects.create(user=recipient, message='ready for rain')
+        GamePresence.objects.create(user=self.user, presence_key='a' * 32, last_seen=timezone.now())
+        GamePresence.objects.create(user=recipient, presence_key='b' * 32, last_seen=timezone.now())
+        inactive_user = User.objects.create_user(
+            username='inactive-chat-player',
+            email='inactive-chat-player@example.com',
+            password='strong-test-pass',
+        )
+        inactive_profile = Profile.objects.create(user=inactive_user, balance=Decimal('50.00'))
+        ChatMessage.objects.create(user=inactive_user, message='not currently in game')
+        system_random.return_value.sample.return_value = [recipient]
 
         response = self.client.post('/play/', {
             'action': 'chat_rain',
@@ -213,8 +276,11 @@ class PlayEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.profile.refresh_from_db()
         recipient_profile.refresh_from_db()
+        inactive_profile.refresh_from_db()
         self.assertEqual(self.profile.balance, Decimal('900.00'))
         self.assertEqual(recipient_profile.balance, Decimal('120.00'))
+        self.assertEqual(inactive_profile.balance, Decimal('50.00'))
+        system_random.return_value.sample.assert_called_once_with([recipient], 1)
         self.assertIn('Sent rain', response.json()['message']['text'])
         rain = ChatRain.objects.get(sender=self.user)
         self.assertEqual(rain.total_amount, Decimal('100.00'))
@@ -229,6 +295,71 @@ class PlayEndpointTests(TestCase):
         self.assertEqual(reward_wallet.available_balance, Decimal('100.00'))
         self.assertEqual(RewardTransaction.objects.get(event=rain.reward_event, wallet=reward_wallet).amount, Decimal('100.00'))
 
+    @patch('core.reward_services.random.SystemRandom')
+    def test_chat_rain_randomly_selects_the_requested_number_of_active_players(self, system_random):
+        recipients = []
+        for number in range(3):
+            user = User.objects.create_user(
+                username=f'rain-player-{number}',
+                email=f'rain-player-{number}@example.com',
+                password='strong-test-pass',
+            )
+            Profile.objects.create(user=user, balance=Decimal('20.00'))
+            GamePresence.objects.create(
+                user=user,
+                presence_key=f'{number + 1:032x}',
+                last_seen=timezone.now(),
+            )
+            recipients.append(user)
+        system_random.return_value.sample.return_value = recipients[:2]
+
+        response = self.client.post('/play/', {
+            'action': 'chat_rain',
+            'total_amount': '100.00',
+            'players': '2',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        system_random.return_value.sample.assert_called_once()
+        self.assertEqual(system_random.return_value.sample.call_args.args[1], 2)
+        rain = ChatRain.objects.get(sender=self.user)
+        self.assertEqual(
+            set(rain.recipients.values_list('user_id', flat=True)),
+            {user.id for user in recipients[:2]},
+        )
+        self.assertNotIn(self.user.id, rain.recipients.values_list('user_id', flat=True))
+        self.assertEqual(response.json()['message']['rain']['recipient_count'], 2)
+
+    def test_chat_rain_rejects_when_requested_active_players_are_unavailable(self):
+        inactive_user = User.objects.create_user(
+            username='inactive-rain-player',
+            email='inactive-rain-player@example.com',
+            password='strong-test-pass',
+        )
+        Profile.objects.create(user=inactive_user, balance=Decimal('20.00'))
+        ChatMessage.objects.create(user=inactive_user, message='not online')
+        GamePresence.objects.create(user=self.user, presence_key='a' * 32, last_seen=timezone.now())
+        GamePresence.objects.create(
+            user=inactive_user,
+            presence_key='b' * 32,
+            last_seen=timezone.now() - timedelta(seconds=91),
+        )
+
+        response = self.client.post('/play/', {
+            'action': 'chat_rain',
+            'total_amount': '100.00',
+            'players': '1',
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()['message'],
+            'Only 0 other players are currently in the game; 1 is needed.',
+        )
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        self.assertFalse(ChatRain.objects.filter(sender=self.user).exists())
+
     def test_chat_rain_rejects_insufficient_wallet_balance(self):
         recipient = User.objects.create_user(
             username='rain-balance-recipient',
@@ -237,6 +368,7 @@ class PlayEndpointTests(TestCase):
         )
         Profile.objects.create(user=recipient, balance=Decimal('20.00'))
         ChatMessage.objects.create(user=recipient, message='ready for rain')
+        GamePresence.objects.create(user=recipient, presence_key='a' * 32, last_seen=timezone.now())
 
         response = self.client.post('/play/', {
             'action': 'chat_rain',
@@ -367,6 +499,23 @@ class RoomEndpointTests(TestCase):
         self.assertEqual(payload['room']['status'], 'running')
         self.assertIsNone(payload['room']['crash_point'])
 
+    def test_self_exclusion_blocks_joining_a_room(self):
+        room = Room.objects.create(name='Join Room', host=self.user)
+        SelfExclusion.objects.create(
+            user=self.user,
+            ends_at=timezone.now() + timedelta(hours=72),
+            reason='Cooling off',
+        )
+
+        response = self.client.post(f'/rooms/{room.id}/action/', {
+            'action': 'join',
+            'stake': '10.00',
+        })
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('self-excluded', response.json()['message'])
+        self.assertFalse(RoomPlayer.objects.filter(room=room, user=self.user).exists())
+
 
 class WalletComplianceTests(TestCase):
     def setUp(self):
@@ -395,6 +544,27 @@ class WalletComplianceTests(TestCase):
         self.assertEqual(payment.status, 'completed')
         self.assertEqual(Transaction.objects.get(reference=payment.external_reference).transaction_type, 'deposit')
 
+    @patch(
+        'core.payment_services.IotecPayGateway.collect_mobile_money',
+        side_effect=PaymentGatewayError('gateway timeout', retryable=True),
+    )
+    def test_deposit_timeout_stays_pending_without_crediting_balance(self, collect):
+        response = self.client.post('/wallet/', {
+            'action': 'deposit',
+            'deposit-amount': '500',
+            'deposit-provider': 'mtn_momo',
+            'deposit-phone_number': '256700000000',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        payment = PaymentRequest.objects.get(user=self.user, payment_type='deposit')
+        self.profile.refresh_from_db()
+        txn = Transaction.objects.get(reference=payment.external_reference)
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(txn.status, 'pending')
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        collect.assert_called_once()
+
     def test_deposit_limit_is_enforced(self):
         self.profile.daily_deposit_limit = Decimal('100.00')
         self.profile.save(update_fields=['daily_deposit_limit'])
@@ -420,6 +590,130 @@ class WalletComplianceTests(TestCase):
         self.assertEqual(self.profile.balance, Decimal('500.00'))
         self.assertEqual(payment.status, 'pending')
         self.assertEqual(txn.status, 'pending')
+
+    @patch(
+        'core.payment_services.IotecPayGateway.disburse_mobile_money',
+        side_effect=PaymentGatewayError('gateway timeout', retryable=True),
+    )
+    def test_withdrawal_timeout_keeps_hold_pending(self, disburse):
+        response = self.client.post('/wallet/', {
+            'action': 'withdraw',
+            'withdraw-amount': '500',
+            'withdraw-provider': 'airtel_money',
+            'withdraw-phone_number': '256750000000',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        payment = PaymentRequest.objects.get(user=self.user, payment_type='withdraw')
+        self.profile.refresh_from_db()
+        txn = Transaction.objects.get(reference=payment.external_reference)
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(txn.status, 'pending')
+        self.assertEqual(self.profile.balance, Decimal('500.00'))
+        self.assertFalse(Transaction.objects.filter(reference=payment.external_reference, transaction_type='refund').exists())
+        disburse.assert_called_once()
+
+    @patch(
+        'core.payment_services.IotecPayGateway.disburse_mobile_money',
+        side_effect=PaymentGatewayError('provider rejected request'),
+    )
+    def test_definitive_withdrawal_rejection_releases_hold(self, disburse):
+        response = self.client.post('/wallet/', {
+            'action': 'withdraw',
+            'withdraw-amount': '500',
+            'withdraw-provider': 'airtel_money',
+            'withdraw-phone_number': '256750000000',
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'The provider rejected the withdrawal request')
+        payment = PaymentRequest.objects.get(user=self.user, payment_type='withdraw')
+        self.profile.refresh_from_db()
+        self.assertEqual(payment.status, 'failed')
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        self.assertTrue(Transaction.objects.filter(reference=payment.external_reference, transaction_type='refund').exists())
+        disburse.assert_called_once()
+
+    @patch(
+        'core.payment_services.IotecPayGateway.collect_mobile_money',
+        side_effect=PaymentGatewayError('provider rejected request'),
+    )
+    def test_definitive_deposit_rejection_is_reported_as_failure(self, collect):
+        response = self.client.post('/wallet/', {
+            'action': 'deposit',
+            'deposit-amount': '500',
+            'deposit-provider': 'mtn_momo',
+            'deposit-phone_number': '256700000000',
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'The provider rejected the deposit request')
+        payment = PaymentRequest.objects.get(user=self.user, payment_type='deposit')
+        self.profile.refresh_from_db()
+        self.assertEqual(payment.status, 'failed')
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        collect.assert_called_once()
+
+    def test_wallet_preferences_link_to_supported_controls(self):
+        response = self.client.get('/wallet/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Manage limits')
+        self.assertContains(response, 'Change password')
+        self.assertNotContains(response, 'Odds Format')
+        self.assertNotContains(response, 'Security</span><strong>Enabled')
+
+    def test_payment_sync_calls_provider_service(self):
+        payment = PaymentRequest.objects.create(
+            user=self.user,
+            payment_type='deposit',
+            provider='mtn_momo',
+            amount=Decimal('500.00'),
+            phone_number='256700000000',
+            external_reference='DEP-SYNC-001',
+            status='pending',
+            metadata={'gateway': 'iotec_pay'},
+        )
+
+        with patch('core.views.sync_payment', return_value=payment) as sync_mock:
+            response = self.client.post(f'/wallet/payments/{payment.external_reference}/sync/')
+
+        self.assertEqual(response.status_code, 302)
+        sync_mock.assert_called_once_with(payment)
+
+    def test_payment_sync_provider_error_returns_to_wallet(self):
+        payment = PaymentRequest.objects.create(
+            user=self.user,
+            payment_type='withdraw',
+            provider='airtel_money',
+            amount=Decimal('500.00'),
+            phone_number='256750000000',
+            external_reference='WDR-SYNC-ERROR',
+            status='pending',
+            metadata={'gateway': 'iotec_pay'},
+        )
+
+        with patch('core.views.sync_payment', side_effect=PaymentGatewayError('provider unavailable')):
+            response = self.client.post(
+                f'/wallet/payments/{payment.external_reference}/sync/',
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'The provider could not return a payment update')
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+
+    def test_password_change_updates_authenticated_account(self):
+        response = self.client.post('/account/password/', {
+            'old_password': 'strong-test-pass',
+            'new_password1': 'Distinctive-new-pass-2026!',
+            'new_password2': 'Distinctive-new-pass-2026!',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('Distinctive-new-pass-2026!'))
 
     def test_card_deposit_is_rejected(self):
         response = self.client.post('/wallet/', {
@@ -487,6 +781,25 @@ class WalletComplianceTests(TestCase):
         self.assertEqual(self.profile.balance, Decimal('1250.00'))
         self.assertEqual(payment.status, 'completed')
         self.assertEqual(Transaction.objects.filter(reference=payment.external_reference, transaction_type='deposit').count(), 1)
+
+        stale_payload = {
+            **payload,
+            'status': 'Failed',
+            'statusCode': 'failed',
+            'statusMessage': 'Stale failure update',
+        }
+        stale_response = self.client.post(
+            '/api/payments/callback/',
+            data=json.dumps(stale_payload),
+            content_type='application/json',
+            HTTP_X_PAKABET_WEBHOOK_TOKEN='test-token',
+        )
+
+        self.profile.refresh_from_db()
+        payment.refresh_from_db()
+        self.assertEqual(stale_response.json()['status'], 'completed')
+        self.assertEqual(payment.status, 'completed')
+        self.assertEqual(self.profile.balance, Decimal('1250.00'))
 
 
 class RewardDistributionTests(TestCase):
@@ -625,6 +938,7 @@ class ComplianceFeatureTests(TestCase):
             'action': 'self_exclude',
             'duration': '72',
             'reason': 'Cooling off',
+            'confirm_exclusion': 'on',
         })
         self.assertEqual(response.status_code, 302)
         self.assertTrue(SelfExclusion.objects.filter(user=self.user).exists())
@@ -637,6 +951,81 @@ class ComplianceFeatureTests(TestCase):
         self.assertEqual(play.status_code, 403)
         self.assertIn('self-excluded', play.json()['message'])
 
+    def test_profile_self_exclusion_requires_confirmation(self):
+        response = self.client.post('/profile/', {
+            'action': 'self_exclude',
+            'duration': '72',
+            'reason': 'Cooling off',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Confirm that you understand this action')
+        self.assertFalse(SelfExclusion.objects.filter(user=self.user).exists())
+
+    def test_settings_self_exclusion_requires_confirmation(self):
+        response = self.client.post('/game-limits/', {
+            'action': 'self_exclude',
+            'duration': '72',
+            'reason': 'Cooling off',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Confirm that you understand this action')
+        self.assertFalse(SelfExclusion.objects.filter(user=self.user).exists())
+
+    def test_settings_self_exclusion_blocks_bets(self):
+        response = self.client.post('/game-limits/', {
+            'action': 'self_exclude',
+            'duration': '72',
+            'reason': 'Cooling off',
+            'confirm_exclusion': 'on',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(SelfExclusion.objects.filter(user=self.user).exists())
+
+        play = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([10]),
+        })
+
+        self.assertEqual(play.status_code, 403)
+        self.assertIn('self-excluded', play.json()['message'])
+
+    def test_settings_can_update_daily_limits(self):
+        response = self.client.post('/game-limits/', {
+            'action': 'limits',
+            'phone_number': '',
+            'daily_deposit_limit': '250000.00',
+            'daily_loss_limit': '75000.00',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.daily_deposit_limit, Decimal('250000.00'))
+        self.assertEqual(self.profile.daily_loss_limit, Decimal('75000.00'))
+
+    def test_settings_password_change_preserves_authenticated_session(self):
+        response = self.client.post('/game-limits/', {
+            'action': 'password',
+            'old_password': 'strong-test-pass',
+            'new_password1': 'Distinctive-settings-pass-2026!',
+            'new_password2': 'Distinctive-settings-pass-2026!',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('Distinctive-settings-pass-2026!'))
+        account_page = self.client.get('/profile/')
+        self.assertEqual(account_page.status_code, 200)
+
+    def test_support_page_links_to_real_account_actions(self):
+        response = self.client.get('/how-to-play/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Verify a round')
+        self.assertContains(response, 'Open responsible play settings')
+
     def test_flagged_chat_creates_risk_alert(self):
         response = self.client.post('/play/', {
             'action': 'chat',
@@ -646,6 +1035,91 @@ class ComplianceFeatureTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(ChatMessage.objects.get(user=self.user).flagged)
         self.assertTrue(RiskAlert.objects.filter(user=self.user, alert_type='flagged_chat').exists())
+
+
+class GameDataPageTests(TestCase):
+    def setUp(self):
+        from .models import GameSession
+
+        self.user = User.objects.create_user(
+            username='game-data-player',
+            password='strong-test-pass',
+        )
+        self.profile = Profile.objects.create(user=self.user, balance=Decimal('600.00'))
+        self.client.login(username='game-data-player', password='strong-test-pass')
+        self.won_round = GameRound.objects.create(
+            public_id='DATA-WON',
+            server_seed_hash='a' * 64,
+            client_seed='data-test',
+            crash_point=Decimal('2.00'),
+            status='crashed',
+        )
+        self.lost_round = GameRound.objects.create(
+            public_id='DATA-LOST',
+            server_seed_hash='b' * 64,
+            client_seed='data-test',
+            crash_point=Decimal('1.50'),
+            status='crashed',
+        )
+        self.live_round = GameRound.objects.create(
+            public_id='DATA-LIVE',
+            server_seed_hash='c' * 64,
+            client_seed='data-test',
+            crash_point=Decimal('3.00'),
+            status='flying',
+        )
+        GameSession.objects.create(
+            user=self.user,
+            round=self.won_round,
+            stake=Decimal('100.00'),
+            crash_point=Decimal('2.00'),
+            cashed_out_at=Decimal('1.50'),
+            won_amount=Decimal('150.00'),
+        )
+        GameSession.objects.create(
+            user=self.user,
+            round=self.lost_round,
+            stake=Decimal('50.00'),
+            crash_point=Decimal('1.50'),
+        )
+        GameSession.objects.create(
+            user=self.user,
+            round=self.live_round,
+            stake=Decimal('25.00'),
+            crash_point=Decimal('3.00'),
+        )
+
+    def test_dashboard_aggregates_real_sessions(self):
+        response = self.client.get('/dashboard/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['total_bets'], 3)
+        self.assertEqual(response.context['settled_count'], 2)
+        self.assertEqual(response.context['total_staked'], Decimal('150.00'))
+        self.assertEqual(response.context['total_returned'], Decimal('150.00'))
+        self.assertEqual(response.context['net_result'], Decimal('0.00'))
+        self.assertEqual(response.context['win_rate'], 50)
+
+    def test_bet_history_filters_use_round_outcomes(self):
+        won_response = self.client.get('/bet-history/?outcome=won')
+        lost_response = self.client.get('/bet-history/?outcome=lost')
+        live_response = self.client.get('/bet-history/?outcome=live')
+
+        self.assertEqual(won_response.context['page_obj'].paginator.count, 1)
+        self.assertEqual(won_response.context['sessions'][0].round.public_id, 'DATA-WON')
+        self.assertEqual(lost_response.context['page_obj'].paginator.count, 1)
+        self.assertEqual(lost_response.context['sessions'][0].round.public_id, 'DATA-LOST')
+        self.assertEqual(live_response.context['page_obj'].paginator.count, 1)
+        self.assertEqual(live_response.context['sessions'][0].round.public_id, 'DATA-LIVE')
+
+
+class FinancialReportTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='report-player',
+            password='strong-test-pass',
+        )
+        Profile.objects.create(user=self.user)
 
     def test_financial_report_calculates_ggr_and_tax(self):
         today = timezone.now().date()
