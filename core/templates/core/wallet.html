@@ -23,14 +23,14 @@
                         <div>
                             <h2>{{ request.user.username }}</h2>
                             <p>Player ID: {{ request.user.id }}</p>
-                            <span>✓ {{ profile.get_kyc_status_display }}</span>
+                            <span>{% if active_exclusion %}Self-exclusion active{% else %}Account active{% endif %}</span>
                         </div>
                     </div>
                     <div class="account-stat-row">
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Total Balance</small><strong>{{ profile.balance|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Monthly Deposits</small><strong>{{ monthly_deposit_total|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><small>Deposit Limit</small><strong>{{ monthly_deposit_limit|floatformat:0 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg></span><small>KYC Status</small><strong>{{ profile.get_kyc_status_display }}</strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Total Balance</small><strong><span class="account-stat-amount">{{ profile.balance|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Deposited Today</small><strong><span class="account-stat-amount">{{ daily_deposit_total|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><small>Deposit Range</small><strong><span class="account-stat-amount">500–300,000</span><em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg></span><small>Daily Deposit Limit</small><strong><span class="account-stat-amount">{{ profile.daily_deposit_limit|floatformat:0 }}</span><em>{{ profile.currency }}</em></strong></article>
                     </div>
                 </section>
 
@@ -47,8 +47,8 @@
                         </div>
                         <dl class="wallet-metrics">
                             <div><dt>Main Balance</dt><dd>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</dd></div>
-                            <div><dt>Monthly Deposits</dt><dd>{{ monthly_deposit_total|floatformat:2 }} {{ profile.currency }}</dd></div>
-                            <div><dt>KYC Tier</dt><dd>{{ profile.get_kyc_status_display }}</dd></div>
+                            <div><dt>Daily Deposits</dt><dd>{{ daily_deposit_total|floatformat:2 }} {{ profile.currency }}</dd></div>
+                            <div><dt>Maximum Per Deposit</dt><dd>300,000 {{ profile.currency }}</dd></div>
                         </dl>
                     </section>
 
@@ -83,36 +83,59 @@
                     <div class="section-heading">
                         <div>
                             <h2>Deposit and withdraw</h2>
-                            <p>Choose MTN or Airtel. Requests are confirmed by ioTec Pay.</p>
+                            <p>Each deposit must be between 500 and 300,000 UGX. Withdrawals start at 500 UGX and are limited by your available balance.</p>
                         </div>
                         <span class="gateway-mode gateway-mode--{{ payment_mode }}">ioTec Pay · {{ payment_mode|title }}</span>
                     </div>
                     {% if payment_mode != 'live' %}
                         <p class="gateway-notice" role="status">Sandbox mode is active. Test requests do not move real money.</p>
                     {% endif %}
+                    {% if active_exclusion %}
+                        <div class="exclusion-status" role="status">
+                            <strong>Self-exclusion is active</strong>
+                            <p>Deposits and new bets are unavailable{% if active_exclusion.permanent %} while your permanent exclusion is active.{% else %} until {{ active_exclusion.ends_at|date:'M j, Y, H:i' }}.{% endif %} You can still request a withdrawal of your available balance.</p>
+                        </div>
+                    {% endif %}
                     <div class="money-form-grid">
+                        {% if active_exclusion %}
+                        <div class="payment-form">
+                            <h3>Deposit unavailable</h3>
+                            <p>Deposits are blocked while self-exclusion is active.</p>
+                        </div>
+                        {% else %}
                         <form id="deposit-form" class="payment-form" method="post" data-payment-form>
                             {% csrf_token %}
                             <input type="hidden" name="action" value="deposit">
                             <h3>Deposit</h3>
                             <p>We will send a payment prompt to your phone. Approve it with your Mobile Money PIN.</p>
                             {% for field in deposit_form %}
+                                {% if field.name == 'country_code' %}
+                                {% elif field.name == 'phone_number' %}
+                                    {% include 'core/partials/phone_number_field.html' with phone_form=deposit_form %}
+                                {% else %}
                                 <label class="payment-field" for="{{ field.id_for_label }}">{{ field.label }}{{ field }}
                                     {% for error in field.errors %}<small class="payment-field-error">{{ error }}</small>{% endfor %}
                                 </label>
+                                {% endif %}
                             {% endfor %}
                             {% for error in deposit_form.non_field_errors %}<div class="field-errors">{{ error }}</div>{% endfor %}
                             <button class="account-primary-btn" type="submit" data-submitting-label="Sending request…">Send deposit request</button>
                         </form>
+                        {% endif %}
                         <form id="withdraw-form" class="payment-form" method="post" data-payment-form>
                             {% csrf_token %}
                             <input type="hidden" name="action" value="withdraw">
                             <h3>Withdraw</h3>
                             <p>The amount stays on hold until ioTec Pay confirms or rejects the payout.</p>
                             {% for field in withdraw_form %}
+                                {% if field.name == 'country_code' %}
+                                {% elif field.name == 'phone_number' %}
+                                    {% include 'core/partials/phone_number_field.html' with phone_form=withdraw_form %}
+                                {% else %}
                                 <label class="payment-field" for="{{ field.id_for_label }}">{{ field.label }}{{ field }}
                                     {% for error in field.errors %}<small class="payment-field-error">{{ error }}</small>{% endfor %}
                                 </label>
+                                {% endif %}
                             {% endfor %}
                             {% for error in withdraw_form.non_field_errors %}<div class="field-errors">{{ error }}</div>{% endfor %}
                             <button class="account-secondary-btn" type="submit" data-submitting-label="Sending request…">Request withdrawal</button>

@@ -2,22 +2,78 @@ from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
-from .models import ChatMessage, KYCSubmission, PaymentRequest, Profile, Room
-from .payment_services import IOTEC_MINIMUM_AMOUNT, MOBILE_MONEY_PROVIDERS, normalize_mobile_money_phone
+from django.core.validators import MaxValueValidator
+from .constants import MAXIMUM_DEPOSIT_AMOUNT, MINIMUM_MOBILE_MONEY_AMOUNT
+from .models import ChatMessage, PaymentRequest, Profile, Room
+from .chat_rules import get_chat_rule_violation
+from .payment_services import (
+    MOBILE_MONEY_COUNTRY_CHOICES,
+    mobile_money_country_availability_error,
+    MOBILE_MONEY_PROVIDERS,
+    normalize_mobile_money_phone,
+    split_mobile_money_phone,
+)
 
 
-class RegisterForm(UserCreationForm):
-    email = forms.EmailField(required=True, widget=forms.EmailInput(attrs={'placeholder': 'Email'}))
+class PhoneNumberFormMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        initial_phone = self.initial.get('phone_number')
+        if initial_phone:
+            country_code, national_number = split_mobile_money_phone(initial_phone)
+            self.initial['country_code'] = country_code
+            self.initial['phone_number'] = national_number
+
+    def clean_phone_number(self):
+        phone_number = self.cleaned_data.get('phone_number', '').strip()
+        if not phone_number:
+            return ''
+        try:
+            return normalize_mobile_money_phone(
+                phone_number,
+                self.cleaned_data.get('country_code') or '256',
+            )
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+
+
+class RegisterForm(PhoneNumberFormMixin, UserCreationForm):
+    email = forms.EmailField(required=True, widget=forms.EmailInput(attrs={
+        'placeholder': 'name@example.com',
+        'autocomplete': 'email',
+    }))
+    country_code = forms.ChoiceField(
+        label='Country code',
+        choices=MOBILE_MONEY_COUNTRY_CHOICES,
+        required=False,
+        initial='256',
+        widget=forms.Select(attrs={'class': 'country-code-select', 'autocomplete': 'tel-country-code'}),
+    )
     phone_number = forms.CharField(
         label='Phone number',
         required=True,
         max_length=20,
         widget=forms.TextInput(attrs={
-            'placeholder': '07XXXXXXXX or 2567XXXXXXXX',
+            'placeholder': '7XXXXXXXX',
             'autocomplete': 'tel',
             'inputmode': 'tel',
         }),
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['username'].widget.attrs.update({
+            'placeholder': 'Choose a username',
+            'autocomplete': 'username',
+        })
+        self.fields['password1'].widget.attrs.update({
+            'placeholder': 'Create a password',
+            'autocomplete': 'new-password',
+        })
+        self.fields['password2'].widget.attrs.update({
+            'placeholder': 'Confirm your password',
+            'autocomplete': 'new-password',
+        })
 
     class Meta:
         model = User
@@ -31,11 +87,7 @@ class RegisterForm(UserCreationForm):
         return user
 
     def clean_phone_number(self):
-        phone_number = self.cleaned_data['phone_number']
-        try:
-            phone_number = normalize_mobile_money_phone(phone_number)
-        except ValueError as exc:
-            raise forms.ValidationError(str(exc)) from exc
+        phone_number = super().clean_phone_number()
         if Profile.objects.filter(phone_number=phone_number).exists():
             raise forms.ValidationError('An account with this phone number already exists.')
         return phone_number
@@ -50,6 +102,13 @@ class PhoneOrUsernameAuthenticationForm(AuthenticationForm):
             'autofocus': True,
         }),
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['password'].widget.attrs.update({
+            'placeholder': 'Enter your password',
+            'autocomplete': 'current-password',
+        })
 
     def clean(self):
         identifier = self.cleaned_data.get('username', '').strip()
@@ -79,7 +138,7 @@ class PlayForm(forms.Form):
     )
 
 
-class WalletForm(forms.Form):
+class WalletForm(PhoneNumberFormMixin, forms.Form):
     PROVIDER_CHOICES = [
         ('mtn_momo', 'MTN Mobile Money'),
         ('airtel_money', 'Airtel Money'),
@@ -89,11 +148,13 @@ class WalletForm(forms.Form):
         label='Amount (UGX)',
         max_digits=12,
         decimal_places=2,
-        min_value=IOTEC_MINIMUM_AMOUNT,
+        min_value=MINIMUM_MOBILE_MONEY_AMOUNT,
+        max_value=MAXIMUM_DEPOSIT_AMOUNT,
         widget=forms.NumberInput(attrs={
-            'placeholder': 'Minimum 500 UGX',
+            'placeholder': '500 - 300,000 UGX',
             'class': 'form-control',
-            'min': str(IOTEC_MINIMUM_AMOUNT),
+            'min': str(MINIMUM_MOBILE_MONEY_AMOUNT),
+            'max': str(MAXIMUM_DEPOSIT_AMOUNT),
             'step': '0.01',
             'inputmode': 'decimal',
             'autocomplete': 'off',
@@ -104,17 +165,36 @@ class WalletForm(forms.Form):
         choices=PROVIDER_CHOICES,
         widget=forms.Select(attrs={'class': 'form-control'})
     )
+    country_code = forms.ChoiceField(
+        label='Country code',
+        choices=MOBILE_MONEY_COUNTRY_CHOICES,
+        required=False,
+        initial='256',
+        widget=forms.Select(attrs={'class': 'form-control country-code-select', 'autocomplete': 'tel-country-code'}),
+    )
     phone_number = forms.CharField(
         label='Mobile Money number',
         max_length=20,
         required=False,
         widget=forms.TextInput(attrs={
-            'placeholder': '07XXXXXXXX or 2567XXXXXXXX',
+            'placeholder': '7XXXXXXXX',
             'class': 'form-control',
             'autocomplete': 'tel',
             'inputmode': 'tel',
         })
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.prefix == 'withdraw':
+            amount_field = self.fields['amount']
+            amount_field.max_value = None
+            amount_field.validators = [
+                validator for validator in amount_field.validators
+                if not isinstance(validator, MaxValueValidator)
+            ]
+            amount_field.widget.attrs.pop('max', None)
+            amount_field.widget.attrs['placeholder'] = 'Minimum 500 UGX'
 
     def clean(self):
         cleaned_data = super().clean()
@@ -125,14 +205,20 @@ class WalletForm(forms.Form):
         elif not phone_number:
             self.add_error('phone_number', 'Phone number is required for mobile money payments.')
         else:
-            try:
-                cleaned_data['phone_number'] = normalize_mobile_money_phone(phone_number)
-            except ValueError as exc:
-                self.add_error('phone_number', str(exc))
+            availability_error = mobile_money_country_availability_error(cleaned_data.get('country_code'))
+            if availability_error:
+                self.add_error('country_code', availability_error)
         return cleaned_data
 
 
-class ProfileComplianceForm(forms.Form):
+class ProfileComplianceForm(PhoneNumberFormMixin, forms.Form):
+    country_code = forms.ChoiceField(
+        label='Country code',
+        choices=MOBILE_MONEY_COUNTRY_CHOICES,
+        required=False,
+        initial='256',
+        widget=forms.Select(attrs={'class': 'form-control country-code-select', 'autocomplete': 'tel-country-code'}),
+    )
     phone_number = forms.CharField(
         max_length=20,
         required=False,
@@ -142,7 +228,14 @@ class ProfileComplianceForm(forms.Form):
         max_digits=12,
         decimal_places=2,
         min_value=1,
-        widget=forms.NumberInput(attrs={'placeholder': 'Daily deposit limit', 'class': 'form-control'})
+        max_value=MAXIMUM_DEPOSIT_AMOUNT,
+        widget=forms.NumberInput(attrs={
+            'placeholder': 'Maximum 300,000 UGX',
+            'class': 'form-control',
+            'min': '1',
+            'max': str(MAXIMUM_DEPOSIT_AMOUNT),
+            'step': '0.01',
+        })
     )
     daily_loss_limit = forms.DecimalField(
         max_digits=12,
@@ -150,28 +243,6 @@ class ProfileComplianceForm(forms.Form):
         min_value=1,
         widget=forms.NumberInput(attrs={'placeholder': 'Daily loss limit', 'class': 'form-control'})
     )
-
-    def clean_phone_number(self):
-        phone_number = self.cleaned_data.get('phone_number', '').strip()
-        if not phone_number:
-            return ''
-        try:
-            return normalize_mobile_money_phone(phone_number)
-        except ValueError as exc:
-            raise forms.ValidationError(str(exc)) from exc
-
-
-class KYCSubmissionForm(forms.ModelForm):
-    class Meta:
-        model = KYCSubmission
-        fields = ['document_type', 'document_number', 'full_name', 'date_of_birth']
-        widgets = {
-            'document_type': forms.Select(attrs={'class': 'form-control'}),
-            'document_number': forms.TextInput(attrs={'placeholder': 'Document number', 'class': 'form-control'}),
-            'full_name': forms.TextInput(attrs={'placeholder': 'Full legal name', 'class': 'form-control'}),
-            'date_of_birth': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-        }
-
 
 class SelfExclusionForm(forms.Form):
     DURATION_CHOICES = [
@@ -194,8 +265,19 @@ class ChatMessageForm(forms.ModelForm):
         model = ChatMessage
         fields = ['message']
         widgets = {
-            'message': forms.TextInput(attrs={'placeholder': 'Your message...', 'class': 'form-control', 'maxlength': 160}),
+            'message': forms.TextInput(attrs={
+                'placeholder': 'Your message...',
+                'class': 'form-control',
+                'maxlength': 160,
+            }),
         }
+
+    def clean_message(self):
+        message = self.cleaned_data['message']
+        violation = get_chat_rule_violation(message)
+        if violation:
+            raise forms.ValidationError(violation)
+        return message
 
 
 class FinancialReportForm(forms.Form):

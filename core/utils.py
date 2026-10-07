@@ -3,22 +3,16 @@ import hmac
 import secrets
 from datetime import timedelta
 from decimal import Decimal, ROUND_DOWN
-from django.db import models
+from django.db import models, transaction as db_transaction
 from django.db.models import Sum
 from django.utils import timezone
-from .models import AuditLog, FinancialReport, GameRound, GameSession, PaymentRequest, RiskAlert, SelfExclusion
+from .constants import MAXIMUM_DEPOSIT_AMOUNT, MINIMUM_MOBILE_MONEY_AMOUNT
+from .models import AuditLog, FinancialReport, GameRound, GameSession, PaymentRequest, Profile, RiskAlert, SelfExclusion
 
 
 HOUSE_EDGE = Decimal('0.0100')
 RTP_FACTOR = Decimal('1.0000') - HOUSE_EDGE
 MAX_CRASH_POINT = Decimal('100000.00')
-KYC_MONTHLY_DEPOSIT_LIMITS = {
-    'none': Decimal('500000.00'),
-    'tier_1': Decimal('500000.00'),
-    'tier_2': Decimal('5000000.00'),
-    'tier_3': Decimal('999999999.00'),
-    'rejected': Decimal('0.00'),
-}
 URA_GGR_TAX_RATE = Decimal('0.15')
 
 
@@ -64,6 +58,9 @@ def hash_server_seed(server_seed):
 
 
 def build_client_seed(user, request=None):
+    profile = getattr(user, 'profile', None)
+    if profile and profile.client_seed:
+        return profile.client_seed
     ip = get_client_ip(request) if request else 'local'
     raw = f'{user.id}:{user.username}:{timezone.now().timestamp()}:{ip}:{secrets.token_hex(8)}'
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
@@ -98,6 +95,7 @@ def create_game_round(user, request=None):
 
     return GameRound.objects.create(
         public_id=public_id,
+        created_by=user,
         server_seed_hash=seed_hash,
         server_seed_private=server_seed,
         client_seed=client_seed,
@@ -117,26 +115,18 @@ def reveal_game_round(round_obj, server_seed=None):
     return round_obj
 
 
-def verify_game_round(server_seed, client_seed, expected_hash, expected_crash_point):
+def verify_game_round(server_seed, client_seed, expected_hash, expected_crash_point, house_edge=HOUSE_EDGE):
     if hash_server_seed(server_seed) != expected_hash:
         return False
-    return calculate_crash_point(server_seed, client_seed) == Decimal(str(expected_crash_point)).quantize(Decimal('0.01'))
+    return calculate_crash_point(
+        server_seed,
+        client_seed,
+        house_edge,
+    ) == Decimal(str(expected_crash_point)).quantize(Decimal('0.01'))
 
 
 def generate_payment_reference(prefix):
     return f'{prefix}-{timezone.now():%Y%m%d%H%M%S}-{secrets.token_hex(4).upper()}'
-
-
-def get_monthly_deposit_total(user):
-    now = timezone.now()
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    total = PaymentRequest.objects.filter(
-        user=user,
-        payment_type='deposit',
-        status='completed',
-        completed_at__gte=month_start,
-    ).aggregate(total=Sum('amount'))['total']
-    return total or Decimal('0.00')
 
 
 def get_daily_deposit_total(user):
@@ -145,30 +135,25 @@ def get_daily_deposit_total(user):
     total = PaymentRequest.objects.filter(
         user=user,
         payment_type='deposit',
-        status='completed',
-        completed_at__gte=day_start,
+    ).filter(
+        models.Q(status='completed', completed_at__gte=day_start)
+        | models.Q(status__in=['pending', 'processing'], created_at__gte=day_start)
     ).aggregate(total=Sum('amount'))['total']
     return total or Decimal('0.00')
 
 
-def get_kyc_monthly_deposit_limit(profile):
-    return KYC_MONTHLY_DEPOSIT_LIMITS.get(profile.kyc_status, KYC_MONTHLY_DEPOSIT_LIMITS['none'])
-
-
 def can_deposit(profile, amount):
-    if profile.kyc_status == 'rejected':
-        return False, 'KYC rejected accounts cannot deposit.'
+    if amount < MINIMUM_MOBILE_MONEY_AMOUNT:
+        return False, 'Deposits must be at least 500 UGX.'
+    if amount > MAXIMUM_DEPOSIT_AMOUNT:
+        return False, 'Deposits cannot exceed 300,000 UGX per transaction.'
     if is_self_excluded(profile.user):
         return False, 'Your account is currently self-excluded.'
 
     daily_total = get_daily_deposit_total(profile.user)
-    if daily_total + amount > profile.daily_deposit_limit:
-        return False, f'Daily deposit limit exceeded. Remaining today: {profile.daily_deposit_limit - daily_total:.2f} {profile.currency}.'
-
-    monthly_total = get_monthly_deposit_total(profile.user)
-    monthly_limit = get_kyc_monthly_deposit_limit(profile)
-    if monthly_total + amount > monthly_limit:
-        return False, f'KYC tier monthly deposit limit exceeded. Current tier limit: {monthly_limit:.2f} {profile.currency}.'
+    daily_limit = min(profile.daily_deposit_limit, MAXIMUM_DEPOSIT_AMOUNT)
+    if daily_total + amount > daily_limit:
+        return False, f'Daily deposit limit exceeded. Remaining today: {daily_limit - daily_total:.2f} {profile.currency}.'
 
     return True, ''
 
@@ -200,8 +185,35 @@ def can_place_bets(profile, stake_total):
 def is_self_excluded(user):
     now = timezone.now()
     return SelfExclusion.objects.filter(user=user).filter(
-        models.Q(permanent=True) | models.Q(ends_at__isnull=True) | models.Q(ends_at__gt=now)
+        models.Q(starts_at__lte=now) & (models.Q(permanent=True) | models.Q(ends_at__gt=now))
     ).exists()
+
+
+def get_active_self_exclusion(user):
+    now = timezone.now()
+    return SelfExclusion.objects.filter(
+        user=user,
+        starts_at__lte=now,
+    ).filter(
+        models.Q(permanent=True) | models.Q(ends_at__gt=now)
+    ).order_by('-created_at').first()
+
+
+def activate_self_exclusion(user, duration, reason=''):
+    permanent = duration == 'permanent'
+    ends_at = None if permanent else timezone.now() + timedelta(hours=int(duration))
+
+    with db_transaction.atomic():
+        Profile.objects.select_for_update().get(user=user)
+        active_exclusion = get_active_self_exclusion(user)
+        if active_exclusion:
+            return None
+        return SelfExclusion.objects.create(
+            user=user,
+            ends_at=ends_at,
+            permanent=permanent,
+            reason=reason,
+        )
 
 
 def create_risk_alert(user, alert_type, severity, description, data=None):
@@ -227,15 +239,15 @@ def run_player_risk_checks(user):
     if not profile:
         return alerts
 
-    monthly_total = get_monthly_deposit_total(user)
-    monthly_limit = get_kyc_monthly_deposit_limit(profile)
-    if monthly_limit and monthly_total >= monthly_limit * Decimal('0.80'):
+    daily_total = get_daily_deposit_total(user)
+    daily_deposit_limit = min(profile.daily_deposit_limit, MAXIMUM_DEPOSIT_AMOUNT)
+    if daily_deposit_limit and daily_total >= daily_deposit_limit * Decimal('0.80'):
         alerts.append(create_risk_alert(
             user,
             'deposit_limit_pressure',
             'medium',
-            'Player has used at least 80% of the KYC monthly deposit allowance.',
-            {'monthly_total': str(monthly_total), 'monthly_limit': str(monthly_limit)},
+            'Player has used at least 80% of the configured daily deposit limit.',
+            {'daily_total': str(daily_total), 'daily_deposit_limit': str(daily_deposit_limit)},
         ))
 
     daily_loss = get_daily_net_loss(user)

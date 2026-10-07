@@ -1,25 +1,72 @@
 {% extends 'core/base.html' %}
 {% block title %}Provably Fair | Pakabet{% endblock %}
 {% block content %}
-<section class="dashboard-grid">
-    <div class="stats-card">
-        <h1>Provably Fair Settings</h1>
-        <p>Rounds commit to a server seed hash before play and reveal the seed after crash.</p>
-        <ul class="session-list">
-            {% for round in rounds %}
-                <li>
-                    <span>{{ round.public_id }}</span>
-                    <strong>{{ round.crash_point|floatformat:2 }}x</strong>
-                    <span>{% if round.is_revealed %}Revealed{% else %}Pending{% endif %}</span>
-                </li>
-            {% empty %}
-                <li class="empty-state">No verifiable rounds yet.</li>
-            {% endfor %}
-        </ul>
+<section class="account-page account-fairness-page">
+    {% include 'core/partials/account_sidebar.html' %}
+    <div class="account-workspace">
+        {% include 'core/partials/account_topbar.html' %}
+        <main class="account-main">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>Provably Fair</h1>
+                        <p>Review each round’s commitment, revealed seed, and independently verified result.</p>
+                    </div>
+                </div>
+
+                <section class="account-card fairness-settings-card">
+                    <div class="section-heading">
+                        <div>
+                            <h2>Client seed</h2>
+                            <p>This seed is used when you start your next round. Saving a new one does not alter past rounds.</p>
+                        </div>
+                    </div>
+                    <form class="fair-seed-form" data-client-seed-url="{% url 'update_client_seed' %}">
+                        {% csrf_token %}
+                        <label for="fair-client-seed">Seed for future rounds</label>
+                        <input id="fair-client-seed" name="client_seed" type="text" maxlength="128" pattern="[A-Za-z0-9._:-]{1,128}" value="{{ profile.client_seed }}" required autocomplete="off">
+                        <div class="fair-seed-actions">
+                            <button type="button" class="fair-seed-randomize" data-randomize-client-seed>Generate new seed</button>
+                            <button type="submit" class="fair-seed-save">Save seed</button>
+                        </div>
+                        <p class="fair-seed-status" data-client-seed-status role="status" aria-live="polite"></p>
+                    </form>
+                </section>
+
+                <section class="account-card fairness-rounds-card">
+                    <div class="section-heading">
+                        <div>
+                            <h2>Your round history</h2>
+                            <p>Only rounds you played are shown. Server seeds appear only after the round has ended.</p>
+                        </div>
+                    </div>
+                    <div class="fairness-round-list">
+                        {% for round in rounds %}
+                            <article class="fairness-round">
+                                <header>
+                                    <div><strong>Round {{ round.public_id }}</strong><small>{{ round.started_at|date:'M j, Y · H:i' }}</small></div>
+                                    {% if round.is_revealed %}
+                                        <span class="{% if round.verified %}fairness-verified{% else %}fairness-failed{% endif %}">{% if round.verified %}Verified{% else %}Verification failed{% endif %}</span>
+                                    {% else %}
+                                        <span class="fairness-pending">Awaiting reveal</span>
+                                    {% endif %}
+                                </header>
+                                <dl>
+                                    <div><dt>Server seed SHA256</dt><dd>{{ round.server_seed_hash }}</dd></div>
+                                    <div><dt>Client seed</dt><dd>{{ round.client_seed }}</dd></div>
+                                    <div><dt>Crash point</dt><dd>{{ round.crash_point|floatformat:2 }}x</dd></div>
+                                    {% if round.is_revealed %}
+                                        <div><dt>Revealed server seed</dt><dd>{{ round.server_seed }}</dd></div>
+                                    {% endif %}
+                                </dl>
+                            </article>
+                        {% empty %}
+                            <div class="fairness-empty-state">You have not played a round yet. Your round commitments and verification details will appear here.</div>
+                        {% endfor %}
+                    </div>
+                </section>
+            </section>
+        </main>
     </div>
-    <aside class="stats-card">
-        <h2>Verification Formula</h2>
-        <p>Crash point is generated from HMAC-SHA256(server seed, client seed), with the configured house edge applied.</p>
-    </aside>
 </section>
 {% endblock %}

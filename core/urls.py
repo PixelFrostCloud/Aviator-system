@@ -4,6 +4,7 @@ from . import forms, views
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('invite/<uuid:referral_code>/', views.referral_landing, name='referral_landing'),
     path('register/', views.register, name='register'),
     path(
         'login/',
@@ -26,12 +27,14 @@ urlpatterns = [
     path('rooms/<int:room_id>/status/', views.room_status, name='room_status'),
     path('play/', views.play, name='play'),
     path('profile/', views.profile_view, name='profile'),
+    path('referrals/', views.referrals_view, name='referrals'),
     path('bet-history/', views.bet_history, name='bet_history'),
     path('transactions/', views.transactions_view, name='transactions'),
     path('game-limits/', views.game_limits, name='game_limits'),
     path('how-to-play/', views.how_to_play, name='how_to_play'),
     path('game-rules/', views.game_rules, name='game_rules'),
     path('provably-fair/', views.provably_fair, name='provably_fair'),
+    path('api/provably-fair/client-seed/', views.update_client_seed, name='update_client_seed'),
     path('api/rewards/create/', views.reward_create_api, name='reward_create_api'),
     path('api/rewards/update/', views.reward_update_api, name='reward_update_api'),
     path('api/rewards/delete/', views.reward_delete_api, name='reward_delete_api'),

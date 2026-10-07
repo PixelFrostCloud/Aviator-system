@@ -1,0 +1,84 @@
+{% extends 'core/base.html' %}
+{% block title %}Referrals | Pakabet{% endblock %}
+{% block content %}
+<section class="account-page account-referrals-page">
+    {% include 'core/partials/account_sidebar.html' %}
+
+    <div class="account-workspace">
+        {% include 'core/partials/account_topbar.html' %}
+
+        <main class="account-main">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>Invite friends</h1>
+                        <p>Share your personal link and earn 5% of each friend’s first successful deposit.</p>
+                    </div>
+                </div>
+
+                <section class="account-card referral-share-card">
+                    <div class="section-heading">
+                        <div>
+                            <h2>Your invite link</h2>
+                            <p>When a new friend opens this link, their account is automatically connected to yours.</p>
+                        </div>
+                    </div>
+                    <div class="referral-share-control">
+                        <label class="visually-hidden" for="referral-invite-link">Personal invite link</label>
+                        <input id="referral-invite-link" type="text" value="{{ invite_link }}" readonly>
+                        <button type="button" data-copy-referral>Copy link</button>
+                    </div>
+                    <p class="referral-copy-status" data-referral-copy-status role="status" aria-live="polite"></p>
+                    <p class="referral-funding-note">Your friend’s deposit is never reduced. The 5% reward is funded by Pakabet and added to your withdrawable wallet balance after their first deposit is confirmed.</p>
+                </section>
+
+                <div class="referral-summary-grid">
+                    <article class="account-card referral-summary-card">
+                        <small>Friends invited</small>
+                        <strong>{{ total_invited }}</strong>
+                    </article>
+                    <article class="account-card referral-summary-card">
+                        <small>Referral rewards earned</small>
+                        <strong>{{ total_earned|floatformat:2 }} <em>{{ profile.currency }}</em></strong>
+                    </article>
+                </div>
+
+                <section class="account-card referral-list-card">
+                    <div class="section-heading">
+                        <div>
+                            <h2>Your invitations</h2>
+                            <p>Rewards are issued once per friend, after their first successful deposit.</p>
+                        </div>
+                    </div>
+                    <ul class="referral-list">
+                        {% for referral in referrals %}
+                            <li>
+                                <div class="referral-member">
+                                    <strong>{{ referral.invitee.username }}</strong>
+                                    <small>Joined {{ referral.created_at|date:'M j, Y' }}</small>
+                                </div>
+                                <div class="referral-status">
+                                    {% if referral.rewarded_at %}
+                                        <span class="referral-status-paid">Reward paid</span>
+                                        <strong>{{ referral.reward_amount|floatformat:2 }} {{ profile.currency }}</strong>
+                                    {% else %}
+                                        <span class="referral-status-pending">Awaiting first deposit</span>
+                                    {% endif %}
+                                </div>
+                            </li>
+                        {% empty %}
+                            <li class="referral-empty-state">
+                                <strong>No invited friends yet</strong>
+                                <span>Share your invite link to get started. New accounts are connected automatically when they open it.</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                    {% if total_invited > 100 %}
+                        <p class="referral-list-note">Showing the 100 most recent invitations.</p>
+                    {% endif %}
+                </section>
+            </section>
+        </main>
+    </div>
+</section>
+{% endblock %}

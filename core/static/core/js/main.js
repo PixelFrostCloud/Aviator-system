@@ -88,7 +88,7 @@ async function settleRoundById(roundId) {
     body: formData,
   });
   const payload = await response.json();
-  return payload.success ? payload : null;
+  return payload;
 }
 
 function animateServerFlightProgress(progressElement, multiplierElement, messageElement, session, cashoutButton) {
@@ -108,13 +108,14 @@ function animateServerFlightProgress(progressElement, multiplierElement, message
       checkInFlight = true;
       settleRoundById(session.round_id)
         .then((payload) => {
-          if (!payload) {
-            return;
+          if (payload?.success) {
+            clearInterval(interval);
+            multiplierElement.textContent = formatMultiplier(payload.crash_point);
+            cashoutButton.disabled = true;
+            messageElement.textContent = 'Flight crashed. Round over.';
+          } else if (Number.isFinite(payload?.server_multiplier)) {
+            multiplierElement.textContent = formatMultiplier(payload.server_multiplier);
           }
-          clearInterval(interval);
-          multiplierElement.textContent = formatMultiplier(payload.crash_point);
-          cashoutButton.disabled = true;
-          messageElement.textContent = 'Flight crashed. Round over.';
         })
         .finally(() => {
           checkInFlight = false;
@@ -173,9 +174,9 @@ function attachPlayWidget() {
     window.addEventListener('pagehide', () => clearInterval(presenceInterval), { once: true });
   }
 
-  if (chatForm && chatList) {
+  if (chatList) {
     const chatPanel = document.querySelector('[data-chat-panel]');
-    const chatInput = chatForm.querySelector('input[name="message"]');
+    const chatInput = chatForm?.querySelector('input[name="message"]');
     const charCount = document.getElementById('chat-char-count');
     const newMessagePill = document.getElementById('new-message-pill');
     const spamFilter = document.getElementById('chat-spam-filter');
@@ -186,6 +187,7 @@ function attachPlayWidget() {
     const rainAmount = document.getElementById('rain-amount');
     const rainHelper = document.getElementById('rain-helper');
     const rulesModal = document.getElementById('chat-rules-modal');
+    const warningModal = document.getElementById('chat-warning-modal');
     const onlineCount = document.getElementById('chat-online-count');
     const maxChatLength = parseInt(chatInput?.getAttribute('maxlength') || '160', 10);
     const playPage = document.querySelector('.aviator-play-page');
@@ -230,10 +232,9 @@ function attachPlayWidget() {
     if (rulesModal && rulesModal.parentElement !== document.body) {
       document.body.append(rulesModal);
     }
-
     chatList.querySelectorAll('.chat-row.win').forEach((row) => row.remove());
     chatList.querySelectorAll('.chat-bubble p').forEach((message) => {
-      if (message.textContent.includes('W H A T') || message.textContent.includes('0118')) {
+      if (message.textContent.includes('W H A T')) {
         message.closest('.chat-row')?.remove();
       }
     });
@@ -353,6 +354,25 @@ function attachPlayWidget() {
       }, 2200);
     }
 
+    function showChatWarning(message) {
+      const warningMessage = document.getElementById('chat-warning-message');
+      if (!warningModal || !warningMessage) {
+        return;
+      }
+      warningMessage.textContent = message;
+      if (!warningModal.open) {
+        warningModal.showModal();
+      }
+      warningModal.querySelector('[data-chat-warning-close]')?.focus({ preventScroll: true });
+    }
+
+    function closeChatWarning() {
+      if (warningModal?.open) {
+        warningModal.close();
+      }
+      chatInput?.focus({ preventScroll: true });
+    }
+
     function walletBalance() {
       return Math.max(parseFloat(window.aviatorConfig.walletBalance || '0') || 0, 0);
     }
@@ -418,7 +438,7 @@ function attachPlayWidget() {
     chatInput?.addEventListener('input', updateCharCount);
     updateCharCount();
 
-    chatForm.addEventListener('submit', async (event) => {
+    chatForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const formData = new FormData(chatForm);
       const response = await fetch(window.aviatorConfig.playUrl, {
@@ -430,6 +450,10 @@ function attachPlayWidget() {
       });
       const payload = await response.json();
       if (!payload.success) {
+        if (payload.message) {
+          showChatWarning(payload.message);
+          return;
+        }
         showSpamFilter();
         return;
       }
@@ -519,6 +543,17 @@ function attachPlayWidget() {
       rulesModal?.querySelector('[data-chat-rules-close]')?.focus({ preventScroll: true });
     });
     document.querySelector('[data-chat-rules-close]')?.addEventListener('click', closeChatRules);
+    warningModal?.querySelectorAll('[data-chat-warning-close]').forEach((button) => {
+      button.addEventListener('click', closeChatWarning);
+    });
+    warningModal?.addEventListener('click', (event) => {
+      if (event.target === warningModal) {
+        closeChatWarning();
+      }
+    });
+    warningModal?.addEventListener('close', () => {
+      chatInput?.focus({ preventScroll: true });
+    });
     rulesModal?.addEventListener('click', (event) => {
       if (event.target === rulesModal) {
         closeChatRules();
@@ -541,7 +576,7 @@ function attachPlayWidget() {
       }
       closeChatRules();
     });
-    const mobileChatMedia = window.matchMedia('(max-width: 760px)');
+    const mobileChatMedia = window.matchMedia('(max-width: 1120px)');
     let chatCloseTimer = null;
 
     function syncChatDrawerBackdrop() {
@@ -552,6 +587,7 @@ function attachPlayWidget() {
       if (chatCloseTimer) {
         clearTimeout(chatCloseTimer);
       }
+      playPage?.classList.remove('chat-open');
       playPage?.classList.add('chat-collapsed');
       reopenChatButton.hidden = false;
       chatDrawerBackdrop.hidden = true;
@@ -565,6 +601,7 @@ function attachPlayWidget() {
       if (chatCloseTimer) {
         clearTimeout(chatCloseTimer);
       }
+      playPage?.classList.add('chat-open');
       playPage?.classList.remove('chat-closed');
       chatPanel?.classList.remove('is-collapsed');
       requestAnimationFrame(() => {
@@ -578,6 +615,7 @@ function attachPlayWidget() {
     chatDrawerBackdrop.addEventListener('click', closeChatPanel);
     reopenChatButton.addEventListener('click', openChatPanel);
     function syncChatMode(event) {
+      playPage?.classList.remove('chat-open');
       if (event.matches) {
         playPage?.classList.add('chat-collapsed', 'chat-closed');
         chatPanel?.classList.add('is-collapsed');
@@ -690,7 +728,6 @@ function attachPlayWidget() {
     let pendingCashoutSlips = new Set();
     let autoSlips = new Set();
     let phase = 'betting';
-    let publicRound = null;
     let currentLedgerTab = 'all';
     let publicRows = [];
     const myBetData = document.getElementById('my-bet-data');
@@ -820,12 +857,6 @@ function attachPlayWidget() {
       fairnessStrip.innerHTML = `<span>${label}: ${value}</span><strong>Provably fair</strong>`;
     }
 
-    function randomCrashPoint() {
-      const r = Math.random();
-      const crash = Math.max(1, 0.99 / (1 - Math.min(r, 0.985)));
-      return Math.min(crash, 40);
-    }
-
     function addHistoryPill(crashPoint) {
       if (!roundHistoryList) {
         return;
@@ -940,14 +971,17 @@ function attachPlayWidget() {
       const payload = await settleRoundById(currentSession.round_id);
       if (payload && payload.fairness) {
         setFairnessText('Seed', payload.fairness.server_seed);
-        return payload;
+        const seedStatus = document.querySelector('[data-server-seed-status]');
+        if (seedStatus) {
+          seedStatus.textContent = 'The server seed has been revealed. Verify it against this commitment in your round history.';
+        }
       }
-      return null;
+      return payload;
     }
 
     async function revealCrashedRound(attempt = 0) {
       const payload = await settleCrashedRound();
-      if (payload) {
+      if (payload?.success) {
         return payload;
       }
       if (attempt < 8) {
@@ -996,32 +1030,46 @@ function attachPlayWidget() {
     });
 
     async function createServerRoundFromQueue() {
+      if (!window.aviatorConfig?.isAuthenticated) {
+        gameMessage.textContent = 'Sign in to watch server-verified rounds.';
+        return null;
+      }
       const stakes = [...queuedSlips]
         .map((slip) => parseFloat(slip.querySelector('.stake-input').value))
         .filter((stake) => stake > 0);
-      if (!stakes.length) {
+      if (stakes.length !== queuedSlips.size) {
+        gameMessage.textContent = 'One or more bet amounts are invalid. Please review them and try again.';
+        queuedSlips.clear();
+        syncBetLabels();
         return null;
       }
       const formData = new FormData();
       formData.append('action', 'start');
       formData.append('bet_data', JSON.stringify(stakes));
 
-      const response = await fetch(window.aviatorConfig.playUrl, {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: formData,
-      });
+      try {
+        const response = await fetch(window.aviatorConfig.playUrl, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: formData,
+        });
 
-      const payload = await response.json();
-      if (!payload.success) {
+        const payload = await response.json();
+        if (payload.success) {
+          return payload;
+        }
         gameMessage.textContent = payload.message || 'Unable to begin the round.';
         queuedSlips.clear();
         syncBetLabels();
         return null;
+      } catch {
+        gameMessage.textContent = 'Unable to reach the game server. No round was started; please try again.';
+        queuedSlips.clear();
+        syncBetLabels();
+        return null;
       }
-      return payload;
     }
 
     function queueBet(slip) {
@@ -1056,46 +1104,53 @@ function attachPlayWidget() {
       phase = 'starting';
       syncSlipStates();
       gameMessage.textContent = queuedSlips.size ? 'Bets closed. Starting round...' : 'Bets closed. Watch the flight.';
-      publicRound = {
-        crash_point: randomCrashPoint(),
-      };
 
       const enteredSlips = [...queuedSlips];
       const payload = await createServerRoundFromQueue();
-      if (payload) {
-        currentSession = payload;
-        publicRound = payload;
-        activeSlipSessions.clear();
-        activeSlipRows.clear();
-        enteredSlips.forEach((slip, index) => {
-          if (payload.session_ids[index]) {
-            activeSlipSessions.set(slip, payload.session_ids[index]);
-            const amount = Math.max(parseFloat(slip.querySelector('.stake-input').value) || 0, 0);
-            const row = {
-              user: 'You',
-              avatar: 'Y',
-              bet: amount,
-              multiplier: null,
-              win: 0,
-              status: 'pending',
-              sessionId: payload.session_ids[index],
-            };
-            currentRoundRows.unshift(row);
-            myRows.unshift(row);
-            activeSlipRows.set(slip, row);
-          }
-        });
-        myRows = myRows.slice(0, 40);
-        setFairnessText('Hash', payload.server_seed_hash);
-        const balanceDisplay = document.querySelector('#play-balance strong');
-        if (balanceDisplay) {
-          balanceDisplay.textContent = payload.balance.toFixed(2);
+      if (!payload) {
+        queuedSlips.clear();
+        phase = 'crashed';
+        syncSlipStates();
+        if (window.aviatorConfig?.isAuthenticated) {
+          setTimeout(startBettingWindow, 1200);
         }
-      } else {
-        currentSession = null;
-        if (fairnessStrip) {
-          fairnessStrip.innerHTML = '<span>Public demo round - no active bet</span><strong>Live table</strong>';
+        return;
+      }
+
+      currentSession = payload;
+      activeSlipSessions.clear();
+      activeSlipRows.clear();
+      enteredSlips.forEach((slip, index) => {
+        if (payload.session_ids[index]) {
+          activeSlipSessions.set(slip, payload.session_ids[index]);
+          const amount = Math.max(parseFloat(slip.querySelector('.stake-input').value) || 0, 0);
+          const row = {
+            user: 'You',
+            avatar: 'Y',
+            bet: amount,
+            multiplier: null,
+            win: 0,
+            status: 'pending',
+            sessionId: payload.session_ids[index],
+          };
+          currentRoundRows.unshift(row);
+          myRows.unshift(row);
+          activeSlipRows.set(slip, row);
         }
+      });
+      myRows = myRows.slice(0, 40);
+      setFairnessText('Hash', payload.server_seed_hash);
+      const committedHash = document.querySelector('[data-server-seed-hash]');
+      if (committedHash) {
+        committedHash.textContent = payload.server_seed_hash;
+      }
+      const seedStatus = document.querySelector('[data-server-seed-status]');
+      if (seedStatus) {
+        seedStatus.textContent = 'Commitment published before this round began.';
+      }
+      const balanceDisplay = document.querySelector('#play-balance strong');
+      if (balanceDisplay) {
+        balanceDisplay.textContent = payload.balance.toFixed(2);
       }
 
       queuedSlips.clear();
@@ -1143,9 +1198,7 @@ function attachPlayWidget() {
 
       flightTimer = setInterval(() => {
         tick += 1;
-        currentMultiplier = currentSession
-          ? 1 + tick * FLIGHT_INCREMENT
-          : Math.min(1 + tick * FLIGHT_INCREMENT, publicRound.crash_point + 0.05);
+        currentMultiplier = 1 + tick * FLIGHT_INCREMENT;
         const progress = calculateMaskedFlightProgress(tick);
         multiplierValue.textContent = formatMultiplier(currentMultiplier);
         if (!flightAnimationFrame) {
@@ -1181,15 +1234,16 @@ function attachPlayWidget() {
           crashCheckInFlight = true;
           settleCrashedRound()
             .then((payload) => {
-              if (payload && phase === 'flying') {
+              if (payload?.success && phase === 'flying') {
                 finishCrashedRound(payload.crash_point, Promise.resolve(payload));
+              } else if (Number.isFinite(payload?.server_multiplier) && phase === 'flying') {
+                currentMultiplier = payload.server_multiplier;
+                multiplierValue.textContent = formatMultiplier(currentMultiplier);
               }
             })
             .finally(() => {
               crashCheckInFlight = false;
             });
-        } else if (!currentSession && currentMultiplier >= publicRound.crash_point) {
-          finishCrashedRound(publicRound.crash_point, Promise.resolve());
         }
       }, FLIGHT_TICK_MS);
     }
@@ -1237,7 +1291,6 @@ function attachPlayWidget() {
       const formData = new FormData();
       formData.append('action', 'cashout');
       formData.append('session_ids', String(sessionId));
-      formData.append('cashout_multiplier', currentMultiplier.toFixed(2));
 
       const response = await fetch(window.aviatorConfig.playUrl, {
         method: 'POST',
@@ -1333,7 +1386,6 @@ function attachPlayWidget() {
     const formData = new FormData();
     formData.append('action', 'cashout');
     formData.append('session_ids', currentSession.session_ids.join(','));
-    formData.append('cashout_multiplier', currentMultiplier.toFixed(2));
 
     const response = await fetch(window.aviatorConfig.playUrl, {
       method: 'POST',
@@ -1454,6 +1506,10 @@ function attachRoomWidget() {
               return;
             }
             updateParticipants(payload);
+            if (payload.room.status === 'running' && Number.isFinite(payload.room.current_multiplier)) {
+              currentMultiplier = payload.room.current_multiplier;
+              roomMultiplier.textContent = formatMultiplier(currentMultiplier);
+            }
             if (payload.room.status === 'ended') {
               finishRoomFlight(payload);
             }
@@ -1472,6 +1528,10 @@ function attachRoomWidget() {
     }
 
     updateParticipants(payload);
+    if (payload.room.status === 'running' && Number.isFinite(payload.room.current_multiplier)) {
+      currentMultiplier = payload.room.current_multiplier;
+      roomMultiplier.textContent = formatMultiplier(currentMultiplier);
+    }
 
     if (payload.room.status === 'running' && !roomRunning) {
       startRoomFlight();
@@ -1529,10 +1589,8 @@ function attachRoomWidget() {
 
   if (cashoutButton) {
     cashoutButton.addEventListener('click', async () => {
-      const currentValue = parseFloat(roomMultiplier.textContent.replace('x', '')) || 1.0;
       const formData = new FormData();
       formData.append('action', 'cashout');
-      formData.append('cashout_multiplier', currentValue.toFixed(2));
 
       const response = await fetch(window.roomConfig.roomActionUrl, {
         method: 'POST',
@@ -1681,6 +1739,32 @@ function attachPaymentForms() {
   });
 }
 
+function attachPhoneCountryWarnings() {
+  document.querySelectorAll('.phone-number-field').forEach((phoneField) => {
+    const countrySelect = phoneField.querySelector('.country-code-select');
+    const warning = phoneField.querySelector('[data-country-warning]');
+    if (!countrySelect || !warning) {
+      return;
+    }
+
+    const updateWarning = () => {
+      const selectedOption = countrySelect.options[countrySelect.selectedIndex];
+      if (countrySelect.value === '256' || !selectedOption) {
+        warning.hidden = true;
+        warning.textContent = '';
+        return;
+      }
+
+      const countryName = selectedOption.textContent.split(' (+', 1)[0];
+      warning.textContent = `We have not started operating in ${countryName} yet. Deposits and withdrawals are currently available in Uganda only.`;
+      warning.hidden = false;
+    };
+
+    countrySelect.addEventListener('change', updateWarning);
+    updateWarning();
+  });
+}
+
 function attachDismissibleAlerts() {
   document.querySelectorAll('[data-dismissible-alert]').forEach((alert) => {
     const dismissButton = alert.querySelector('.alert-dismiss');
@@ -1779,12 +1863,80 @@ function attachAviatorModals() {
   });
 }
 
+function attachReferralLinkCopy() {
+  document.querySelectorAll('[data-copy-referral]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const input = document.getElementById('referral-invite-link');
+      const status = document.querySelector('[data-referral-copy-status]');
+      if (!input || !status) return;
+
+      try {
+        await navigator.clipboard.writeText(input.value);
+        status.textContent = 'Invite link copied.';
+      } catch {
+        input.focus();
+        input.select();
+        status.textContent = 'Copy is unavailable here. The link is selected so you can copy it manually.';
+      }
+    });
+  });
+}
+
+function attachClientSeedSettings() {
+  document.querySelectorAll('.fair-seed-form').forEach((form) => {
+    const input = form.querySelector('[name="client_seed"]');
+    const status = form.querySelector('[data-client-seed-status]');
+    const saveButton = form.querySelector('.fair-seed-save');
+    const randomizeButton = form.querySelector('[data-randomize-client-seed]');
+    if (!input || !status || !saveButton) return;
+
+    randomizeButton?.addEventListener('click', () => {
+      const bytes = new Uint8Array(24);
+      window.crypto.getRandomValues(bytes);
+      input.value = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      status.textContent = 'A new seed was generated. Save it to use it for future rounds.';
+      input.focus();
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+
+      saveButton.disabled = true;
+      status.textContent = 'Saving client seed…';
+      try {
+        const response = await fetch(form.dataset.clientSeedUrl, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: new FormData(form),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+          status.textContent = payload.message || 'Unable to save the client seed. Please try again.';
+          return;
+        }
+        input.value = payload.client_seed;
+        status.textContent = payload.message;
+      } catch {
+        status.textContent = 'Could not reach the server. Your seed was not saved; please try again.';
+      } finally {
+        saveButton.disabled = false;
+      }
+    });
+  });
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   attachAccountNavigation();
   attachPaymentForms();
+  attachPhoneCountryWarnings();
   attachDismissibleAlerts();
   attachPlayWidget();
   attachRoomWidget();
   attachAviatorMenu();
   attachAviatorModals();
+  attachReferralLinkCopy();
+  attachClientSeedSettings();
 });

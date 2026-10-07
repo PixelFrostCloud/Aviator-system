@@ -20,39 +20,41 @@
         <span class="auth-kicker">Create account</span>
         <h2>Join Pakabet</h2>
         <p class="auth-intro">Your phone number is required for mobile-money wallet payments.</p>
-        <form method="post" class="auth-form">
+        {% if referral_inviter %}
+            <p class="referral-invite-notice">You were invited by <strong>{{ referral_inviter.user.username }}</strong>. Your account will be linked automatically.</p>
+        {% endif %}
+        <form method="post" class="auth-form auth-form-register">
             {% csrf_token %}
             {% if form.non_field_errors %}
                 <div class="auth-error">
                     {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
                 </div>
             {% endif %}
-            <label>
-                Username
-                {{ form.username }}
-                {% for error in form.username.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
-            </label>
-            <label>
-                Phone number
-                {{ form.phone_number }}
-                <small class="auth-hint">Use 07XXXXXXXX or 2567XXXXXXXX.</small>
-                {% for error in form.phone_number.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
-            </label>
-            <label>
-                Email
-                {{ form.email }}
-                {% for error in form.email.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
-            </label>
-            <label>
-                Password
-                {{ form.password1 }}
-                {% for error in form.password1.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
-            </label>
-            <label>
-                Confirm password
-                {{ form.password2 }}
-                {% for error in form.password2.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
-            </label>
+            <div class="auth-field-row">
+                <label>
+                    Username
+                    {{ form.username }}
+                    {% for error in form.username.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
+                </label>
+                <label>
+                    Email
+                    {{ form.email }}
+                    {% for error in form.email.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
+                </label>
+            </div>
+            {% include 'core/partials/phone_number_field.html' with phone_form=form %}
+            <div class="auth-field-row">
+                <label>
+                    Password
+                    {{ form.password1 }}
+                    {% for error in form.password1.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
+                </label>
+                <label>
+                    Confirm password
+                    {{ form.password2 }}
+                    {% for error in form.password2.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
+                </label>
+            </div>
             <button class="auth-submit" type="submit">Create account</button>
         </form>
         <p class="auth-foot">Already have an account? <a href="{% url 'login' %}">Log in</a></p>

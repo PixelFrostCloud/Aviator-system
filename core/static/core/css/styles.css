@@ -1612,10 +1612,10 @@ body:has(.aviator-play-page) main.container {
 }
 
 .round-history-toggle::before {
-  content: "...";
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 1px;
+  content: "";
+  width: 12px;
+  height: 4px;
+  background: radial-gradient(circle at 2px 2px, currentColor 1.25px, transparent 1.5px) 0 0 / 4px 4px repeat-x;
 }
 
 .round-strip.is-expanded {
@@ -3067,6 +3067,176 @@ body:has(.aviator-play-page) {
   color: #d8d8d8;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58);
   z-index: 30;
+}
+
+.chat-warning-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  width: min(440px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+  max-height: calc(100dvh - 32px) !important;
+  margin: auto !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #edf1f3 !important;
+}
+
+.chat-warning-modal::backdrop {
+  background: rgba(5, 7, 9, 0.78);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+
+.chat-warning-card {
+  width: 100% !important;
+  padding: 22px !important;
+  border: 1px solid #3a4145 !important;
+  border-radius: 16px !important;
+  background: #202427 !important;
+  color: #edf1f3 !important;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.62) !important;
+  box-sizing: border-box !important;
+}
+
+.chat-warning-heading {
+  display: grid !important;
+  grid-template-columns: 42px minmax(0, 1fr) 32px;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.chat-warning-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 184, 77, 0.3);
+  border-radius: 50%;
+  background: rgba(255, 184, 77, 0.12);
+  color: #ffc15f;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.chat-warning-eyebrow {
+  margin: 0 0 4px !important;
+  color: #a8b1b6 !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.11em !important;
+  line-height: 1.3 !important;
+}
+
+.chat-warning-heading h2 {
+  margin: 0 !important;
+  color: #f3f5f6 !important;
+  font-size: 17px !important;
+  font-weight: 650 !important;
+  line-height: 1.3 !important;
+}
+
+.chat-warning-close {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #3c4448;
+  border-radius: 9px;
+  background: #292f32;
+  color: #c2cace;
+  cursor: pointer;
+  font-size: 21px;
+  line-height: 1;
+}
+
+.chat-warning-close:hover,
+.chat-warning-close:focus-visible {
+  border-color: #687277;
+  background: #343c40;
+  color: #fff;
+}
+
+.chat-warning-reason {
+  margin-top: 20px !important;
+  padding: 15px 16px !important;
+  border: 1px solid #3a4145 !important;
+  border-radius: 10px !important;
+  background: #191e20 !important;
+}
+
+.chat-warning-reason strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #dfe4e6;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.chat-warning-reason p {
+  margin: 0 !important;
+  color: #bdc6ca !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  line-height: 1.55 !important;
+  overflow-wrap: anywhere;
+}
+
+.chat-warning-guidance {
+  margin: 15px 0 18px !important;
+  color: #929da2 !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+.chat-warning-confirm {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #6567e8;
+  border-radius: 9px;
+  background: #6567e8;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.chat-warning-confirm:hover,
+.chat-warning-confirm:focus-visible {
+  border-color: #7779f0;
+  background: #7779f0;
+}
+
+.chat-warning-confirm:focus-visible,
+.chat-warning-close:focus-visible {
+  outline: 2px solid #b8b9ff;
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .chat-warning-card {
+    padding: 18px !important;
+    border-radius: 13px !important;
+  }
+
+  .chat-warning-heading {
+    grid-template-columns: 38px minmax(0, 1fr) 30px;
+    gap: 10px !important;
+  }
+
+  .chat-warning-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .chat-warning-heading h2 {
+    font-size: 15px !important;
+  }
 }
 
 .chat-form,
@@ -5396,18 +5566,18 @@ body:has(.auth-screen) main.container {
 
 .auth-screen {
   min-height: 100vh;
-  width: min(1180px, calc(100% - 48px));
+  width: min(1200px, calc(100% - 48px));
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
+  grid-template-columns: minmax(0, 1fr) minmax(440px, 560px);
   align-items: center;
-  gap: clamp(48px, 8vw, 130px);
-  padding: 56px 0;
+  gap: clamp(48px, 7vw, 104px);
+  padding: 40px 0;
 }
 
 .auth-showcase {
-  min-height: 570px;
-  padding: 16px 0;
+  min-height: 500px;
+  padding: 12px 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -5483,7 +5653,9 @@ body:has(.auth-screen) main.container {
 }
 
 .auth-card {
-  padding: 36px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 32px;
   border: 1px solid #2a2f34;
   border-radius: 10px;
   background: linear-gradient(160deg, #1a1d1f, #111213);
@@ -5498,27 +5670,39 @@ body:has(.auth-screen) main.container {
 }
 
 .auth-intro {
-  margin: 0 0 28px;
+  margin: 0 0 20px;
   font-size: 13px;
 }
 
 .auth-form {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .auth-form label {
+  min-width: 0;
   color: #d5dbe2;
   font-size: 12px;
   font-weight: 800;
 }
 
+.auth-form-register .auth-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.auth-form-register .auth-field-row > * {
+  min-width: 0;
+}
+
 .auth-form input[type='text'],
 .auth-form input[type='email'],
 .auth-form input[type='password'] {
+  display: block;
   width: 100%;
-  height: 46px;
-  margin-top: 8px;
+  height: 44px;
+  margin-top: 7px;
   padding: 0 14px;
   border: 1px solid #32383e;
   border-radius: 7px;
@@ -5533,8 +5717,8 @@ body:has(.auth-screen) main.container {
 }
 
 .auth-submit {
-  min-height: 46px;
-  margin-top: 4px;
+  min-height: 44px;
+  margin-top: 2px;
   border: 0;
   border-radius: 7px;
   background: #18c932;
@@ -5549,7 +5733,7 @@ body:has(.auth-screen) main.container {
 }
 
 .auth-foot {
-  margin: 24px 0 0;
+  margin: 18px 0 0;
   color: #89939f;
   font-size: 12px;
   text-align: center;
@@ -5592,9 +5776,9 @@ body:has(.auth-screen) main.container {
   font-weight: 700;
 }
 
-@media (max-width: 780px) {
+@media (max-width: 960px) {
   .auth-screen {
-    width: min(100% - 28px, 520px);
+    width: min(100% - 28px, 640px);
     grid-template-columns: 1fr;
     gap: 28px;
     padding: 28px 0;
@@ -5602,7 +5786,11 @@ body:has(.auth-screen) main.container {
 
   .auth-showcase {
     min-height: auto;
-    gap: 32px;
+    gap: 24px;
+  }
+
+  .auth-showcase-stats {
+    display: none;
   }
 
   .auth-showcase h1 {
@@ -5616,6 +5804,12 @@ body:has(.auth-screen) main.container {
 
   .auth-card {
     padding: 26px 22px;
+  }
+}
+
+@media (max-width: 520px) {
+  .auth-form-register .auth-field-row {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -7033,7 +7227,7 @@ body:has(.account-page) main.container {
 }
 
 .profile-form-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .money-form-grid form {
@@ -7250,6 +7444,183 @@ body:has(.account-page) .form-control::placeholder {
   .account-activity-list time {
     grid-column: 2;
     text-align: left;
+  }
+}
+
+body:has(.account-fairness-page) .account-main {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fairness-settings-card,
+.fairness-rounds-card {
+  min-width: 0;
+}
+
+.fair-seed-form {
+  display: grid;
+  gap: 9px;
+}
+
+.fair-seed-form > label {
+  color: #dce3de;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fair-seed-form > input {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #3b4145;
+  border-radius: 5px;
+  background: #1c1f21;
+  color: #e6e9eb;
+  font: 500 13px "DM Sans", sans-serif;
+}
+
+.fair-seed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fair-seed-actions button {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #3b4145;
+  border-radius: 5px;
+  background: #292d30;
+  color: #e6e9eb;
+  font: 600 12px "DM Sans", sans-serif;
+  cursor: pointer;
+}
+
+.fair-seed-actions .fair-seed-save {
+  border-color: #20c957;
+  background: #20c957;
+  color: #07130b;
+}
+
+.fair-seed-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.fair-seed-status {
+  min-height: 18px;
+  margin: 0;
+  color: #6fe28b;
+  font-size: 12px;
+}
+
+.fair-seed-form > small {
+  color: #aeb8b1;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fairness-round-list {
+  display: grid;
+  gap: 10px;
+}
+
+.fairness-round {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #34393d;
+  border-radius: 6px;
+  background: #292d30;
+}
+
+.fairness-round > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid #3b4145;
+}
+
+.fairness-round > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.fairness-round > header strong {
+  color: #edf2f5;
+  font-size: 14px;
+}
+
+.fairness-round > header small {
+  color: #aeb8b1;
+  font-size: 11px;
+}
+
+.fairness-verified,
+.fairness-failed,
+.fairness-pending {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fairness-verified {
+  color: #23e355;
+}
+
+.fairness-failed {
+  color: #ff7b7b;
+}
+
+.fairness-pending {
+  color: #f3c35c;
+}
+
+.fairness-round dl {
+  margin: 0;
+  display: grid;
+  gap: 9px;
+  padding-top: 11px;
+}
+
+.fairness-round dl > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(125px, 0.3fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.fairness-round dt {
+  color: #aeb8b1;
+  font-size: 12px;
+}
+
+.fairness-round dd {
+  min-width: 0;
+  margin: 0;
+  color: #e6e9eb;
+  font: 500 12px/1.5 "DM Sans", sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.fairness-empty-state {
+  padding: 16px;
+  border: 1px dashed #3b4145;
+  border-radius: 5px;
+  color: #aeb8b1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .fairness-round {
+    padding: 11px;
+  }
+
+  .fairness-round dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
   }
 }
 
@@ -10023,7 +10394,7 @@ body:has(.aviator-play-page) .chat-rain-panel input:focus {
 body:has(.aviator-play-page) .aviator-topbar {
   position: relative !important;
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
   align-items: center !important;
   gap: 12px !important;
   padding: 0 12px !important;
@@ -10052,9 +10423,8 @@ body:has(.aviator-play-page) .game-brand img {
   object-fit: contain;
 }
 
-body:has(.aviator-play-page) .aviator-topbar > .help-chip {
+body:has(.aviator-play-page) .topbar-right > .help-chip {
   position: static !important;
-  justify-self: center;
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -10072,12 +10442,12 @@ body:has(.aviator-play-page) .aviator-topbar > .help-chip {
   white-space: nowrap;
 }
 
-body:has(.aviator-play-page) .aviator-topbar > .help-chip:hover {
+body:has(.aviator-play-page) .topbar-right > .help-chip:hover {
   background: #2b3033 !important;
   color: #fff !important;
 }
 
-body:has(.aviator-play-page) .aviator-topbar > .help-chip .ui-icon {
+body:has(.aviator-play-page) .topbar-right > .help-chip .ui-icon {
   width: 15px;
   height: 15px;
 }
@@ -10085,6 +10455,7 @@ body:has(.aviator-play-page) .aviator-topbar > .help-chip .ui-icon {
 body:has(.aviator-play-page) .topbar-right {
   min-width: 0;
   justify-self: end;
+  gap: 8px !important;
 }
 
 body:has(.aviator-play-page) .aviator-menu-drawer {
@@ -10207,7 +10578,7 @@ body:has(.aviator-play-page) .menu-links .ui-icon {
 
 @media (max-width: 560px) {
   body:has(.aviator-play-page) .aviator-topbar {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
     gap: 5px !important;
     padding-inline: 7px !important;
   }
@@ -10222,7 +10593,7 @@ body:has(.aviator-play-page) .menu-links .ui-icon {
     height: 21px;
   }
 
-  body:has(.aviator-play-page) .aviator-topbar > .help-chip {
+  body:has(.aviator-play-page) .topbar-right > .help-chip {
     gap: 4px;
     height: 26px !important;
     padding-inline: 7px !important;
@@ -10590,6 +10961,109 @@ body:has(.aviator-play-page) .chat-rain-panel .rain-stepper input {
   font-size: 13px !important;
 }
 
+.phone-number-field {
+  min-width: 0;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  box-sizing: border-box;
+}
+
+.phone-number-field-label {
+  color: var(--account-text, #d5dbe2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.phone-input-group {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.phone-input-group label {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: var(--account-muted, #a1aab5);
+  font-size: 11px;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.phone-number-field .phone-input-group select,
+.phone-number-field .phone-input-group input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 42px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid #3b4145;
+  border-radius: 7px;
+  background: #1c1f21;
+  color: #e6e9eb;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.phone-number-field .phone-input-group input {
+  height: 48px;
+  padding: 0 13px;
+  font-size: 14px;
+}
+
+.phone-number-field .phone-input-group select {
+  padding-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phone-input-group :is(select, input):focus {
+  border-color: #20c943;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(32, 201, 67, 0.12);
+}
+
+.phone-field-error {
+  color: #ff8088;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.phone-number-hint {
+  color: var(--account-muted, #a1aab5);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.phone-country-warning {
+  padding: 9px 11px;
+  border: 1px solid rgba(244, 185, 66, 0.4);
+  border-radius: 7px;
+  background: rgba(244, 185, 66, 0.1);
+  color: #ffd278;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.phone-country-warning[hidden] {
+  display: none;
+}
+
+@media (max-width: 400px) {
+  .phone-input-group {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+}
+
 body:has(.aviator-play-page) .chat-rain-panel #rain-helper {
   margin-top: 7px !important;
   color: #929a9f !important;
@@ -10825,6 +11299,28 @@ body:has(.aviator-play-page) .chat-rules-modal li::before {
   transform: none !important;
 }
 
+body:has(.aviator-play-page) .chat-text-wrap input[type='text']:focus,
+body:has(.aviator-play-page) .chat-text-wrap input[type='text']:focus-visible,
+body:has(.aviator-play-page) .right-chat-panel .chat-form input[type='text']:focus,
+body:has(.aviator-play-page) .right-chat-panel .chat-form input[type='text']:focus-visible {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+body:has(.aviator-play-page) .chat-form input[name='message'],
+body:has(.aviator-play-page) .chat-form input[name='message']:focus,
+body:has(.aviator-play-page) .chat-form input[name='message']:focus-visible,
+body:has(.aviator-play-page) .chat-form input[name='message']:autofill,
+body:has(.aviator-play-page) .chat-form input[name='message']:-webkit-autofill,
+body:has(.aviator-play-page) .chat-form input[name='message']:-webkit-autofill:hover,
+body:has(.aviator-play-page) .chat-form input[name='message']:-webkit-autofill:focus {
+  background: transparent !important;
+  background-color: transparent !important;
+  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+  box-shadow: none !important;
+}
+
 @media (max-width: 560px) {
   body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-limits"] .limit-line {
     flex-direction: row !important;
@@ -10880,6 +11376,12 @@ body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="provably-fa
   font-size: 13px !important;
   font-weight: 500 !important;
   line-height: 1.35 !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="provably-fair"] .fair-card > small {
+  color: #aeb5bb !important;
+  font-size: 11px !important;
+  line-height: 1.45 !important;
 }
 
 body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="provably-fair"] .seed-pill {
@@ -11056,5 +11558,710 @@ body:has(.aviator-play-page) .aviator-how-modal .modal-footer-link:hover {
 
   body:has(.aviator-play-page) .aviator-how-modal .how-step p {
     font-size: 11px !important;
+  }
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .modal-body.rules {
+  gap: 10px !important;
+  padding: 15px !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .modal-body.rules > p {
+  padding: 9px 11px !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .modal-body.rules h3 {
+  margin: 4px 0 0 !important;
+  font-size: 18px !important;
+  line-height: 1.25 !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .rules-grid {
+  gap: 8px !important;
+  margin: 0 !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .rules-grid > div {
+  padding: 9px !important;
+  border-radius: 7px !important;
+  background: #171a1c !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .rules-grid strong {
+  margin-bottom: 8px !important;
+  font-size: 15px !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .rule-preview {
+  min-height: 96px !important;
+  border-radius: 11px !important;
+  font-size: 34px !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .bet-preview,
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .cash-preview {
+  font-size: 19px !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .rules-grid p {
+  margin-top: 9px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+}
+
+body:has(.aviator-play-page) .aviator-game-modal[data-aviator-modal="game-rules"] .rules-grid b {
+  font-weight: 700 !important;
+}
+
+body:has(.aviator-play-page) .betting-dock {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+body:has(.aviator-play-page) .bet-slip {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+body:has(.aviator-play-page) .bet-slip-body {
+  width: 100% !important;
+  min-width: 0 !important;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr) !important;
+  gap: clamp(4px, 0.65vw, 9px) !important;
+}
+
+body:has(.aviator-play-page) .amount-column,
+body:has(.aviator-play-page) .amount-stepper,
+body:has(.aviator-play-page) .quick-stakes {
+  min-width: 0 !important;
+}
+
+body:has(.aviator-play-page) .amount-stepper {
+  height: 32px !important;
+  padding: 0 2px !important;
+  grid-template-columns: 24px minmax(0, 1fr) 24px !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  align-items: center !important;
+  background: #141617 !important;
+}
+
+body:has(.aviator-play-page) .amount-stepper button {
+  display: grid !important;
+  place-items: center !important;
+  justify-self: center !important;
+  align-self: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+  box-sizing: border-box !important;
+}
+
+body:has(.aviator-play-page) .stake-input {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding-inline: 2px !important;
+  text-align: center !important;
+  align-self: center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #e6e9eb !important;
+  font-weight: 600 !important;
+  appearance: textfield !important;
+}
+
+body:has(.aviator-play-page) .stake-input:focus,
+body:has(.aviator-play-page) .stake-input:focus-visible {
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body:has(.aviator-play-page) .stake-input::-webkit-inner-spin-button,
+body:has(.aviator-play-page) .stake-input::-webkit-outer-spin-button {
+  margin: 0 !important;
+  appearance: none !important;
+}
+
+body:has(.aviator-play-page) .bet-action {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: 4px !important;
+  border-radius: 10px !important;
+  gap: 2px !important;
+  overflow: hidden !important;
+  text-align: center !important;
+}
+
+body:has(.aviator-play-page) .bet-action span,
+body:has(.aviator-play-page) .bet-action strong {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body:has(.aviator-play-page) .bet-action span {
+  font-size: clamp(11px, 1.05vw, 15px) !important;
+  font-weight: 500 !important;
+}
+
+body:has(.aviator-play-page) .bet-action strong {
+  font-size: clamp(11px, 1.12vw, 16px) !important;
+  font-weight: 500 !important;
+}
+
+@media (max-width: 760px) {
+  body:has(.aviator-play-page) .bet-slip-body {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr) !important;
+    gap: 6px !important;
+  }
+
+  body:has(.aviator-play-page) .bet-action span,
+  body:has(.aviator-play-page) .bet-action strong {
+    font-size: clamp(12px, 3.5vw, 16px) !important;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1120px) {
+  body:has(.aviator-play-page) .aviator-play-page:not(.chat-open) .right-chat-panel {
+    display: none !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-play-page.chat-open .right-chat-panel {
+    display: grid !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-play-page {
+    --topbar-h: clamp(46px, 6dvh, 58px);
+    width: calc(100vw - 16px) !important;
+    height: calc(100dvh - 16px) !important;
+    margin: 8px auto !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-topbar {
+    height: var(--topbar-h) !important;
+    min-height: var(--topbar-h) !important;
+    padding-inline: 10px !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-shell,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-shell {
+    width: 100% !important;
+    height: calc(100% - var(--topbar-h)) !important;
+    grid-template-columns: var(--left-table-w) minmax(0, 1fr) !important;
+  }
+
+  body:has(.aviator-play-page) .right-chat-panel {
+    position: fixed !important;
+    inset: 8px 8px 8px auto !important;
+    width: var(--right-chat-w) !important;
+    height: auto !important;
+    display: grid !important;
+    z-index: 25 !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-main,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-main {
+    grid-template-rows: clamp(34px, 5dvh, 42px) minmax(260px, min(58dvh, 560px)) clamp(170px, 24dvh, 230px) !important;
+    align-content: space-between;
+  }
+
+  body:has(.aviator-play-page) .amount-stepper {
+    grid-template-columns: 30px minmax(0, 1fr) 30px !important;
+    justify-items: center !important;
+  }
+
+  body:has(.aviator-play-page) .amount-stepper button {
+    justify-self: center !important;
+    margin: 0 !important;
+  }
+
+  body:has(.aviator-play-page) .fun-mode {
+    padding-inline: 8px;
+    font-size: clamp(9px, 1.5vw, 12px);
+    letter-spacing: 0.035em;
+    white-space: nowrap;
+  }
+
+  body:has(.aviator-play-page) .chat-text-wrap input:focus,
+  body:has(.aviator-play-page) .chat-text-wrap textarea:focus,
+  body:has(.aviator-play-page) .emoji-search-wrap input:focus,
+  body:has(.aviator-play-page) .chat-rain-panel input:focus,
+  body:has(.aviator-play-page) .auto-cashout-input:focus {
+    border-color: transparent !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  body:has(.aviator-play-page) .chat-reopen-button {
+    top: calc(var(--topbar-h) + 12px);
+    right: 12px;
+    bottom: auto;
+  }
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-hero-card {
+  padding: 16px !important;
+  gap: 12px !important;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .wallet-avatar {
+  width: 76px !important;
+  height: 76px !important;
+  font-size: 34px !important;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .wallet-identity {
+  gap: 14px !important;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-stat-row {
+  gap: 9px !important;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-stat-row article {
+  padding: 10px 11px !important;
+  grid-template-columns: 32px minmax(0, 1fr) !important;
+  column-gap: 8px !important;
+  row-gap: 3px !important;
+  align-items: center;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-stat-row article > span {
+  width: 30px !important;
+  height: 30px !important;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-stat-row small {
+  line-height: 1.25;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-stat-row strong {
+  min-width: 0;
+  line-height: 1.15;
+  font-size: 17px !important;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-stat-amount {
+  display: block;
+  white-space: nowrap;
+}
+
+body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-stat-row em {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px !important;
+}
+
+body:has(.account-top-page) .account-top-page .account-stat-row article {
+  min-height: 82px !important;
+}
+
+@media (max-width: 620px) {
+  body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-hero-card {
+    padding: 14px !important;
+  }
+
+  body:has(.account-profile-page, .account-wallet-page, .account-top-page) .wallet-avatar {
+    width: 64px !important;
+    height: 64px !important;
+    font-size: 30px !important;
+  }
+
+  body:has(.account-profile-page, .account-wallet-page, .account-top-page) .account-stat-row article {
+    padding: 10px !important;
+    grid-template-columns: 30px minmax(0, 1fr) !important;
+  }
+}
+
+body:has(.account-referrals-page) .account-main {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.referral-share-card,
+.referral-list-card {
+  min-width: 0;
+}
+
+.referral-share-card .section-heading {
+  margin-bottom: 14px;
+}
+
+.referral-share-card .section-heading p,
+.referral-list-card .section-heading p {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (min-width: 761px) and (max-width: 900px) {
+  body:has(.aviator-play-page) .aviator-shell,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-shell {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  body:has(.aviator-play-page) .live-bets-panel {
+    display: none !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-main,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-main {
+    grid-column: 1 !important;
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body:has(.aviator-play-page) {
+    box-sizing: border-box;
+  }
+
+  body:has(.aviator-play-page) .aviator-play-page {
+    --topbar-h: clamp(44px, 7dvh, 58px);
+    width: calc(100vw - 16px) !important;
+    height: calc(100dvh - 16px) !important;
+    margin: 8px auto !important;
+    border-radius: 12px;
+  }
+
+  body:has(.aviator-play-page) .aviator-topbar {
+    height: var(--topbar-h) !important;
+    min-height: var(--topbar-h) !important;
+    padding-inline: 10px !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-shell,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-shell {
+    width: 100% !important;
+    height: calc(100% - var(--topbar-h)) !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-main,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-main {
+    width: 100% !important;
+    grid-template-rows: clamp(32px, 5dvh, 38px) minmax(0, clamp(210px, 42dvh, 360px)) minmax(0, 1fr) !important;
+    gap: 5px !important;
+  }
+
+  body:has(.aviator-play-page) .betting-dock {
+    min-height: 0 !important;
+  }
+
+  body:has(.aviator-play-page) .amount-stepper {
+    grid-template-columns: 30px minmax(0, 1fr) 30px !important;
+    justify-items: center !important;
+  }
+
+  body:has(.aviator-play-page) .amount-stepper button {
+    justify-self: center !important;
+    margin: 0 !important;
+  }
+
+  body:has(.aviator-play-page) .topbar-right > .help-chip {
+    display: none !important;
+  }
+
+  body:has(.aviator-play-page) .topbar-right > .wallet-link {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding-inline: 8px !important;
+    border: 1px solid #3b4145;
+    border-radius: 4px;
+    color: #e1e6e8;
+    font-size: 10px !important;
+    white-space: nowrap;
+  }
+
+  body:has(.aviator-play-page) .fun-mode {
+    padding-inline: 8px;
+    font-size: clamp(9px, 2.8vw, 12px);
+    letter-spacing: 0.035em;
+    white-space: nowrap;
+  }
+
+  body:has(.aviator-play-page) .chat-text-wrap input:focus,
+  body:has(.aviator-play-page) .chat-text-wrap textarea:focus,
+  body:has(.aviator-play-page) .emoji-search-wrap input:focus,
+  body:has(.aviator-play-page) .chat-rain-panel input:focus,
+  body:has(.aviator-play-page) .auto-cashout-input:focus {
+    border-color: transparent !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+}
+
+@media (max-width: 380px) {
+  body:has(.aviator-play-page) .topbar-right {
+    gap: 4px !important;
+  }
+
+  body:has(.aviator-play-page) .balance-pill strong {
+    font-size: 10px !important;
+  }
+
+  body:has(.aviator-play-page) .topbar-right > .wallet-link {
+    padding-inline: 6px !important;
+  }
+}
+
+.referral-share-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+}
+
+.referral-share-control input {
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #3b4145;
+  border-radius: 5px;
+  background: #1c1f21;
+  color: #e6e9eb;
+  font: 500 13px "DM Sans", sans-serif;
+}
+
+.referral-share-control button {
+  min-height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 5px;
+  background: #20c957;
+  color: #07130b;
+  font: 700 13px "DM Sans", sans-serif;
+  cursor: pointer;
+}
+
+.referral-copy-status {
+  min-height: 18px;
+  margin: 7px 0 0;
+  color: #6fe28b;
+  font-size: 12px;
+}
+
+.referral-funding-note {
+  margin: 8px 0 0;
+  padding: 11px 12px;
+  border-left: 3px solid #20c957;
+  border-radius: 3px;
+  background: #1a2a20;
+  color: #cbd5ce;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.referral-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.referral-summary-card {
+  display: grid;
+  gap: 7px;
+}
+
+.referral-summary-card small {
+  color: #aeb8b1;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.referral-summary-card strong {
+  color: #23e355;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.referral-summary-card em {
+  color: #ffbe18;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.referral-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.referral-list > li {
+  min-width: 0;
+  padding: 13px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid #34393d;
+}
+
+.referral-member,
+.referral-status {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.referral-member strong {
+  color: #edf2f5;
+  font-size: 14px;
+}
+
+.referral-member small,
+.referral-status {
+  color: #aeb8b1;
+  font-size: 12px;
+}
+
+.referral-status {
+  justify-items: end;
+  text-align: right;
+}
+
+.referral-status strong,
+.referral-status-paid {
+  color: #23e355;
+  font-weight: 700;
+}
+
+.referral-status-pending {
+  color: #f3c35c;
+}
+
+.referral-empty-state {
+  display: grid !important;
+  justify-items: start;
+  gap: 5px !important;
+  color: #aeb8b1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.referral-empty-state strong {
+  color: #edf2f5;
+}
+
+.referral-list-note {
+  margin: 8px 0 0;
+  color: #aeb8b1;
+  font-size: 11px;
+}
+
+.referral-invite-notice {
+  margin: 0 0 16px;
+  padding: 11px 13px;
+  border: 1px solid #36543d;
+  border-radius: 5px;
+  background: #1d3525;
+  color: #cce3d1;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.referral-invite-notice strong,
+.profile-inviter strong {
+  color: #23e355;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 620px) {
+  .referral-share-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .referral-share-control button {
+    width: 100%;
+  }
+
+  .referral-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .referral-list > li {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  body:has(.aviator-play-page) {
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-play-page {
+    width: calc(100vw - 16px) !important;
+    height: auto !important;
+    min-height: calc(100dvh - 16px) !important;
+    overflow: visible !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-shell,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-shell {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-content: start !important;
+    gap: 10px !important;
+    padding: 0 0 10px !important;
+    overflow: visible !important;
+  }
+
+  body:has(.aviator-play-page) .aviator-main,
+  body:has(.aviator-play-page) .aviator-play-page.chat-collapsed .aviator-main {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    grid-template-rows: clamp(34px, 5dvh, 42px) clamp(240px, 48dvh, 480px) auto !important;
+    gap: 6px !important;
+    overflow: visible !important;
+  }
+
+  body:has(.aviator-play-page) .betting-dock {
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body:has(.aviator-play-page) .live-bets-panel {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    display: grid !important;
+    width: 100% !important;
+    height: clamp(280px, 60dvh, 560px) !important;
+    min-height: 280px !important;
+    grid-template-rows: 32px 38px 28px minmax(0, 1fr) !important;
+    border: 1px solid #2b2e31 !important;
+    border-radius: 10px !important;
+    overflow: hidden !important;
   }
 }

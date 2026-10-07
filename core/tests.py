@@ -4,13 +4,17 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase, override_settings
+from django.http import Http404, HttpResponse
+from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 
-from .models import ChatMessage, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GamePresence, GameRound, KYCSubmission, PaymentRequest, Profile, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, Transaction
-from .payment_gateway import IotecPayGateway, PaymentGatewayError
+from .forms import WalletForm
+from .models import ChatMessage, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GamePresence, GameRound, GameSession, PaymentRequest, Profile, Referral, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, Transaction
+from .payment_gateway import IotecPayGateway, PaymentGatewayError, PaymentGatewayResult
+from .payment_services import apply_provider_result, initiate_deposit, initiate_withdrawal
 from .reward_services import claim_reward
-from .utils import calculate_crash_point, can_deposit, generate_financial_report, hash_server_seed, verify_game_round
+from .utils import activate_self_exclusion, calculate_crash_point, can_deposit, create_game_round, generate_financial_report, hash_server_seed, is_self_excluded, reveal_game_round, verify_game_round
+from .views import play
 
 
 class AuthenticationTests(TestCase):
@@ -70,6 +74,160 @@ class AuthenticationTests(TestCase):
 
         self.assertRedirects(login_response, '/play/')
         self.assertEqual(int(self.client.session['_auth_user_id']), user.id)
+
+    def test_registration_saves_selected_east_african_country_code(self):
+        registration = self.client.post('/register/', {
+            'username': 'kenya-player',
+            'phone_number': '712345678',
+            'country_code': '254',
+            'email': 'kenya-player@example.com',
+            'password1': 'strong-test-pass',
+            'password2': 'strong-test-pass',
+        })
+
+        self.assertRedirects(registration, '/play/')
+        self.assertEqual(User.objects.get(username='kenya-player').profile.phone_number, '254712345678')
+
+
+class ReferralFeatureTests(TestCase):
+    def setUp(self):
+        self.inviter = User.objects.create_user(
+            username='inviter-player',
+            email='inviter@example.com',
+            password='strong-test-pass',
+        )
+        self.inviter_profile = Profile.objects.create(
+            user=self.inviter,
+            balance=Decimal('1000.00'),
+        )
+
+    def create_invitee(self, username='invited-player'):
+        invitee = User.objects.create_user(
+            username=username,
+            email=f'{username}@example.com',
+            password='strong-test-pass',
+        )
+        profile = Profile.objects.create(user=invitee, balance=Decimal('1000.00'))
+        return invitee, profile
+
+    def test_invite_link_attributes_signup_without_manual_referral_code(self):
+        landing = self.client.get(f'/invite/{self.inviter_profile.referral_code}/')
+
+        self.assertRedirects(landing, '/register/')
+        self.assertEqual(
+            self.client.session['referral_code'],
+            str(self.inviter_profile.referral_code),
+        )
+        registration_form = self.client.get('/register/')
+        self.assertContains(registration_form, 'inviter-player')
+
+        registration = self.client.post('/register/', {
+            'username': 'new-invitee',
+            'phone_number': '0700000002',
+            'email': 'new-invitee@example.com',
+            'password1': 'strong-test-pass',
+            'password2': 'strong-test-pass',
+        })
+
+        self.assertRedirects(registration, '/play/')
+        referral = Referral.objects.get(invitee__username='new-invitee')
+        self.assertEqual(referral.inviter, self.inviter)
+        self.assertFalse(self.client.session.get('referral_code'))
+
+    def test_referred_account_can_see_inviter_username(self):
+        invitee, _ = self.create_invitee()
+        Referral.objects.create(inviter=self.inviter, invitee=invitee)
+        self.client.force_login(invitee)
+
+        response = self.client.get('/profile/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Invited by:')
+        self.assertContains(response, self.inviter.username)
+
+    def test_referral_page_shows_personal_link_invited_count_and_rewards(self):
+        invitee, _ = self.create_invitee()
+        referral = Referral.objects.create(inviter=self.inviter, invitee=invitee)
+        reward = Transaction.objects.create(
+            user=self.inviter,
+            transaction_type='bonus',
+            amount=Decimal('25.00'),
+            status='completed',
+            reference=f'REFERRAL-{referral.pk}',
+            description='Referral reward funded by Pakabet',
+        )
+        referral.reward_amount = Decimal('25.00')
+        referral.reward_transaction = reward
+        referral.rewarded_at = timezone.now()
+        referral.save(update_fields=['reward_amount', 'reward_transaction', 'rewarded_at'])
+        self.client.force_login(self.inviter)
+
+        response = self.client.get('/referrals/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['total_invited'], 1)
+        self.assertEqual(response.context['total_earned'], Decimal('25.00'))
+        self.assertContains(response, f'/invite/{self.inviter_profile.referral_code}/')
+        self.assertContains(response, invitee.username)
+        self.assertContains(response, 'Reward paid')
+
+    def test_first_successful_deposit_funds_single_withdrawable_inviter_reward(self):
+        invitee, invitee_profile = self.create_invitee()
+        referral = Referral.objects.create(inviter=self.inviter, invitee=invitee)
+        first_deposit = PaymentRequest.objects.create(
+            user=invitee,
+            payment_type='deposit',
+            provider='mtn_momo',
+            amount=Decimal('1801.00'),
+            phone_number='256700000000',
+            external_reference='DEP-REFERRAL-001',
+            status='pending',
+            metadata={'gateway': 'iotec_pay'},
+        )
+        success = PaymentGatewayResult(
+            provider_reference='provider-referral-001',
+            status='Success',
+            status_code='success',
+            status_message='Completed',
+        )
+
+        apply_provider_result(first_deposit, success)
+        apply_provider_result(first_deposit, success)
+
+        self.inviter_profile.refresh_from_db()
+        invitee_profile.refresh_from_db()
+        referral.refresh_from_db()
+        bonus = Transaction.objects.get(reference=f'REFERRAL-{referral.pk}')
+        self.assertEqual(self.inviter_profile.balance, Decimal('1090.05'))
+        self.assertEqual(invitee_profile.balance, Decimal('2801.00'))
+        self.assertEqual(bonus.amount, Decimal('90.05'))
+        self.assertEqual(bonus.transaction_type, 'bonus')
+        self.assertIn('funded by Pakabet', bonus.description)
+        self.assertEqual(referral.first_deposit, first_deposit)
+        self.assertEqual(referral.reward_transaction, bonus)
+
+        second_deposit = PaymentRequest.objects.create(
+            user=invitee,
+            payment_type='deposit',
+            provider='mtn_momo',
+            amount=Decimal('500.00'),
+            phone_number='256700000000',
+            external_reference='DEP-REFERRAL-002',
+            status='pending',
+            metadata={'gateway': 'iotec_pay'},
+        )
+        apply_provider_result(second_deposit, PaymentGatewayResult(
+            provider_reference='provider-referral-002',
+            status='Success',
+            status_code='success',
+            status_message='Completed',
+        ))
+        self.inviter_profile.refresh_from_db()
+        self.assertEqual(self.inviter_profile.balance, Decimal('1090.05'))
+        self.assertEqual(
+            Transaction.objects.filter(user=self.inviter, transaction_type='bonus').count(),
+            1,
+        )
 
 
 class IotecGatewayRequestTests(TestCase):
@@ -172,6 +330,52 @@ class ProvablyFairTests(TestCase):
             )
         )
 
+    def test_round_verification_uses_the_rounds_recorded_house_edge(self):
+        server_seed = 'server-seed-with-custom-edge'
+        client_seed = 'client-seed-with-custom-edge'
+        house_edge = Decimal('0.0250')
+        crash_point = calculate_crash_point(server_seed, client_seed, house_edge)
+
+        self.assertTrue(
+            verify_game_round(
+                server_seed,
+                client_seed,
+                hash_server_seed(server_seed),
+                crash_point,
+                house_edge,
+            )
+        )
+
+    def test_saved_client_seed_is_used_for_new_rounds(self):
+        user = User.objects.create_user(username='seed-player', password='strong-test-pass')
+        profile = Profile.objects.create(user=user, client_seed='custom-seed-2026')
+
+        game_round = create_game_round(user)
+
+        self.assertEqual(game_round.client_seed, profile.client_seed)
+
+    def test_round_verification_page_displays_real_round_evidence(self):
+        user = User.objects.create_user(username='verify-player', password='strong-test-pass')
+        Profile.objects.create(user=user, balance=Decimal('1000.00'), client_seed='verify-seed')
+        game_round = create_game_round(user)
+        GameSession.objects.create(
+            user=user,
+            round=game_round,
+            stake=Decimal('10.00'),
+            crash_point=game_round.crash_point,
+        )
+        reveal_game_round(game_round)
+        self.client.force_login(user)
+
+        response = self.client.get('/provably-fair/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['rounds'][0].verified)
+        self.assertContains(response, game_round.server_seed_hash)
+        self.assertContains(response, 'verify-seed')
+        self.assertContains(response, game_round.server_seed)
+        self.assertContains(response, 'Verified')
+
 
 class PlayEndpointTests(TestCase):
     def setUp(self):
@@ -182,6 +386,23 @@ class PlayEndpointTests(TestCase):
         )
         self.profile = Profile.objects.create(user=self.user, balance=Decimal('1000.00'))
         self.client.login(username='player', password='strong-test-pass')
+
+    def test_fairness_modal_shows_saved_seed_and_players_latest_commitment(self):
+        game_round = create_game_round(self.user)
+        GameSession.objects.create(
+            user=self.user,
+            round=game_round,
+            stake=Decimal('10.00'),
+            crash_point=game_round.crash_point,
+        )
+
+        response = self.client.get('/play/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'value="{self.profile.client_seed}"')
+        self.assertContains(response, game_round.server_seed_hash)
+        self.assertContains(response, 'data-client-seed-url="/api/provably-fair/client-seed/"')
+        self.assertContains(response, 'View and verify your completed rounds')
 
     def test_start_round_commits_seed_and_debits_wallet(self):
         response = self.client.post('/play/', {
@@ -195,9 +416,27 @@ class PlayEndpointTests(TestCase):
 
         self.assertEqual(self.profile.balance, Decimal('970.00'))
         self.assertEqual(len(payload['session_ids']), 2)
+        self.assertEqual(payload['client_seed'], self.profile.client_seed)
         self.assertEqual(GameRound.objects.get(public_id=payload['round_id']).server_seed, '')
         self.assertTrue(payload['server_seed_hash'])
         self.assertEqual(Transaction.objects.get(reference=payload['round_id'], transaction_type='bet').amount, Decimal('30.00'))
+
+    def test_client_seed_can_be_updated_and_invalid_values_are_rejected(self):
+        response = self.client.post('/api/provably-fair/client-seed/', {
+            'client_seed': 'my-custom-seed:2026',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['client_seed'], 'my-custom-seed:2026')
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.client_seed, 'my-custom-seed:2026')
+
+        invalid_response = self.client.post('/api/provably-fair/client-seed/', {
+            'client_seed': 'invalid seed with spaces',
+        })
+        self.assertEqual(invalid_response.status_code, 400)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.client_seed, 'my-custom-seed:2026')
 
     def test_start_round_does_not_reveal_crash_point(self):
         response = self.client.post('/play/', {
@@ -207,6 +446,82 @@ class PlayEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotIn('crash_point', response.json())
+
+    def test_server_starts_and_tracks_no_bet_rounds_without_exposing_the_outcome(self):
+        balance_before = self.profile.balance
+
+        response = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([]),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        game_round = GameRound.objects.get(public_id=payload['round_id'])
+        self.profile.refresh_from_db()
+        self.assertEqual(payload['session_ids'], [])
+        self.assertNotIn('crash_point', payload)
+        self.assertEqual(self.profile.balance, balance_before)
+        self.assertEqual(game_round.created_by, self.user)
+        self.assertFalse(GameSession.objects.filter(round=game_round).exists())
+
+    def test_server_rejects_a_second_round_while_the_users_round_is_flying(self):
+        first = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([]),
+        })
+        first_round = GameRound.objects.get(public_id=first.json()['round_id'])
+        first_round.crash_point = Decimal('40.00')
+        first_round.save(update_fields=['crash_point'])
+
+        second = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([]),
+        })
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(GameRound.objects.filter(created_by=self.user).count(), 1)
+
+    def test_owner_can_reveal_a_completed_no_bet_round(self):
+        start = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([]),
+        }).json()
+        game_round = GameRound.objects.get(public_id=start['round_id'])
+        game_round.crash_point = Decimal('1.01')
+        game_round.started_at = timezone.now() - timedelta(seconds=1)
+        game_round.save(update_fields=['crash_point', 'started_at'])
+
+        response = self.client.post('/play/', {
+            'action': 'settle_crash',
+            'round_id': game_round.public_id,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['crash_point'], 1.01)
+        game_round.refresh_from_db()
+        self.assertTrue(game_round.is_revealed)
+
+    def test_user_cannot_reveal_another_users_no_bet_round(self):
+        other_user = User.objects.create_user(
+            username='other-player',
+            email='other@example.com',
+            password='strong-test-pass',
+        )
+        Profile.objects.create(user=other_user, balance=Decimal('100.00'))
+        other_round = create_game_round(other_user)
+
+        request = RequestFactory().post('/play/', {
+            'action': 'settle_crash',
+            'round_id': other_round.public_id,
+        })
+        request.user = self.user
+
+        with self.assertRaises(Http404):
+            play(request)
+        other_round.refresh_from_db()
+        self.assertFalse(other_round.server_seed)
 
     def test_successful_cashout_before_crash_does_not_reveal_crash_point(self):
         start = self.client.post('/play/', {
@@ -228,6 +543,55 @@ class PlayEndpointTests(TestCase):
         payload = response.json()
         self.assertEqual(payload['status'], 'won')
         self.assertIsNone(payload['crash_point'])
+
+    @patch('core.views.multiplier_at_elapsed_time', return_value=Decimal('1.25'))
+    def test_cashout_ignores_client_multiplier_and_uses_server_multiplier(self, _multiplier):
+        start = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([10]),
+        }).json()
+        game_round = GameRound.objects.get(public_id=start['round_id'])
+        game_round.crash_point = Decimal('10.00')
+        game_round.save(update_fields=['crash_point'])
+        session = GameSession.objects.get(id=start['session_ids'][0])
+        session.crash_point = Decimal('10.00')
+        session.save(update_fields=['crash_point'])
+
+        response = self.client.post('/play/', {
+            'action': 'cashout',
+            'session_ids': ','.join(str(session_id) for session_id in start['session_ids']),
+            'cashout_multiplier': '100.00',
+        })
+
+        session.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['cashout_multiplier'], 1.25)
+        self.assertEqual(session.cashed_out_at, Decimal('1.25'))
+        self.assertEqual(session.won_amount, Decimal('12.50'))
+        self.assertEqual(self.profile.balance, Decimal('1002.50'))
+
+    def test_cashout_rejects_sessions_from_different_rounds(self):
+        start = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([10]),
+        }).json()
+        other_round = create_game_round(self.user)
+        other_session = GameSession.objects.create(
+            user=self.user,
+            round=other_round,
+            stake=Decimal('10.00'),
+            crash_point=other_round.crash_point,
+        )
+
+        response = self.client.post('/play/', {
+            'action': 'cashout',
+            'session_ids': f"{start['session_ids'][0]},{other_session.id}",
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(GameSession.objects.get(id=start['session_ids'][0]).cashed_out_at)
+        self.assertIsNone(GameSession.objects.get(id=other_session.id).cashed_out_at)
 
     def test_game_presence_endpoint_records_authenticated_page_presence(self):
         response = self.client.post('/play/', {
@@ -417,6 +781,57 @@ class PlayEndpointTests(TestCase):
         self.assertFalse(ChatMessage.objects.filter(id=oldest.id).exists())
         self.assertTrue(ChatMessage.objects.filter(message='fresh message').exists())
 
+    def test_chat_rejects_phone_numbers_links_and_questions(self):
+        prohibited_messages = [
+            ('Call me at +1 (234) 567-8901', 'Phone numbers'),
+            ('Call me at zero seven seven one two three four five six seven', 'Phone numbers'),
+            ('Call me at o seven seven two three four five six seven', 'Phone numbers'),
+            ('Call me at double seven two three four five six seven eight', 'Phone numbers'),
+            ('Visit https://example.com for details', 'Links'),
+            ('Visit example dot com for details', 'Links'),
+            ('What time does the game start?', 'Questions'),
+            ('Please send me the details', 'Questions'),
+            ('Send me money for the next round', 'Questions'),
+            ('fuck you', 'Abusive language'),
+            ('fuckyou', 'Abusive language'),
+            ('f.u.c.k you', 'Abusive language'),
+            ('silly', 'Abusive language'),
+            ('You are a b!tch', 'Abusive language'),
+            ('You are a sh!t player', 'Abusive language'),
+            ('THIS MESSAGE IS ALL IN CAPITALS', 'Excessive capital letters'),
+            ('hello hello hello hello', 'spam'),
+            ('Can you lend me money?', 'Questions'),
+            ('This is a fraud scheme', 'Scams'),
+            ('I am selling game accounts', 'Advertising'),
+        ]
+
+        for message, expected_error in prohibited_messages:
+            with self.subTest(message=message):
+                response = self.client.post('/play/', {
+                    'action': 'chat',
+                    'message': message,
+                })
+
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(response.json()['success'])
+                self.assertIn(expected_error, response.json()['message'])
+                self.assertFalse(ChatMessage.objects.filter(message=message).exists())
+
+    def test_chat_feed_hides_legacy_messages_violating_rules(self):
+        ChatMessage.objects.create(user=self.user, message='A friendly greeting')
+        ChatMessage.objects.create(user=self.user, message='Call me at 1234567890')
+        ChatMessage.objects.create(user=self.user, message='Visit https://example.com')
+
+        request = RequestFactory().get('/play/')
+        request.user = self.user
+
+        with patch('core.views.render', return_value=HttpResponse()) as render_template:
+            response = play(request)
+
+        self.assertEqual(response.status_code, 200)
+        chat_messages = render_template.call_args.args[2]['chat_messages']
+        self.assertEqual([message.message for message in chat_messages], ['A friendly greeting'])
+
     def test_round_seed_cannot_be_revealed_before_server_crash_time(self):
         start = self.client.post('/play/', {
             'action': 'start',
@@ -498,6 +913,27 @@ class RoomEndpointTests(TestCase):
         payload = status.json()
         self.assertEqual(payload['room']['status'], 'running')
         self.assertIsNone(payload['room']['crash_point'])
+        self.assertGreaterEqual(payload['room']['current_multiplier'], 1.0)
+
+    @patch('core.views.multiplier_at_elapsed_time', return_value=Decimal('1.50'))
+    def test_room_cashout_ignores_client_multiplier_and_uses_server_multiplier(self, _multiplier):
+        self.room.crash_point = Decimal('10.00')
+        self.room.started_at = timezone.now()
+        self.room.status = 'running'
+        self.room.save(update_fields=['crash_point', 'started_at', 'status'])
+
+        response = self.client.post(f'/rooms/{self.room.id}/action/', {
+            'action': 'cashout',
+            'cashout_multiplier': '100.00',
+        })
+
+        player = RoomPlayer.objects.get(room=self.room, user=self.user)
+        self.profile.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['cashout_multiplier'], 1.5)
+        self.assertEqual(player.cashed_out_at, Decimal('1.50'))
+        self.assertEqual(player.won_amount, Decimal('15.00'))
+        self.assertEqual(self.profile.balance, Decimal('1015.00'))
 
     def test_self_exclusion_blocks_joining_a_room(self):
         room = Room.objects.create(name='Join Room', host=self.user)
@@ -516,6 +952,22 @@ class RoomEndpointTests(TestCase):
         self.assertIn('self-excluded', response.json()['message'])
         self.assertFalse(RoomPlayer.objects.filter(room=room, user=self.user).exists())
 
+    def test_self_exclusion_blocks_host_from_starting_a_room(self):
+        SelfExclusion.objects.create(
+            user=self.user,
+            ends_at=timezone.now() + timedelta(hours=72),
+            reason='Cooling off',
+        )
+
+        response = self.client.post(f'/rooms/{self.room.id}/action/', {
+            'action': 'start',
+        })
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('self-excluded', response.json()['message'])
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, 'waiting')
+
 
 class WalletComplianceTests(TestCase):
     def setUp(self):
@@ -527,11 +979,103 @@ class WalletComplianceTests(TestCase):
         self.profile = Profile.objects.create(user=self.user, balance=Decimal('1000.00'))
         self.client.login(username='wallet-player', password='strong-test-pass')
 
+    def test_wallet_amount_ranges_are_different_for_deposits_and_withdrawals(self):
+        deposit = WalletForm(data={
+            'deposit-amount': '300000.00',
+            'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '256',
+            'deposit-phone_number': '700000000',
+        }, prefix='deposit')
+        excessive_deposit = WalletForm(data={
+            'deposit-amount': '300000.01',
+            'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '256',
+            'deposit-phone_number': '700000000',
+        }, prefix='deposit')
+        large_withdrawal = WalletForm(data={
+            'withdraw-amount': '300001.00',
+            'withdraw-provider': 'mtn_momo',
+            'withdraw-country_code': '256',
+            'withdraw-phone_number': '700000000',
+        }, prefix='withdraw')
+        below_minimum_withdrawal = WalletForm(data={
+            'withdraw-amount': '499.99',
+            'withdraw-provider': 'mtn_momo',
+            'withdraw-country_code': '256',
+            'withdraw-phone_number': '700000000',
+        }, prefix='withdraw')
+
+        self.assertTrue(deposit.is_valid(), deposit.errors)
+        self.assertFalse(excessive_deposit.is_valid())
+        self.assertTrue(large_withdrawal.is_valid(), large_withdrawal.errors)
+        self.assertFalse(below_minimum_withdrawal.is_valid())
+
+    def test_account_daily_deposit_limit_defaults_to_global_maximum(self):
+        self.assertEqual(self.profile.daily_deposit_limit, Decimal('300000.00'))
+
+    def test_payment_services_enforce_deposit_bounds_and_leave_withdrawals_balance_limited(self):
+        payment, result, error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('300000.01'),
+            provider='mtn_momo',
+            phone_number='256700000000',
+        )
+        self.assertIsNone(payment)
+        self.assertIsNone(result)
+        self.assertIn('300,000 UGX', error)
+        self.assertFalse(PaymentRequest.objects.filter(user=self.user).exists())
+
+        self.profile.balance = Decimal('400000.00')
+        self.profile.save(update_fields=['balance'])
+        withdrawal, _, withdrawal_error = initiate_withdrawal(
+            user=self.user,
+            amount=Decimal('300001.00'),
+            provider='mtn_momo',
+            phone_number='256700000000',
+        )
+        self.assertEqual(withdrawal_error, '')
+        self.assertEqual(withdrawal.amount, Decimal('300001.00'))
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('99999.00'))
+
+    def test_self_exclusion_blocks_deposit_and_is_active_only_for_its_period(self):
+        exclusion = SelfExclusion.objects.create(
+            user=self.user,
+            ends_at=timezone.now() + timedelta(hours=72),
+            reason='Cooling off',
+        )
+
+        self.assertTrue(is_self_excluded(self.user))
+        payment, _, error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='256700000000',
+        )
+        self.assertIsNone(payment)
+        self.assertIn('self-excluded', error)
+        self.assertFalse(PaymentRequest.objects.filter(user=self.user, payment_type='deposit').exists())
+
+        exclusion.ends_at = timezone.now() - timedelta(seconds=1)
+        exclusion.save(update_fields=['ends_at'])
+        self.assertFalse(is_self_excluded(self.user))
+
+    def test_self_exclusion_activation_is_persisted_and_cannot_be_duplicated(self):
+        exclusion = activate_self_exclusion(self.user, '72', 'Taking a break')
+
+        self.assertIsNotNone(exclusion)
+        self.assertTrue(exclusion.is_active)
+        self.assertTrue(is_self_excluded(self.user))
+        self.assertEqual(exclusion.reason, 'Taking a break')
+        self.assertIsNone(activate_self_exclusion(self.user, '168'))
+        self.assertEqual(SelfExclusion.objects.filter(user=self.user).count(), 1)
+
     def test_deposit_creates_payment_request_and_credits_wallet(self):
         response = self.client.post('/wallet/', {
             'action': 'deposit',
             'deposit-amount': '5000',
             'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '256',
             'deposit-phone_number': '256700000000',
         })
 
@@ -540,9 +1084,82 @@ class WalletComplianceTests(TestCase):
         payment = PaymentRequest.objects.get(user=self.user, payment_type='deposit')
 
         self.assertEqual(self.profile.balance, Decimal('6000.00'))
-        self.assertEqual(self.profile.kyc_status, 'tier_1')
         self.assertEqual(payment.status, 'completed')
         self.assertEqual(Transaction.objects.get(reference=payment.external_reference).transaction_type, 'deposit')
+
+    def test_deposit_rejects_selected_country_where_service_is_not_available(self):
+        response = self.client.post('/wallet/', {
+            'action': 'deposit',
+            'deposit-amount': '500',
+            'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '254',
+            'deposit-phone_number': '712345678',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'We have not started operating in Kenya yet')
+        self.assertFalse(PaymentRequest.objects.filter(user=self.user, payment_type='deposit').exists())
+
+    def test_wallet_form_warns_for_country_without_service(self):
+        form = WalletForm(data={
+            'amount': '500',
+            'provider': 'mtn_momo',
+            'country_code': '254',
+            'phone_number': '712345678',
+        })
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('We have not started operating in Kenya yet', str(form.errors))
+
+    def test_payment_services_reject_unavailable_countries_before_creating_requests(self):
+        deposit, _, deposit_error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='254712345678',
+        )
+        withdrawal, _, withdrawal_error = initiate_withdrawal(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='airtel_money',
+            phone_number='255712345678',
+        )
+
+        self.assertIsNone(deposit)
+        self.assertIn('We have not started operating in Kenya yet', deposit_error)
+        self.assertIsNone(withdrawal)
+        self.assertIn('We have not started operating in Tanzania yet', withdrawal_error)
+        self.assertFalse(PaymentRequest.objects.filter(user=self.user).exists())
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+
+    def test_withdrawal_rejects_selected_country_where_service_is_not_available(self):
+        response = self.client.post('/wallet/', {
+            'action': 'withdraw',
+            'withdraw-amount': '500',
+            'withdraw-provider': 'mtn_momo',
+            'withdraw-country_code': '255',
+            'withdraw-phone_number': '712345678',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'We have not started operating in Tanzania yet')
+        self.assertFalse(PaymentRequest.objects.filter(user=self.user, payment_type='withdraw').exists())
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+
+    def test_deposit_rejects_a_phone_country_code_that_conflicts_with_selection(self):
+        response = self.client.post('/wallet/', {
+            'action': 'deposit',
+            'deposit-amount': '500',
+            'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '254',
+            'deposit-phone_number': '256700000000',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'does not match the selected country')
+        self.assertFalse(PaymentRequest.objects.filter(user=self.user, payment_type='deposit').exists())
 
     @patch(
         'core.payment_services.IotecPayGateway.collect_mobile_money',
@@ -553,6 +1170,7 @@ class WalletComplianceTests(TestCase):
             'action': 'deposit',
             'deposit-amount': '500',
             'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '256',
             'deposit-phone_number': '256700000000',
         })
 
@@ -579,6 +1197,7 @@ class WalletComplianceTests(TestCase):
             'action': 'withdraw',
             'withdraw-amount': '500',
             'withdraw-provider': 'airtel_money',
+            'withdraw-country_code': '256',
             'withdraw-phone_number': '256750000000',
         })
 
@@ -600,6 +1219,7 @@ class WalletComplianceTests(TestCase):
             'action': 'withdraw',
             'withdraw-amount': '500',
             'withdraw-provider': 'airtel_money',
+            'withdraw-country_code': '256',
             'withdraw-phone_number': '256750000000',
         })
 
@@ -622,6 +1242,7 @@ class WalletComplianceTests(TestCase):
             'action': 'withdraw',
             'withdraw-amount': '500',
             'withdraw-provider': 'airtel_money',
+            'withdraw-country_code': '256',
             'withdraw-phone_number': '256750000000',
         }, follow=True)
 
@@ -643,6 +1264,7 @@ class WalletComplianceTests(TestCase):
             'action': 'deposit',
             'deposit-amount': '500',
             'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '256',
             'deposit-phone_number': '256700000000',
         }, follow=True)
 
@@ -920,19 +1542,6 @@ class ComplianceFeatureTests(TestCase):
         self.profile = Profile.objects.create(user=self.user, balance=Decimal('1000.00'))
         self.client.login(username='compliance-player', password='strong-test-pass')
 
-    def test_kyc_submission_is_created_from_profile(self):
-        response = self.client.post('/profile/', {
-            'action': 'kyc',
-            'document_type': 'national_id',
-            'document_number': 'CM12345678',
-            'full_name': 'Compliance Player',
-            'date_of_birth': '1990-01-01',
-        })
-
-        self.assertEqual(response.status_code, 302)
-        submission = KYCSubmission.objects.get(user=self.user)
-        self.assertEqual(submission.status, 'pending')
-
     def test_self_exclusion_blocks_bets(self):
         response = self.client.post('/profile/', {
             'action': 'self_exclude',
@@ -1026,14 +1635,15 @@ class ComplianceFeatureTests(TestCase):
         self.assertContains(response, 'Verify a round')
         self.assertContains(response, 'Open responsible play settings')
 
-    def test_flagged_chat_creates_risk_alert(self):
+    def test_scam_related_chat_is_blocked_and_creates_risk_alert(self):
         response = self.client.post('/play/', {
             'action': 'chat',
             'message': 'This looks like fraud',
         })
 
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(ChatMessage.objects.get(user=self.user).flagged)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ChatMessage.objects.filter(user=self.user).exists())
+        self.assertIn('Scams', response.json()['message'])
         self.assertTrue(RiskAlert.objects.filter(user=self.user, alert_type='flagged_chat').exists())
 
 

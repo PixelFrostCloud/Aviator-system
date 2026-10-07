@@ -6,11 +6,11 @@ from .models import (
     ChatRain,
     ChatRainRecipient,
     FinancialReport,
-    KYCSubmission,
     Profile,
     GameRound,
     GameSession,
     PaymentRequest,
+    Referral,
     RiskAlert,
     SelfExclusion,
     Transaction,
@@ -71,32 +71,12 @@ class PaymentRequestAdmin(admin.ModelAdmin):
             ))
 
 
-@admin.register(KYCSubmission)
-class KYCSubmissionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'document_type', 'full_name', 'status', 'created_at', 'reviewed_at')
-    list_filter = ('status', 'document_type', 'created_at')
-    search_fields = ('user__username', 'full_name', 'document_number')
-    actions = ('approve_tier_2', 'reject_selected')
-
-    @admin.action(description='Approve selected KYC submissions as Tier 2')
-    def approve_tier_2(self, request, queryset):
-        for submission in queryset.filter(status='pending'):
-            submission.status = 'approved'
-            submission.reviewed_by = request.user
-            submission.reviewed_at = timezone.now()
-            submission.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
-            profile = Profile.objects.get(user=submission.user)
-            profile.kyc_status = 'tier_2'
-            profile.save(update_fields=['kyc_status'])
-
-    @admin.action(description='Reject selected KYC submissions')
-    def reject_selected(self, request, queryset):
-        for submission in queryset.filter(status='pending'):
-            submission.status = 'rejected'
-            submission.reviewed_by = request.user
-            submission.reviewed_at = timezone.now()
-            submission.rejection_reason = submission.rejection_reason or 'Rejected by operator.'
-            submission.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'rejection_reason'])
+@admin.register(Referral)
+class ReferralAdmin(admin.ModelAdmin):
+    list_display = ('inviter', 'invitee', 'reward_amount', 'created_at', 'rewarded_at')
+    list_filter = ('rewarded_at', 'created_at')
+    search_fields = ('inviter__username', 'invitee__username')
+    readonly_fields = ('created_at', 'first_deposit', 'reward_transaction', 'rewarded_at')
 
 
 @admin.register(SelfExclusion)

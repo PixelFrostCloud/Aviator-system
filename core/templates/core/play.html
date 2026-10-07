@@ -9,10 +9,6 @@
             <img src="{% static 'logo icon.png' %}" alt="">
             <span>Pakabet</span>
         </a>
-        <button class="help-chip" type="button" data-aviator-modal-open="how-to-play">
-            <svg class="ui-icon" aria-hidden="true"><use href="#icon-help"></use></svg>
-            <span>How to play</span>
-        </button>
         <div class="topbar-right">
             <div class="balance-pill" id="play-balance">
                 {% if user.is_authenticated %}
@@ -28,6 +24,10 @@
             {% else %}
             <a class="wallet-link" href="{% url 'login' %}?next={% url 'wallet' %}">Log in</a>
             {% endif %}
+            <button class="help-chip" type="button" data-aviator-modal-open="how-to-play">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-help"></use></svg>
+                <span>How to play</span>
+            </button>
             <button class="menu-button" id="aviator-menu-button" type="button" aria-label="Menu" aria-expanded="false">
                 <span></span>
                 <span></span>
@@ -101,7 +101,7 @@
             </div>
 
             <section class="flight-stage" aria-live="polite">
-                <div class="fun-mode">FUN MODE</div>
+                <div class="fun-mode">WIN BEFORE I CRASHOUT</div>
                 <div class="stage-grid"></div>
                 <div class="height-markers">
                     <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
@@ -307,8 +307,9 @@
                 <ul>
                     <li>Do not spam or use excessive capital letters when chatting.</li>
                     <li>Be respectful; do not harass or be offensive to other players.</li>
-                    <li>Do not share personal information of yourself or other players.</li>
-                    <li>Do not beg or ask for loans, rains, or tips.</li>
+                    <li>Do not share phone numbers or contact numbers, in digits or words.</li>
+                    <li>Do not post links or website addresses, including disguised links.</li>
+                    <li>Do not ask questions or make requests in chat.</li>
                     <li>Avoid behavior that may be seen as potential scams.</li>
                     <li>Do not engage in any form of advertising, trading, selling, buying, or offering services.</li>
                     <li>Chat access is restricted for players with balance below 10.00 UGX</li>
@@ -318,6 +319,26 @@
             </section>
         </aside>
     </section>
+
+    <dialog class="chat-warning-modal" id="chat-warning-modal"
+        aria-labelledby="chat-warning-title" aria-describedby="chat-warning-message">
+        <div class="chat-warning-card">
+            <div class="chat-warning-heading">
+                <span class="chat-warning-icon" aria-hidden="true">!</span>
+                <div>
+                    <p class="chat-warning-eyebrow">MESSAGE NOT SENT</p>
+                    <h2 id="chat-warning-title">This message breaks a chat rule</h2>
+                </div>
+                <button class="chat-warning-close" type="button" data-chat-warning-close aria-label="Close warning">&times;</button>
+            </div>
+            <div class="chat-warning-reason">
+                <strong>Why it was blocked</strong>
+                <p id="chat-warning-message"></p>
+            </div>
+            <p class="chat-warning-guidance">Edit your message to follow the chat rules, then try sending it again.</p>
+            <button class="chat-warning-confirm" type="button" data-chat-warning-close>Got it</button>
+        </div>
+    </dialog>
 
     <div class="aviator-menu-backdrop" id="aviator-menu-backdrop" hidden></div>
     <aside class="aviator-menu-drawer" id="aviator-menu-drawer" aria-hidden="true">
@@ -429,14 +450,25 @@
         <div class="modal-body fairness">
             <p>This game uses Provably Fair technology to determine game result. You can check fairness after every round.</p>
             <div class="fair-card">
-                <strong>Client (your) seed:</strong>
-                <div class="seed-pill">Current: {{ request.user.username|slugify|default:'player' }}-client-seed</div>
+                <strong>Client seed for your next round:</strong>
+                <form class="fair-seed-form" data-client-seed-url="{% url 'update_client_seed' %}">
+                    {% csrf_token %}
+                    <label class="visually-hidden" for="fair-client-seed">Client seed</label>
+                    <input id="fair-client-seed" name="client_seed" type="text" maxlength="128" pattern="[A-Za-z0-9._:-]{1,128}" value="{{ profile.client_seed }}" required autocomplete="off">
+                    <div class="fair-seed-actions">
+                        <button type="button" class="fair-seed-randomize" data-randomize-client-seed>Generate new seed</button>
+                        <button type="submit" class="fair-seed-save">Save seed</button>
+                    </div>
+                    <p class="fair-seed-status" data-client-seed-status role="status" aria-live="polite"></p>
+                    <small>Changing your seed only affects rounds started after you save it.</small>
+                </form>
             </div>
             <div class="fair-card">
-                <strong>Server seed SHA256:</strong>
-                <div class="seed-pill">{% for session in recent_crashes|slice:":1" %}{{ session.server_seed_hash }}{% empty %}No round hash yet{% endfor %}</div>
+                <strong>Server-seed hash · latest round</strong>
+                <small data-server-seed-status>{% if fairness_round and fairness_round.is_revealed %}The server seed for this round has been revealed.{% elif fairness_round %}Commitment published before this round began.{% else %}Your first round will create a commitment.{% endif %}</small>
+                <div class="seed-pill" data-server-seed-hash>{% if fairness_round %}{{ fairness_round.server_seed_hash }}{% else %}No round commitment yet.{% endif %}</div>
             </div>
-            <footer>You can check fairness of each bet from bets history.</footer>
+            <footer><a href="{% url 'provably_fair' %}">View and verify your completed rounds</a></footer>
         </div>
     </section>
 </div>

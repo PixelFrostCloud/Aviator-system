@@ -1,6 +1,7 @@
 import json
 import random
 import re
+import uuid
 from hmac import compare_digest
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -15,6 +16,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Count, F, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from django.utils import timezone
@@ -23,15 +25,16 @@ from .forms import (
     PlayForm,
     WalletForm,
     ProfileComplianceForm,
-    KYCSubmissionForm,
     SelfExclusionForm,
     ChatMessageForm,
     FinancialReportForm,
     RoomCreateForm,
     RoomJoinForm,
 )
+from .chat_rules import get_chat_rule_violation
 from .models import (
     Profile,
+    Referral,
     ChatMessage,
     ChatReaction,
     ChatRain,
@@ -39,7 +42,6 @@ from .models import (
     FinancialReport,
     GameSession,
     GameRound,
-    KYCSubmission,
     PaymentRequest,
     RiskAlert,
     SelfExclusion,
@@ -65,18 +67,22 @@ from .reward_services import (
     wallet_payload,
 )
 from .payment_gateway import PaymentGatewayError, PaymentGatewayResult
+from .constants import MAXIMUM_DEPOSIT_AMOUNT
 from .payment_services import apply_provider_result, initiate_deposit, initiate_withdrawal, sync_payment
 from .utils import (
+    activate_self_exclusion,
     can_deposit,
     can_place_bets,
     create_game_round,
     generate_financial_report,
     generate_payment_reference,
-    get_kyc_monthly_deposit_limit,
-    get_monthly_deposit_total,
+    get_active_self_exclusion,
+    get_daily_deposit_total,
+    is_self_excluded,
     log_audit,
     reveal_game_round,
     run_player_risk_checks,
+    verify_game_round,
 )
 
 
@@ -91,6 +97,36 @@ def multiplier_at_elapsed_time(started_at):
 
 def home(request):
     return render(request, 'core/home.html')
+
+
+def _session_referral_profile(request, *, lock=False):
+    referral_code = request.session.get('referral_code')
+    if not referral_code:
+        return None
+    try:
+        referral_code = uuid.UUID(str(referral_code))
+    except (AttributeError, TypeError, ValueError):
+        request.session.pop('referral_code', None)
+        return None
+
+    profiles = Profile.objects.select_related('user')
+    if lock:
+        profiles = profiles.select_for_update()
+    return profiles.filter(referral_code=referral_code).first()
+
+
+def referral_landing(request, referral_code):
+    inviter_profile = get_object_or_404(
+        Profile.objects.select_related('user'),
+        referral_code=referral_code,
+    )
+    if request.user.is_authenticated:
+        messages.info(request, 'Referral links are for new accounts. Share your own link with a friend.')
+        return redirect('referrals')
+
+    request.session['referral_code'] = str(inviter_profile.referral_code)
+    request.session.set_expiry(60 * 60 * 24 * 30)
+    return redirect('register')
 
 
 def request_payload(request):
@@ -359,15 +395,23 @@ def register(request):
     if request.method == 'POST':
         form = RegisterForm(request.POST)
         if form.is_valid():
-            user = form.save()
-            Profile.objects.create(user=user, phone_number=form.cleaned_data['phone_number'])
+            with db_transaction.atomic():
+                inviter_profile = _session_referral_profile(request, lock=True)
+                user = form.save()
+                Profile.objects.create(user=user, phone_number=form.cleaned_data['phone_number'])
+                if inviter_profile and inviter_profile.user_id != user.pk:
+                    Referral.objects.create(inviter_id=inviter_profile.user_id, invitee=user)
+            request.session.pop('referral_code', None)
             login(request, user)
             log_audit(user, 'user_register', f'User {user.username} registered', request)
             messages.success(request, 'Welcome to Pakabet! Your account is ready.')
             return redirect('play')
     else:
         form = RegisterForm()
-    return render(request, 'core/register.html', {'form': form})
+    return render(request, 'core/register.html', {
+        'form': form,
+        'referral_inviter': _session_referral_profile(request),
+    })
 
 
 @login_required
@@ -426,7 +470,20 @@ def play(request):
         ).select_related('round').order_by('-created_at')[:20]
     ] if request.user.is_authenticated else []
     recent_crashes = GameRound.objects.filter(status='crashed').order_by('-started_at')[:50]
-    chat_messages = ChatMessage.objects.select_related('user').annotate(reaction_count=Count('reactions')).filter(flagged=False)[:20]
+    fairness_round = (
+        GameRound.objects.filter(Q(created_by=request.user) | Q(bets__user=request.user)).distinct().first()
+        if request.user.is_authenticated
+        else None
+    )
+    recent_chat_messages = (
+        ChatMessage.objects.select_related('user')
+        .annotate(reaction_count=Count('reactions'))
+        .filter(flagged=False)[:100]
+    )
+    chat_messages = [
+        chat for chat in recent_chat_messages
+        if not get_chat_rule_violation(chat.message)
+    ][:20]
 
     if request.method == 'GET':
         return render(request, 'core/play.html', {
@@ -436,6 +493,7 @@ def play(request):
             'recent_sessions': recent_sessions,
             'highest_stakers': highest_stakers,
             'recent_crashes': recent_crashes,
+            'fairness_round': fairness_round,
             'chat_messages': chat_messages,
             'chat_form': ChatMessageForm(),
         })
@@ -454,21 +512,25 @@ def play(request):
     if action == 'chat':
         form = ChatMessageForm(request.POST)
         if not form.is_valid():
-            return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+            submitted_message = request.POST.get('message', '')
+            if re.search(r'\b(?:scam|fraud|hack)\w*\b', submitted_message, re.IGNORECASE):
+                RiskAlert.objects.create(
+                    user=request.user,
+                    alert_type='flagged_chat',
+                    severity='medium',
+                    description='A chat message was blocked by the chat rules.',
+                    data={'blocked': True},
+                )
+            return JsonResponse({
+                'success': False,
+                'message': form.errors.get('message', ['Please enter a chat message.'])[0],
+                'errors': form.errors,
+            }, status=400)
 
         message = form.cleaned_data['message']
-        flagged = any(term in message.lower() for term in ['scam', 'fraud', 'hack'])
-        chat = ChatMessage.objects.create(user=request.user, message=message, flagged=flagged)
+        chat = ChatMessage.objects.create(user=request.user, message=message, flagged=False)
         prune_chat_messages_if_needed()
-        if flagged:
-            RiskAlert.objects.create(
-                user=request.user,
-                alert_type='flagged_chat',
-                severity='medium',
-                description='Chat message was flagged for operator review.',
-                data={'message_id': chat.id, 'message': message},
-            )
-        log_audit(request.user, 'chat_message', 'Posted chat message', request, {'message_id': chat.id, 'flagged': flagged})
+        log_audit(request.user, 'chat_message', 'Posted chat message', request, {'message_id': chat.id, 'flagged': False})
         return JsonResponse({
             'success': True,
             'message': {
@@ -476,7 +538,7 @@ def play(request):
                 'id': chat.id,
                 'text': chat.message,
                 'created_at': chat.created_at.strftime('%H:%M'),
-                'flagged': chat.flagged,
+                'flagged': False,
                 'reaction_count': 0,
             },
         })
@@ -555,58 +617,74 @@ def play(request):
     if action == 'start':
         bet_data = request.POST.get('bet_data')
         if not bet_data:
-            return JsonResponse({'success': False, 'message': 'Please place at least one bet.'}, status=400)
+            return JsonResponse({'success': False, 'message': 'Invalid bet data.'}, status=400)
 
         try:
             bets = json.loads(bet_data)
         except json.JSONDecodeError:
             return JsonResponse({'success': False, 'message': 'Invalid bet data.'}, status=400)
+        if not isinstance(bets, list) or len(bets) > 2:
+            return JsonResponse({'success': False, 'message': 'Invalid bet data.'}, status=400)
 
         stakes = []
-        for value in bets[:2]:
+        for value in bets:
             try:
-                stake_value = Decimal(str(value)).quantize(Decimal('0.01'))
+                amount = Decimal(str(value))
+                if not amount.is_finite() or amount <= 0:
+                    return JsonResponse({'success': False, 'message': 'Enter valid bet amounts.'}, status=400)
+                stake = amount.quantize(Decimal('0.01'))
             except (InvalidOperation, ValueError):
-                continue
-            if stake_value > 0:
-                stakes.append(stake_value)
-
-        if not stakes:
-            return JsonResponse({'success': False, 'message': 'Enter at least one valid bet amount.'}, status=400)
+                return JsonResponse({'success': False, 'message': 'Enter valid bet amounts.'}, status=400)
+            stakes.append(stake)
 
         total_stake = sum(stakes, Decimal('0.00'))
-        allowed, reason = can_place_bets(profile, total_stake)
-        if not allowed:
-            return JsonResponse({'success': False, 'message': reason}, status=403)
+        if stakes:
+            allowed, reason = can_place_bets(profile, total_stake)
+            if not allowed:
+                return JsonResponse({'success': False, 'message': reason}, status=403)
 
         with db_transaction.atomic():
             locked_profile = Profile.objects.select_for_update().get(user=request.user)
-            if total_stake > locked_profile.balance:
+            if stakes and is_self_excluded(request.user):
+                return JsonResponse({'success': False, 'message': 'Your account is currently self-excluded.'}, status=403)
+            if stakes and total_stake > locked_profile.balance:
                 return JsonResponse({'success': False, 'message': 'Insufficient balance for all bets.'}, status=400)
 
-            game_round = create_game_round(request.user, request)
-            locked_profile.balance -= total_stake
-            locked_profile.save(update_fields=['balance'])
-
-            Transaction.objects.create(
-                user=request.user,
-                transaction_type='bet',
-                amount=total_stake,
-                status='completed',
-                reference=game_round.public_id,
-                description=f'Round {game_round.public_id} bet debit',
+            active_rounds = GameRound.objects.select_for_update().filter(
+                created_by=request.user,
+                status='flying',
             )
+            for active_round in active_rounds:
+                if multiplier_at_elapsed_time(active_round.started_at) < active_round.crash_point:
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'Your previous round is still in progress.',
+                    }, status=409)
+                reveal_game_round(active_round)
 
+            game_round = create_game_round(request.user, request)
             created_sessions = []
-            for stake in stakes:
-                session = GameSession.objects.create(
+            if stakes:
+                locked_profile.balance -= total_stake
+                locked_profile.save(update_fields=['balance'])
+
+                Transaction.objects.create(
                     user=request.user,
-                    round=game_round,
-                    stake=stake,
-                    crash_point=game_round.crash_point,
+                    transaction_type='bet',
+                    amount=total_stake,
+                    status='completed',
+                    reference=game_round.public_id,
+                    description=f'Round {game_round.public_id} bet debit',
                 )
-                created_sessions.append(session.id)
-            run_player_risk_checks(request.user)
+                for stake in stakes:
+                    session = GameSession.objects.create(
+                        user=request.user,
+                        round=game_round,
+                        stake=stake,
+                        crash_point=game_round.crash_point,
+                    )
+                    created_sessions.append(session.id)
+                run_player_risk_checks(request.user)
 
         log_audit(request.user, 'game_start', f'Started {len(created_sessions)} bets totaling {total_stake:.2f} {profile.currency}', request, {
             'stakes': [str(s) for s in stakes],
@@ -628,27 +706,27 @@ def play(request):
         })
 
     if action == 'cashout':
-        session_ids = request.POST.get('session_ids', '')
-        try:
-            requested_cashout_multiplier = Decimal(request.POST.get('cashout_multiplier') or '0').quantize(Decimal('0.01'))
-        except InvalidOperation:
-            return JsonResponse({'success': False, 'message': 'Invalid cashout multiplier.'}, status=400)
-
-        if not session_ids:
+        raw_session_ids = request.POST.get('session_ids', '').split(',')
+        if (
+            not raw_session_ids
+            or len(raw_session_ids) > 2
+            or any(not value.isdigit() for value in raw_session_ids)
+            or len(set(raw_session_ids)) != len(raw_session_ids)
+        ):
             return JsonResponse({'success': False, 'message': 'No active bets available.'}, status=400)
 
-        session_ids = [int(x) for x in session_ids.split(',') if x.isdigit()]
+        session_ids = [int(value) for value in raw_session_ids]
         with db_transaction.atomic():
             sessions = list(GameSession.objects.select_for_update().select_related('round').filter(id__in=session_ids, user=request.user))
-            if not sessions:
+            if len(sessions) != len(session_ids):
                 return JsonResponse({'success': False, 'message': 'Invalid games to cash out.'}, status=400)
 
             game_round = sessions[0].round
-            if not game_round:
+            if not game_round or any(session.round != game_round for session in sessions):
                 return JsonResponse({'success': False, 'message': 'This round cannot be verified.'}, status=400)
 
             server_multiplier = multiplier_at_elapsed_time(game_round.started_at)
-            effective_multiplier = min(requested_cashout_multiplier, server_multiplier).quantize(Decimal('0.01'))
+            effective_multiplier = server_multiplier
             round_has_crashed = server_multiplier >= game_round.crash_point
 
             total_won = Decimal('0.00')
@@ -697,7 +775,6 @@ def play(request):
         log_audit(request.user, 'game_cashout', f'Cashed out {len(session_ids)} bets at {effective_multiplier:.2f}x', request, {
             'session_ids': session_ids,
             'round_id': game_round.public_id,
-            'requested_cashout_multiplier': str(requested_cashout_multiplier),
             'server_multiplier': str(server_multiplier),
             'cashout_multiplier': str(effective_multiplier),
             'total_won': str(total_won),
@@ -723,7 +800,10 @@ def play(request):
 
     if action == 'settle_crash':
         round_id = request.POST.get('round_id', '')
-        game_round = get_object_or_404(GameRound.objects.filter(bets__user=request.user).distinct(), public_id=round_id)
+        game_round = get_object_or_404(
+            GameRound.objects.filter(Q(created_by=request.user) | Q(bets__user=request.user)).distinct(),
+            public_id=round_id,
+        )
         server_multiplier = multiplier_at_elapsed_time(game_round.started_at)
         if server_multiplier < game_round.crash_point:
             return JsonResponse({
@@ -851,17 +931,17 @@ def wallet(request):
 
     transactions = Transaction.objects.filter(user=request.user)
     payment_requests = PaymentRequest.objects.filter(user=request.user)[:10]
-    monthly_deposit_total = get_monthly_deposit_total(request.user)
-    monthly_deposit_limit = get_kyc_monthly_deposit_limit(profile)
+    daily_deposit_total = get_daily_deposit_total(request.user)
     payment_mode = getattr(settings, 'IOTEC_PAY_MODE', 'sandbox').lower()
     return render(request, 'core/wallet.html', {
         'profile': profile,
+        'active_exclusion': get_active_self_exclusion(request.user),
         'deposit_form': deposit_form,
         'withdraw_form': withdraw_form,
         'transactions': transactions,
         'payment_requests': payment_requests,
-        'monthly_deposit_total': monthly_deposit_total,
-        'monthly_deposit_limit': monthly_deposit_limit,
+        'daily_deposit_total': daily_deposit_total,
+        'maximum_deposit_amount': MAXIMUM_DEPOSIT_AMOUNT,
         'payment_mode': payment_mode,
     })
 
@@ -938,8 +1018,11 @@ def admin_dashboard(request):
     total_games = GameSession.objects.count()
     pending_deposits = PaymentRequest.objects.filter(payment_type='deposit', status='pending').count()
     pending_withdrawals = PaymentRequest.objects.filter(payment_type='withdraw', status='pending').count()
-    kyc_pending = Profile.objects.filter(kyc_status='none').count()
-    kyc_reviews = KYCSubmission.objects.filter(status='pending').count()
+    active_self_exclusions = SelfExclusion.objects.filter(
+        starts_at__lte=timezone.now(),
+    ).filter(
+        Q(permanent=True) | Q(ends_at__gt=timezone.now())
+    ).count()
     open_risk_alerts = RiskAlert.objects.filter(status='open').count()
     latest_reports = FinancialReport.objects.order_by('-created_at')[:5]
     active_rooms = Room.objects.filter(status='waiting').count()
@@ -955,8 +1038,7 @@ def admin_dashboard(request):
         'total_games': total_games,
         'pending_deposits': pending_deposits,
         'pending_withdrawals': pending_withdrawals,
-        'kyc_pending': kyc_pending,
-        'kyc_reviews': kyc_reviews,
+        'active_self_exclusions': active_self_exclusions,
         'open_risk_alerts': open_risk_alerts,
         'latest_reports': latest_reports,
         'report_form': report_form,
@@ -1026,36 +1108,41 @@ def room_action(request, room_id):
             return JsonResponse({'success': False, 'errors': form.errors}, status=400)
 
         stake = form.cleaned_data['stake']
-        allowed, reason = can_place_bets(profile, stake)
-        if not allowed:
-            return JsonResponse({'success': False, 'message': reason}, status=403)
-        if stake > profile.balance:
-            return JsonResponse({'success': False, 'message': 'Insufficient balance to join.'}, status=400)
+        with db_transaction.atomic():
+            locked_profile = Profile.objects.select_for_update().get(user=request.user)
+            allowed, reason = can_place_bets(locked_profile, stake)
+            if not allowed:
+                return JsonResponse({'success': False, 'message': reason}, status=403)
+            if stake > locked_profile.balance:
+                return JsonResponse({'success': False, 'message': 'Insufficient balance to join.'}, status=400)
 
-        profile.balance -= stake
-        profile.save()
-        RoomPlayer.objects.create(room=room, user=request.user, stake=stake)
+            locked_profile.balance -= stake
+            locked_profile.save(update_fields=['balance'])
+            RoomPlayer.objects.create(room=room, user=request.user, stake=stake)
 
         return JsonResponse({
             'success': True,
             'message': 'Joined room successfully.',
-            'balance': float(profile.balance),
+            'balance': float(locked_profile.balance),
         })
 
     if action == 'start':
         if request.user != room.host:
             return JsonResponse({'success': False, 'message': 'Only the host can start this game.'}, status=403)
 
-        if room.status != 'waiting':
-            return JsonResponse({'success': False, 'message': 'Game has already started.'}, status=400)
+        with db_transaction.atomic():
+            Profile.objects.select_for_update().get(user=request.user)
+            if is_self_excluded(request.user):
+                return JsonResponse({'success': False, 'message': 'Your account is currently self-excluded.'}, status=403)
+            if room.status != 'waiting':
+                return JsonResponse({'success': False, 'message': 'Game has already started.'}, status=400)
+            if room.players.count() < 1:
+                return JsonResponse({'success': False, 'message': 'At least one player must join to start.'}, status=400)
 
-        if room.players.count() < 1:
-            return JsonResponse({'success': False, 'message': 'At least one player must join to start.'}, status=400)
-
-        room.crash_point = Decimal(str(round(random.uniform(1.5, 12.0), 2)))
-        room.status = 'running'
-        room.started_at = timezone.now()
-        room.save()
+            room.crash_point = Decimal(str(round(random.uniform(1.5, 12.0), 2)))
+            room.status = 'running'
+            room.started_at = timezone.now()
+            room.save()
 
         return JsonResponse({
             'success': True,
@@ -1070,9 +1157,8 @@ def room_action(request, room_id):
         if player.cashed_out_at is not None:
             return JsonResponse({'success': False, 'message': 'You already cashed out.'}, status=400)
 
-        requested_cashout_multiplier = Decimal(request.POST.get('cashout_multiplier') or '0')
         server_multiplier = multiplier_at_elapsed_time(room.started_at)
-        effective_multiplier = min(requested_cashout_multiplier, server_multiplier).quantize(Decimal('0.01'))
+        effective_multiplier = server_multiplier
         round_has_crashed = server_multiplier >= room.crash_point
 
         player.cashed_out_at = effective_multiplier
@@ -1107,6 +1193,7 @@ def room_action(request, room_id):
 @login_required
 def room_status(request, room_id):
     room = get_object_or_404(Room, id=room_id)
+    server_multiplier = None
     if room.status == 'running' and room.started_at and room.crash_point is not None:
         server_multiplier = multiplier_at_elapsed_time(room.started_at)
         if server_multiplier >= room.crash_point:
@@ -1130,6 +1217,7 @@ def room_status(request, room_id):
         'room': {
             'status': room.status,
             'crash_point': float(room.crash_point) if room.status == 'ended' and room.crash_point else None,
+            'current_multiplier': float(server_multiplier) if room.status == 'running' else None,
             'host': room.host.username,
             'code': room.code,
             'participants': participants,
@@ -1142,7 +1230,12 @@ def room_status(request, room_id):
 @login_required
 def profile_view(request):
     profile = get_object_or_404(Profile, user=request.user)
-    kyc_form = KYCSubmissionForm()
+    compliance_initial = {
+        'phone_number': profile.phone_number,
+        'daily_deposit_limit': profile.daily_deposit_limit,
+        'daily_loss_limit': profile.daily_loss_limit,
+    }
+    form = ProfileComplianceForm(initial=compliance_initial)
     exclusion_form = SelfExclusionForm()
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -1152,68 +1245,64 @@ def profile_view(request):
                 profile.phone_number = form.cleaned_data['phone_number']
                 profile.daily_deposit_limit = form.cleaned_data['daily_deposit_limit']
                 profile.daily_loss_limit = form.cleaned_data['daily_loss_limit']
-                if profile.phone_number and profile.kyc_status == 'none':
-                    profile.kyc_status = 'tier_1'
-                profile.save(update_fields=['phone_number', 'daily_deposit_limit', 'daily_loss_limit', 'kyc_status'])
+                profile.save(update_fields=['phone_number', 'daily_deposit_limit', 'daily_loss_limit'])
                 messages.success(request, 'Compliance preferences updated.')
                 return redirect('profile')
-        elif action == 'kyc':
-            form = ProfileComplianceForm(initial={
-                'phone_number': profile.phone_number,
-                'daily_deposit_limit': profile.daily_deposit_limit,
-                'daily_loss_limit': profile.daily_loss_limit,
-            })
-            kyc_form = KYCSubmissionForm(request.POST)
-            if kyc_form.is_valid():
-                submission = kyc_form.save(commit=False)
-                submission.user = request.user
-                submission.save()
-                log_audit(request.user, 'kyc_submit', 'Submitted KYC information', request, {'submission_id': submission.id})
-                messages.success(request, 'KYC submission received for operator review.')
-                return redirect('profile')
         elif action == 'self_exclude':
-            form = ProfileComplianceForm(initial={
-                'phone_number': profile.phone_number,
-                'daily_deposit_limit': profile.daily_deposit_limit,
-                'daily_loss_limit': profile.daily_loss_limit,
-            })
             exclusion_form = SelfExclusionForm(request.POST)
             if not request.POST.get('confirm_exclusion'):
                 exclusion_form.add_error(None, 'Confirm that you understand this action before continuing.')
             if exclusion_form.is_valid():
                 duration = exclusion_form.cleaned_data['duration']
-                permanent = duration == 'permanent'
-                ends_at = None if permanent else timezone.now() + timedelta(hours=int(duration))
-                exclusion = SelfExclusion.objects.create(
-                    user=request.user,
-                    ends_at=ends_at,
-                    permanent=permanent,
-                    reason=exclusion_form.cleaned_data['reason'],
+                exclusion = activate_self_exclusion(
+                    request.user,
+                    duration,
+                    exclusion_form.cleaned_data['reason'],
                 )
-                profile.self_excluded_until = None if permanent else ends_at
-                profile.save(update_fields=['self_excluded_until'])
-                log_audit(request.user, 'self_exclude', 'Created self-exclusion', request, {'exclusion_id': exclusion.id, 'permanent': permanent})
-                messages.warning(request, 'Self-exclusion is now active.')
-                return redirect('profile')
+                if exclusion:
+                    log_audit(request.user, 'self_exclude', 'Created self-exclusion', request, {
+                        'exclusion_id': exclusion.id,
+                        'permanent': exclusion.permanent,
+                    })
+                    messages.warning(request, 'Self-exclusion is now active. Deposits and new bets are blocked for the selected period.')
+                    return redirect('profile')
+                exclusion_form.add_error(None, 'Self-exclusion is already active on your account.')
         else:
-            form = ProfileComplianceForm()
-    else:
-        form = ProfileComplianceForm(initial={
-            'phone_number': profile.phone_number,
-            'daily_deposit_limit': profile.daily_deposit_limit,
-            'daily_loss_limit': profile.daily_loss_limit,
-        })
-    kyc_submissions = KYCSubmission.objects.filter(user=request.user)[:5]
+            form = ProfileComplianceForm(request.POST)
+            exclusion_form = SelfExclusionForm()
+    active_exclusion = get_active_self_exclusion(request.user)
     exclusions = SelfExclusion.objects.filter(user=request.user)[:5]
     transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')[:5]
+    referral_attribution = Referral.objects.filter(invitee=request.user).select_related('inviter').first()
     return render(request, 'core/profile.html', {
         'profile': profile,
         'form': form,
-        'kyc_form': kyc_form,
         'exclusion_form': exclusion_form,
-        'kyc_submissions': kyc_submissions,
+        'active_exclusion': active_exclusion,
         'exclusions': exclusions,
         'transactions': transactions,
+        'referral_attribution': referral_attribution,
+    })
+
+
+@login_required
+def referrals_view(request):
+    profile = get_object_or_404(Profile, user=request.user)
+    referrals = Referral.objects.filter(inviter=request.user).select_related(
+        'invitee',
+        'first_deposit',
+    ).order_by('-created_at')
+    stats = referrals.aggregate(
+        total_invited=Count('id'),
+        total_earned=Sum('reward_amount', filter=Q(reward_transaction__isnull=False)),
+    )
+    invite_path = reverse('referral_landing', kwargs={'referral_code': profile.referral_code})
+    return render(request, 'core/referrals.html', {
+        'profile': profile,
+        'referrals': referrals[:100],
+        'total_invited': stats['total_invited'],
+        'total_earned': stats['total_earned'] or Decimal('0.00'),
+        'invite_link': request.build_absolute_uri(invite_path),
     })
 
 
@@ -1275,6 +1364,12 @@ def transactions_view(request):
 @login_required
 def game_limits(request):
     profile = get_object_or_404(Profile, user=request.user)
+    compliance_initial = {
+        'phone_number': profile.phone_number,
+        'daily_deposit_limit': profile.daily_deposit_limit,
+        'daily_loss_limit': profile.daily_loss_limit,
+    }
+    form = ProfileComplianceForm(initial=compliance_initial)
     exclusion_form = SelfExclusionForm()
     password_form = PasswordChangeForm(request.user)
     if request.method == 'POST':
@@ -1286,34 +1381,26 @@ def game_limits(request):
                 update_session_auth_hash(request, request.user)
                 messages.success(request, 'Your password has been changed.')
                 return redirect('game_limits')
-            form = ProfileComplianceForm(initial={
-                'phone_number': profile.phone_number,
-                'daily_deposit_limit': profile.daily_deposit_limit,
-                'daily_loss_limit': profile.daily_loss_limit,
-            })
         elif action == 'self_exclude':
             exclusion_form = SelfExclusionForm(request.POST)
             if not request.POST.get('confirm_exclusion'):
                 exclusion_form.add_error(None, 'Confirm that you understand this action before continuing.')
             if exclusion_form.is_valid():
                 duration = exclusion_form.cleaned_data['duration']
-                permanent = duration == 'permanent'
-                ends_at = None if permanent else timezone.now() + timedelta(hours=int(duration))
-                exclusion = SelfExclusion.objects.create(
-                    user=request.user,
-                    ends_at=ends_at,
-                    permanent=permanent,
-                    reason=exclusion_form.cleaned_data['reason'],
+                exclusion = activate_self_exclusion(
+                    request.user,
+                    duration,
+                    exclusion_form.cleaned_data['reason'],
                 )
-                profile.self_excluded_until = None if permanent else ends_at
-                profile.save(update_fields=['self_excluded_until'])
-                log_audit(request.user, 'self_exclude', 'Created self-exclusion', request, {
-                    'exclusion_id': exclusion.id,
-                    'permanent': permanent,
-                })
-                messages.warning(request, 'Self-exclusion is now active.')
-                return redirect('game_limits')
-        else:
+                if exclusion:
+                    log_audit(request.user, 'self_exclude', 'Created self-exclusion', request, {
+                        'exclusion_id': exclusion.id,
+                        'permanent': exclusion.permanent,
+                    })
+                    messages.warning(request, 'Self-exclusion is now active. Deposits and new bets are blocked for the selected period.')
+                    return redirect('game_limits')
+                exclusion_form.add_error(None, 'Self-exclusion is already active on your account.')
+        elif action == 'limits':
             form = ProfileComplianceForm(request.POST)
             if form.is_valid():
                 profile.phone_number = form.cleaned_data['phone_number']
@@ -1322,28 +1409,7 @@ def game_limits(request):
                 profile.save(update_fields=['phone_number', 'daily_deposit_limit', 'daily_loss_limit'])
                 messages.success(request, 'Your limits have been updated.')
                 return redirect('game_limits')
-    else:
-        form = ProfileComplianceForm(initial={
-            'phone_number': profile.phone_number,
-            'daily_deposit_limit': profile.daily_deposit_limit,
-            'daily_loss_limit': profile.daily_loss_limit,
-        })
-    if request.method == 'POST' and request.POST.get('action') == 'self_exclude':
-        form = ProfileComplianceForm(initial={
-            'phone_number': profile.phone_number,
-            'daily_deposit_limit': profile.daily_deposit_limit,
-            'daily_loss_limit': profile.daily_loss_limit,
-        })
-    if request.method == 'POST' and request.POST.get('action') == 'password':
-        form = ProfileComplianceForm(initial={
-            'phone_number': profile.phone_number,
-            'daily_deposit_limit': profile.daily_deposit_limit,
-            'daily_loss_limit': profile.daily_loss_limit,
-        })
-    now = timezone.now()
-    active_exclusion = SelfExclusion.objects.filter(user=request.user).filter(
-        Q(permanent=True) | Q(ends_at__isnull=True) | Q(ends_at__gt=now)
-    ).order_by('-created_at').first()
+    active_exclusion = get_active_self_exclusion(request.user)
     return render(request, 'core/game_limits.html', {
         'profile': profile,
         'form': form,
@@ -1366,5 +1432,45 @@ def game_rules(request):
 
 @login_required
 def provably_fair(request):
-    rounds = GameRound.objects.filter(bets__user=request.user).distinct().order_by('-started_at')[:50]
-    return render(request, 'core/provably_fair.html', {'rounds': rounds})
+    rounds = GameRound.objects.filter(
+        Q(created_by=request.user) | Q(bets__user=request.user),
+    ).distinct().order_by('-started_at')[:50]
+    rounds = list(rounds)
+    for game_round in rounds:
+        game_round.verified = (
+            game_round.is_revealed
+            and verify_game_round(
+                game_round.server_seed,
+                game_round.client_seed,
+                game_round.server_seed_hash,
+                game_round.crash_point,
+                game_round.house_edge,
+            )
+        )
+    profile = get_object_or_404(Profile, user=request.user)
+    return render(request, 'core/provably_fair.html', {
+        'rounds': rounds,
+        'profile': profile,
+    })
+
+
+@login_required
+@require_POST
+def update_client_seed(request):
+    client_seed = request.POST.get('client_seed', '').strip()
+    if not re.fullmatch(r'[A-Za-z0-9._:-]{1,128}', client_seed):
+        return JsonResponse({
+            'success': False,
+            'message': 'Use 1–128 letters, numbers, periods, underscores, colons, or hyphens.',
+        }, status=400)
+
+    with db_transaction.atomic():
+        profile = Profile.objects.select_for_update().get(user=request.user)
+        profile.client_seed = client_seed
+        profile.save(update_fields=['client_seed'])
+
+    return JsonResponse({
+        'success': True,
+        'client_seed': profile.client_seed,
+        'message': 'Client seed saved. It will be used for your next round.',
+    })

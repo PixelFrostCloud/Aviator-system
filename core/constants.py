@@ -1,0 +1,6 @@
+from decimal import Decimal
+
+
+MINIMUM_MOBILE_MONEY_AMOUNT = Decimal('500.00')
+MAXIMUM_DEPOSIT_AMOUNT = Decimal('300000.00')
+REFERRAL_REWARD_RATE = Decimal('0.05')

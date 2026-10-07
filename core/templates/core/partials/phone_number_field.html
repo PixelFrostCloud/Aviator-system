@@ -1,0 +1,17 @@
+<div class="phone-number-field">
+    <span class="phone-number-field-label">{{ phone_form.phone_number.label }}</span>
+    <div class="phone-input-group">
+        <label class="phone-country-field" for="{{ phone_form.country_code.id_for_label }}">
+            Country code
+            {{ phone_form.country_code }}
+        </label>
+        <label class="phone-local-field" for="{{ phone_form.phone_number.id_for_label }}">
+            Local number
+            {{ phone_form.phone_number }}
+        </label>
+    </div>
+    {% for error in phone_form.country_code.errors %}<small class="phone-field-error">{{ error }}</small>{% endfor %}
+    {% for error in phone_form.phone_number.errors %}<small class="phone-field-error">{{ error }}</small>{% endfor %}
+    <small class="phone-number-hint">Enter the local number without the country code. Uganda (+256) is selected by default.</small>
+    <small class="phone-country-warning" data-country-warning role="status" aria-live="polite" hidden></small>
+</div>

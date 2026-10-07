@@ -12,23 +12,19 @@ def generate_room_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 
-class Profile(models.Model):
-    KYC_STATUS_CHOICES = [
-        ('none', 'Not Started'),
-        ('tier_1', 'Tier 1 - Phone Verified'),
-        ('tier_2', 'Tier 2 - Basic KYC'),
-        ('tier_3', 'Tier 3 - Full KYC'),
-        ('rejected', 'Rejected'),
-    ]
+def generate_client_seed():
+    return uuid.uuid4().hex
 
+
+class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
+    referral_code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    client_seed = models.CharField(max_length=128, default=generate_client_seed)
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=1000)
     currency = models.CharField(max_length=3, default='UGX')
     phone_number = models.CharField(max_length=20, blank=True)
-    kyc_status = models.CharField(max_length=12, choices=KYC_STATUS_CHOICES, default='none')
-    daily_deposit_limit = models.DecimalField(max_digits=12, decimal_places=2, default=500000)
+    daily_deposit_limit = models.DecimalField(max_digits=12, decimal_places=2, default=300000)
     daily_loss_limit = models.DecimalField(max_digits=12, decimal_places=2, default=200000)
-    self_excluded_until = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -69,7 +65,7 @@ class Transaction(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions')
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='completed')
     reference = models.CharField(max_length=80, blank=True, db_index=True)
     description = models.CharField(max_length=255, blank=True)
@@ -141,35 +137,41 @@ class PaymentRequest(models.Model):
         return f'{self.get_provider_display()} {self.payment_type} {self.amount}'
 
 
-class KYCSubmission(models.Model):
-    DOCUMENT_TYPES = [
-        ('national_id', 'National ID'),
-        ('passport', 'Passport'),
-        ('driver_license', 'Driver License'),
-    ]
-
-    STATUS_CHOICES = [
-        ('pending', 'Pending Review'),
-        ('approved', 'Approved'),
-        ('rejected', 'Rejected'),
-    ]
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='kyc_submissions')
-    document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES)
-    document_number = models.CharField(max_length=80)
-    full_name = models.CharField(max_length=160)
-    date_of_birth = models.DateField()
-    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='pending')
-    rejection_reason = models.CharField(max_length=255, blank=True)
-    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_kyc_submissions')
-    reviewed_at = models.DateTimeField(null=True, blank=True)
+class Referral(models.Model):
+    inviter = models.ForeignKey(User, on_delete=models.CASCADE, related_name='referrals_sent')
+    invitee = models.OneToOneField(User, on_delete=models.CASCADE, related_name='referral_attribution')
     created_at = models.DateTimeField(auto_now_add=True)
+    first_deposit = models.ForeignKey(
+        PaymentRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='referral_rewards',
+    )
+    reward_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    reward_transaction = models.OneToOneField(
+        'Transaction',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='referral_reward',
+    )
+    rewarded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(inviter=models.F('invitee')),
+                name='referral_inviter_cannot_be_invitee',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['inviter', '-created_at']),
+        ]
 
     def __str__(self):
-        return f'{self.user.username} KYC {self.status}'
+        return f'{self.inviter.username} invited {self.invitee.username}'
 
 
 class SelfExclusion(models.Model):
@@ -185,7 +187,9 @@ class SelfExclusion(models.Model):
 
     @property
     def is_active(self):
-        return self.permanent or self.ends_at is None or self.ends_at > timezone.now()
+        return self.starts_at <= timezone.now() and (
+            self.permanent or (self.ends_at is not None and self.ends_at > timezone.now())
+        )
 
     def __str__(self):
         return f'{self.user.username} self-exclusion'
@@ -455,6 +459,13 @@ class GameRound(models.Model):
     ]
 
     public_id = models.CharField(max_length=24, unique=True, db_index=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_game_rounds',
+    )
     server_seed_hash = models.CharField(max_length=64)
     server_seed_private = models.CharField(max_length=128, blank=True)
     server_seed = models.CharField(max_length=128, blank=True)
@@ -574,8 +585,6 @@ class AuditLog(models.Model):
         ('user_logout', 'User Logout'),
         ('deposit', 'Deposit'),
         ('withdraw', 'Withdrawal'),
-        ('kyc_submit', 'KYC Submitted'),
-        ('kyc_review', 'KYC Reviewed'),
         ('self_exclude', 'Self Exclusion'),
         ('risk_alert', 'Risk Alert'),
         ('chat_message', 'Chat Message'),

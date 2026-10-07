@@ -9,7 +9,7 @@
     <a class="account-side-link {% if request.resolver_match.url_name == 'profile' %}active{% endif %}" href="{% url 'profile' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-user"></use></svg> Profile</a>
     <a class="account-side-link {% if request.resolver_match.url_name == 'wallet' %}active{% endif %}" href="{% url 'wallet' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg> Wallet</a>
     <a class="account-side-link {% if request.resolver_match.url_name == 'transactions' %}active{% endif %}" href="{% url 'transactions' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-receipt"></use></svg> Transactions</a>
-    <a class="account-side-link {% if request.resolver_match.url_name == 'profile' and request.GET.tab == 'referrals' %}active{% endif %}" href="{% url 'profile' %}?tab=referrals"><svg class="ui-icon" aria-hidden="true"><use href="#icon-users"></use></svg> Referrals</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'referrals' %}active{% endif %}" href="{% url 'referrals' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-users"></use></svg> Referrals</a>
     <hr>
     <a class="account-side-link {% if request.resolver_match.url_name == 'game_limits' %}active{% endif %}" href="{% url 'game_limits' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg> Settings</a>
     <a class="account-side-link {% if request.resolver_match.url_name == 'how_to_play' %}active{% endif %}" href="{% url 'how_to_play' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-help"></use></svg> Support</a>
@@ -18,8 +18,8 @@
     <div class="account-invite-card">
         <div class="invite-art"><svg class="ui-icon" aria-hidden="true"><use href="#icon-users"></use></svg></div>
         <strong>Invite & Earn</strong>
-        <p>Get 5% of every bet your friends place!</p>
-        <a href="{% url 'profile' %}?tab=referrals">Invite Now</a>
+        <p>Earn 5% of a friend&#39;s first deposit, paid by Pakabet.</p>
+        <a href="{% url 'referrals' %}">Invite Now</a>
     </div>
 </aside>
 <button class="account-nav-backdrop" id="account-nav-backdrop" type="button" aria-label="Close navigation" hidden></button>

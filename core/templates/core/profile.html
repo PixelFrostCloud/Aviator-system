@@ -31,14 +31,15 @@
                             <h2>{{ request.user.username }}</h2>
                             <p>Player ID: {{ request.user.id }}</p>
                             <p>Member since: {{ request.user.date_joined|date:'d M Y' }}</p>
-                            <span>{{ profile.get_kyc_status_display }}</span>
+                            {% if referral_attribution %}<p class="profile-inviter">Invited by: <strong>{{ referral_attribution.inviter.username }}</strong></p>{% endif %}
+                            <span>{% if active_exclusion %}Self-exclusion active{% else %}Account active{% endif %}</span>
                         </div>
                     </div>
                     <div class="account-stat-row">
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Balance</small><strong>{{ profile.balance|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Daily Deposit Limit</small><strong>{{ profile.daily_deposit_limit|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><small>Daily Loss Limit</small><strong>{{ profile.daily_loss_limit|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg></span><small>Account Status</small><strong>{{ profile.get_kyc_status_display }}</strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Balance</small><strong><span class="account-stat-amount">{{ profile.balance|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Daily Deposit Limit</small><strong><span class="account-stat-amount">{{ profile.daily_deposit_limit|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><small>Daily Loss Limit</small><strong><span class="account-stat-amount">{{ profile.daily_loss_limit|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg></span><small>Account Status</small><strong>{% if active_exclusion %}Self-excluded{% else %}Active{% endif %}</strong></article>
                     </div>
                 </section>
 
@@ -78,14 +79,14 @@
                 <section id="preferences" class="account-card account-forms-card">
                     <div class="section-heading">
                         <h2>Account Settings</h2>
-                        <span>Compliance, KYC, and safety controls</span>
+                        <span>Contact details, limits, and safety controls</span>
                     </div>
                     <div class="money-form-grid profile-form-grid">
                         <form method="post">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="compliance">
                             <h3>Compliance settings</h3>
-                            {{ form.phone_number }}
+                            {% include 'core/partials/phone_number_field.html' with phone_form=form %}
                             {{ form.daily_deposit_limit }}
                             {{ form.daily_loss_limit }}
                             {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}
@@ -93,24 +94,24 @@
                         </form>
                         <form method="post">
                             {% csrf_token %}
-                            <input type="hidden" name="action" value="kyc">
-                            <h3>KYC submission</h3>
-                            {{ kyc_form.document_type }}
-                            {{ kyc_form.document_number }}
-                            {{ kyc_form.full_name }}
-                            {{ kyc_form.date_of_birth }}
-                            {% if kyc_form.errors %}<div class="field-errors">{{ kyc_form.errors }}</div>{% endif %}
-                            <button class="account-secondary-btn" type="submit">Submit KYC</button>
-                        </form>
-                        <form method="post">
-                            {% csrf_token %}
                             <input type="hidden" name="action" value="self_exclude">
                             <h3>Self-exclusion</h3>
-                            {{ exclusion_form.duration }}
-                            {{ exclusion_form.reason }}
-                            <label class="profile-exclusion-confirm"><input type="checkbox" name="confirm_exclusion" required><span>I understand that self-exclusion will restrict my access to betting.</span></label>
-                            {% if exclusion_form.errors %}<div class="field-errors">{{ exclusion_form.errors }}</div>{% endif %}
-                            <button class="account-secondary-btn" type="submit">Activate Protection</button>
+                            {% if active_exclusion %}
+                                <div class="exclusion-status" role="status">
+                                    <strong>Protection is active</strong>
+                                    {% if active_exclusion.permanent %}
+                                        <p>Permanent self-exclusion is active. Contact support if you need help.</p>
+                                    {% else %}
+                                        <p>Access is restricted until {{ active_exclusion.ends_at|date:'M j, Y, H:i' }}.</p>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                {{ exclusion_form.duration }}
+                                {{ exclusion_form.reason }}
+                                <label class="profile-exclusion-confirm"><input type="checkbox" name="confirm_exclusion" required><span>I understand that deposits and new bets will be blocked for this period.</span></label>
+                                {% if exclusion_form.errors %}<div class="field-errors">{{ exclusion_form.errors }}</div>{% endif %}
+                                <button class="account-secondary-btn" type="submit">Activate Protection</button>
+                            {% endif %}
                         </form>
                     </div>
                 </section>

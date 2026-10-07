@@ -27,8 +27,8 @@
                     <div class="account-stat-row">
                         <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg></span><small>Total Bets</small><strong>{{ total_bets }}</strong></article>
                         <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><small>Win Rate</small><strong>{{ win_rate|floatformat:1 }}%</strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Settled Stake</small><strong>{{ total_staked|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Net Result</small><strong class="{% if net_result >= 0 %}positive{% else %}negative{% endif %}">{{ net_result|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Settled Stake</small><strong><span class="account-stat-amount">{{ total_staked|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Net Result</small><strong class="{% if net_result >= 0 %}positive{% else %}negative{% endif %}"><span class="account-stat-amount">{{ net_result|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
                     </div>
                 </section>
 

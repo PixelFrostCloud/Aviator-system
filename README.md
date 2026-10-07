@@ -7,6 +7,7 @@ Professional Django web application built with Django, HTML, CSS, JavaScript, an
 - **User Authentication**: Functional registration and login system with automatic redirects to the game
 - **Pakabet Crash Game**: Interactive betting interface with real-time multiplier animation and cash-out functionality
 - **Wallet Management**: ioTec Pay collections, disbursements, callback settlement, and transaction history
+- **Referral Programme**: Personal invite links automatically attribute new registrations; inviters receive a platform-funded, withdrawable 5% of each referred player's first successful deposit
 - **Admin Analytics Dashboard**: Comprehensive platform monitoring and user statistics
 - **Multiplayer Rooms**: Real-time room support with WebSocket synchronization
 - **Audit Logging**: Complete system activity tracking with admin reporting interface
@@ -21,9 +22,15 @@ The app reads the ioTec Pay OpenAPI files from `Payment APIs/` and integrates th
 - Status lookup by external ID
 - Provider callbacks at `/api/payments/callback/`
 
-The wallet accepts only MTN Mobile Money and Airtel Money. ioTec identifies the mobile-money network from the submitted Uganda MSISDN; card and bank-transfer methods are not exposed or accepted. Collection and disbursement amounts must be at least 500 UGX.
+The wallet accepts only MTN Mobile Money and Airtel Money in Uganda. Deposits must be between 500 and 300,000 UGX per transaction. Withdrawals start at 500 UGX and are limited by the player's available balance. Self-exclusion blocks deposits and new bets for the selected period.
 
 In live mode, a deposit calls ioTec's mobile-money collection endpoint and the customer receives the network prompt on the submitted phone. The wallet is credited only after ioTec reports `Success` through the callback or a status sync. Withdrawals create a mobile-money disbursement and hold the balance until the provider completes or fails it; failed withdrawals automatically refund the hold. Sandbox mode does not send a real phone prompt.
+
+Referral links are attributed when opened and remain available for registration for 30 days. A referral reward is credited once, after the referred player's first successful deposit is confirmed. It is funded by Pakabet, added to the inviter's normal withdrawable wallet balance, and never deducted from the referred player's deposit.
+
+## Provably Fair rounds
+
+Players can set or securely generate their client seed in the in-game Provably Fair settings. The saved seed is used for future rounds only; every round stores its own client seed and server-seed hash before play. The server seed is revealed after the round ends, and the Provably Fair page independently checks the commitment hash and crash-point calculation for each of the player's rounds.
 
 Local development defaults to `IOTEC_PAY_MODE=sandbox`, so the app runs without live credentials. For live payments set:
 

@@ -25,8 +25,8 @@
                     <form class="account-form-grid" method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="limits">
-                        <label><span>Mobile Money Phone</span>{{ form.phone_number }}<small>Used for account contact and mobile-money transactions.</small></label>
-                        <label><span>Daily Deposit Limit <em>{{ profile.currency }}</em></span>{{ form.daily_deposit_limit }}<small>Deposits above this amount are declined for the day.</small></label>
+                        {% include 'core/partials/phone_number_field.html' with phone_form=form %}
+                        <label><span>Daily Deposit Limit <em>{{ profile.currency }}</em></span>{{ form.daily_deposit_limit }}<small>Choose a daily cap up to 300,000 UGX. Each deposit is capped at 300,000 UGX.</small></label>
                         <label><span>Daily Loss Limit <em>{{ profile.currency }}</em></span>{{ form.daily_loss_limit }}<small>New bets are blocked once your net daily loss reaches this cap.</small></label>
                         {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}
                         <button class="account-action-button primary" type="submit"><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg> Save limits</button>
@@ -89,10 +89,10 @@
                     <div class="vip-head"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg></span><strong>Account details</strong></div>
                     <ul class="rail-list">
                         <li><span>Currency</span><strong>{{ profile.currency }}</strong></li>
-                        <li><span>KYC</span><strong>{{ profile.get_kyc_status_display }}</strong></li>
                         <li><span>Mobile Money Phone</span><strong>{{ profile.phone_number|default:'Not added' }}</strong></li>
+                        <li><span>Account protection</span><strong>{% if active_exclusion %}Self-exclusion active{% else %}Available{% endif %}</strong></li>
                     </ul>
-                    <a class="rail-button" href="{% url 'profile' %}#preferences">Manage verification</a>
+                    <a class="rail-button" href="{% url 'profile' %}#preferences">Manage profile</a>
                 </section>
                 <section class="account-card settings-help-card">
                     <h2>Need help?</h2>

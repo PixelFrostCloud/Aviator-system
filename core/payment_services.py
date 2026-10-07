@@ -5,49 +5,138 @@ from django.conf import settings
 from django.db import transaction as db_transaction
 from django.utils import timezone
 
+from .constants import MAXIMUM_DEPOSIT_AMOUNT, MINIMUM_MOBILE_MONEY_AMOUNT
 from .models import PaymentRequest, Profile, Transaction
 from .payment_gateway import IotecPayGateway, PaymentGatewayError, PaymentGatewayResult
-from .utils import generate_payment_reference
+from .referral_services import credit_first_deposit_referral_reward
+from .utils import can_deposit, generate_payment_reference
 
 
 MOBILE_MONEY_PROVIDERS = {'mtn_momo', 'airtel_money'}
-IOTEC_MINIMUM_AMOUNT = Decimal('500')
+IOTEC_MINIMUM_AMOUNT = MINIMUM_MOBILE_MONEY_AMOUNT
+MOBILE_MONEY_COUNTRY_CHOICES = [
+    ('256', 'Uganda (+256)'),
+    ('254', 'Kenya (+254)'),
+    ('255', 'Tanzania (+255)'),
+    ('250', 'Rwanda (+250)'),
+    ('257', 'Burundi (+257)'),
+    ('211', 'South Sudan (+211)'),
+    ('243', 'DR Congo (+243)'),
+    ('252', 'Somalia (+252)'),
+]
+MOBILE_MONEY_COUNTRY_CODES = dict(MOBILE_MONEY_COUNTRY_CHOICES)
+MOBILE_MONEY_NATIONAL_LENGTHS = {
+    '256': (9, 9),
+    '254': (9, 9),
+    '255': (9, 9),
+    '250': (9, 9),
+    '257': (8, 8),
+    '211': (9, 9),
+    '243': (9, 9),
+    '252': (7, 9),
+}
+MOBILE_MONEY_AVAILABILITY_MESSAGE = (
+    'We have not started operating in {country} yet. '
+    'Deposits and withdrawals are currently available in Uganda only.'
+)
 
 
-def normalize_mobile_money_phone(phone_number):
+def get_mobile_money_country_code(phone_number):
+    return next(
+        (code for code in sorted(MOBILE_MONEY_COUNTRY_CODES, key=len, reverse=True) if phone_number.startswith(code)),
+        None,
+    )
+
+
+def mobile_money_country_availability_error(country_code):
+    if country_code == '256':
+        return ''
+    country_name = MOBILE_MONEY_COUNTRY_CODES.get(country_code)
+    if not country_name:
+        return 'Select a supported East African country code.'
+    return MOBILE_MONEY_AVAILABILITY_MESSAGE.format(country=country_name.split(' (+', 1)[0])
+
+
+def normalize_mobile_money_phone(phone_number, country_code=None):
     value = re.sub(r'[\s()-]', '', str(phone_number or ''))
     if value.startswith('+'):
         value = value[1:]
-    if value.startswith('0'):
-        value = f'256{value[1:]}'
-    if not re.fullmatch(r'256\d{9}', value):
-        raise ValueError('Enter a valid Uganda mobile number, for example 0700000000 or 256700000000.')
-    return value
+    elif value.startswith('00'):
+        value = value[2:]
+
+    explicitly_selected_code = country_code is not None and str(country_code) != ''
+    selected_code = str(country_code or '256')
+    if selected_code not in MOBILE_MONEY_COUNTRY_CODES:
+        raise ValueError('Select a supported East African country code.')
+
+    if value.startswith(tuple(MOBILE_MONEY_COUNTRY_CODES)):
+        matching_code = next(
+            (code for code in sorted(MOBILE_MONEY_COUNTRY_CODES, key=len, reverse=True) if value.startswith(code)),
+            None,
+        )
+        if explicitly_selected_code and matching_code != selected_code:
+            raise ValueError('The phone number country code does not match the selected country.')
+        selected_code = matching_code
+        national_number = value[len(matching_code):]
+    else:
+        national_number = value[1:] if value.startswith('0') else value
+
+    minimum_length, maximum_length = MOBILE_MONEY_NATIONAL_LENGTHS[selected_code]
+    if (
+        not national_number.isdigit()
+        or not minimum_length <= len(national_number) <= maximum_length
+        or len(selected_code + national_number) > 15
+    ):
+        country_name = MOBILE_MONEY_COUNTRY_CODES[selected_code].split(' (+', 1)[0]
+        raise ValueError(f'Enter a valid {country_name} mobile number with its country code.')
+    return f'{selected_code}{national_number}'
+
+
+def split_mobile_money_phone(phone_number):
+    value = re.sub(r'[\s()-]', '', str(phone_number or ''))
+    if value.startswith('+'):
+        value = value[1:]
+    elif value.startswith('00'):
+        value = value[2:]
+
+    for code in sorted(MOBILE_MONEY_COUNTRY_CODES, key=len, reverse=True):
+        if value.startswith(code):
+            return code, value[len(code):]
+    return '256', value
 
 
 def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''):
     if amount < IOTEC_MINIMUM_AMOUNT:
         return None, None, 'ioTec Pay mobile-money transactions must be at least 500 UGX.'
+    if amount > MAXIMUM_DEPOSIT_AMOUNT:
+        return None, None, 'Deposits cannot exceed 300,000 UGX per transaction.'
     if provider not in MOBILE_MONEY_PROVIDERS:
         return None, None, 'Only MTN Mobile Money and Airtel Money are supported.'
     try:
         phone_number = normalize_mobile_money_phone(phone_number)
     except ValueError as exc:
         return None, None, str(exc)
+    availability_error = mobile_money_country_availability_error(get_mobile_money_country_code(phone_number))
+    if availability_error:
+        return None, None, availability_error
 
     gateway = IotecPayGateway()
     external_reference = generate_payment_reference('DEP')
-
-    payment = PaymentRequest.objects.create(
-        user=user,
-        payment_type='deposit',
-        provider=provider,
-        amount=amount,
-        phone_number=phone_number,
-        external_reference=external_reference,
-        status='pending',
-        metadata={'gateway': 'iotec_pay', 'mode': gateway.mode},
-    )
+    with db_transaction.atomic():
+        locked_profile = Profile.objects.select_for_update().get(user=user)
+        allowed, reason = can_deposit(locked_profile, amount)
+        if not allowed:
+            return None, None, reason
+        payment = PaymentRequest.objects.create(
+            user=user,
+            payment_type='deposit',
+            provider=provider,
+            amount=amount,
+            phone_number=phone_number,
+            external_reference=external_reference,
+            status='pending',
+            metadata={'gateway': 'iotec_pay', 'mode': gateway.mode},
+        )
 
     try:
         result = gateway.collect_mobile_money(
@@ -82,6 +171,9 @@ def initiate_withdrawal(*, user, amount, provider, phone_number=''):
         phone_number = normalize_mobile_money_phone(phone_number)
     except ValueError as exc:
         return None, None, str(exc)
+    availability_error = mobile_money_country_availability_error(get_mobile_money_country_code(phone_number))
+    if availability_error:
+        return None, None, availability_error
 
     gateway = IotecPayGateway()
     external_reference = generate_payment_reference('WDR')
@@ -207,12 +299,12 @@ def _apply_deposit_result(payment, previous_status):
         profile.balance += payment.amount
         if payment.phone_number and not profile.phone_number:
             profile.phone_number = payment.phone_number
-            profile.kyc_status = 'tier_1'
-            profile.save(update_fields=['balance', 'phone_number', 'kyc_status'])
+            profile.save(update_fields=['balance', 'phone_number'])
         else:
             profile.save(update_fields=['balance'])
+        credit_first_deposit_referral_reward(payment)
 
-    txn.status = _transaction_status(payment.status)
+        txn.status = _transaction_status(payment.status)
     txn.description = f'{payment.get_provider_display()} deposit'
     txn.save(update_fields=['status', 'description'])
 
