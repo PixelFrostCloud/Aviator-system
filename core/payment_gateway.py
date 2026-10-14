@@ -27,9 +27,18 @@ PAYMENT_STATUS_MAP = {
 class PaymentGatewayError(Exception):
     """Raised when ioTec Pay rejects a request or cannot be reached."""
 
-    def __init__(self, message, *, retryable=False):
+    def __init__(
+        self,
+        message,
+        *,
+        retryable=False,
+        provider_code='',
+        insufficient_balance=False,
+    ):
         super().__init__(message)
         self.retryable = retryable
+        self.provider_code = provider_code
+        self.insufficient_balance = insufficient_balance
 
 
 class PaymentGatewayConfigurationError(PaymentGatewayError):
@@ -186,6 +195,8 @@ class IotecPayGateway:
         if auth:
             headers['Authorization'] = f'Bearer {self._access_token()}'
 
+        if auth:
+            headers['Authorization'] = f'Bearer {self._access_token()}'
         http_request = request.Request(url, data=data, headers=headers, method='POST' if data is not None else 'GET')
         try:
             with request.urlopen(http_request, timeout=self.timeout) as response:
@@ -198,9 +209,42 @@ class IotecPayGateway:
         except error.HTTPError as exc:
             body = exc.read().decode(errors='replace')
             retryable = exc.code >= 500 or exc.code in {408, 429}
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                payload = {}
+            if isinstance(payload, list):
+                payload = payload[0] if payload and isinstance(payload[0], dict) else {}
+            if not isinstance(payload, dict):
+                payload = {}
+            provider_code = str(
+                payload.get('statusCode')
+                or payload.get('code')
+                or payload.get('errorCode')
+                or ''
+            )[:80]
+            provider_message = ' '.join(str(
+                payload.get('statusMessage')
+                or payload.get('message')
+                or payload.get('error')
+                or ''
+            ).lower().split())
+            code_text = provider_code.lower().replace('_', '').replace('-', '')
+            insufficient_balance = (
+                code_text in {
+                    'insufficientbalance',
+                    'insufficientfunds',
+                    'walletbalanceinsufficient',
+                }
+                or 'insufficient balance' in provider_message
+                or 'insufficient funds' in provider_message
+                or 'not enough balance' in provider_message
+            )
             raise PaymentGatewayError(
-                f'ioTec Pay returned HTTP {exc.code}: {body[:300]}',
+                f'ioTec Pay returned HTTP {exc.code}.',
                 retryable=retryable,
+                provider_code=provider_code,
+                insufficient_balance=insufficient_balance,
             ) from exc
         except error.URLError as exc:
             raise PaymentGatewayError(

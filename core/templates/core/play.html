@@ -6,8 +6,7 @@
     {% csrf_token %}
     <header class="aviator-topbar">
         <a class="game-brand" href="{% url 'play' %}" aria-label="Pakabet home">
-            <img src="{% static 'logo icon.png' %}" alt="">
-            <span>Pakabet</span>
+            <img src="{% static 'pakabet logo-02.png' %}" alt="Pakabet">
         </a>
         <div class="topbar-right">
             <div class="balance-pill" id="play-balance">
@@ -45,7 +44,7 @@
             </div>
 
             <div class="total-bets-line">
-                <strong>TOTAL BETS: <span id="total-bets-count">{{ highest_stakers|length }}</span></strong>
+                <strong>TOTAL BETS: <span id="total-bets-count">0</span></strong>
                 <button class="previous-hand" type="button">
                     <span class="clock-dot"></span>
                     Previous hand
@@ -60,24 +59,13 @@
             </div>
 
             <div class="ledger-list" id="ledger-list" role="tabpanel" aria-labelledby="ledger-tab-all" tabindex="0">
-                {% for session in highest_stakers %}
-                    <div class="ledger-row {% if session.cashed_out_at is not None %}won{% else %}muted{% endif %}">
-                        <span class="ledger-user"><span class="player-avatar">{{ session.user.username|slice:":1"|upper }}</span>{{ session.user.username|truncatechars:5 }}</span>
-                        <span>{{ session.stake|floatformat:2 }}</span>
-                        <span>{% if session.cashed_out_at is not None %}{{ session.cashed_out_at|floatformat:2 }}x{% endif %}</span>
-                        <span>{% if session.cashed_out_at is not None %}{{ session.won_amount|floatformat:2 }}{% endif %}</span>
-                    </div>
-                {% endfor %}
-                {% for _ in "123456789012345678" %}
-                    <div class="ledger-row muted demo-bet-row">
-                        <span class="ledger-user"><span class="player-avatar"></span>m***{{ forloop.counter }}</span>
-                        <span>10.00</span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                {% endfor %}
+                <div class="ledger-empty">Loading current-round bets...</div>
             </div>
-            {{ my_bet_rows|json_script:"my-bet-data" }}
+            <nav class="ledger-pagination" aria-label="Bet list pages">
+                <button type="button" id="ledger-previous" disabled>Previous</button>
+                <span id="ledger-page-status" aria-live="polite">Page 1</span>
+                <button type="button" id="ledger-next" disabled>Next</button>
+            </nav>
         </aside>
 
         <main class="aviator-main">
@@ -92,10 +80,7 @@
                             {{ session.crash_point|floatformat:2 }}x
                         </span>
                     {% empty %}
-                        <span class="round-pill mid">6.91x</span>
-                        <span class="round-pill">1.84x</span>
-                        <span class="round-pill hot">80.74x</span>
-                        <span class="round-pill">1.32x</span>
+                        <span class="round-history-empty">No completed rounds yet.</span>
                     {% endfor %}
                 </div>
             </div>
@@ -114,13 +99,7 @@
                     <path class="flight-trail__line" id="flight-line"></path>
                 </svg>
                 <div class="plane-silhouette" id="plane-silhouette">
-                    <svg class="plane-art" viewBox="0 0 180 80" aria-hidden="true">
-                        <path class="plane-art__body" d="M18 47c21-5 51-10 84-10l28-19 18 2-12 20 27 4 10 5-10 5-28-1 10 16-17-3-26-13c-33 1-63-1-84-5Z"/>
-                        <path class="plane-art__wing" d="m75 42 31-30 17 2-15 30Z"/>
-                        <path class="plane-art__tail" d="m39 43-12-15-10 2 8 17Z"/>
-                        <path class="plane-art__mark" d="m112 33 13 4-10 6M115 53l12-5-8 10"/>
-                        <path class="plane-art__prop" d="M165 34c8 2 10 7 5 11m-5 1c8 2 10 8 4 13M165 46l-3 2"/>
-                    </svg>
+                    <img class="plane-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true">
                 </div>
                 <strong class="stage-multiplier" id="multiplier">1.00x</strong>
                 <div class="round-countdown" id="round-countdown">
@@ -223,7 +202,7 @@
         <aside class="right-chat-panel" data-chat-panel>
             <header class="chat-topbar">
                 <button class="chat-icon-button" type="button" data-chat-rules-open aria-label="Chat rules">i</button>
-                <span>Online: <strong id="chat-online-count">1093</strong></span>
+                <span>Online: <strong id="chat-online-count" data-url="{% url 'online_count' %}">{{ online_count }}</strong></span>
                 <button class="chat-icon-button" type="button" data-chat-collapse aria-label="Close chat">&times;</button>
             </header>
 

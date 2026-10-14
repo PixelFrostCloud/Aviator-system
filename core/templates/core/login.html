@@ -38,6 +38,10 @@
                 {{ form.password }}
                 {% for error in form.password.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
             </label>
+            <div class="auth-password-help">
+                <span>Keep your password private.</span>
+                <a href="{% url 'password_reset' %}">Forgot password?</a>
+            </div>
             <button class="auth-submit" type="submit">Log in</button>
         </form>
         <p class="auth-foot">New to Pakabet? <a href="{% url 'register' %}">Create an account</a></p>

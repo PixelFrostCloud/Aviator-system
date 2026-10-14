@@ -4,18 +4,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="2;url={% url 'play' %}">
+    <meta http-equiv="refresh" content="5;url={% url 'play' %}">
     <meta name="theme-color" content="#171819">
-    <link rel="icon" type="image/png" href="{% static 'logo icon.png' %}">
-    <link rel="apple-touch-icon" href="{% static 'logo icon.png' %}">
+    <link rel="icon" type="image/png" href="{% static 'pakabet logo-03.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'pakabet logo-03.png' %}">
     <title>Pakabet</title>
     <style>
         * { box-sizing: border-box; }
         html, body { min-height: 100%; margin: 0; }
         body {
             min-height: 100vh;
+            min-height: 100svh;
             display: grid;
-            place-items: center;
+            grid-template-rows: 1fr auto;
             background: #171819;
             color: #f4f6fb;
             font-family: "DM Sans", "Segoe UI", sans-serif;
@@ -26,11 +27,13 @@
             align-items: center;
             text-align: center;
             padding: 2rem;
+            justify-self: center;
+            align-self: center;
             animation: reveal 700ms ease-out both;
         }
         .splash img {
-            width: clamp(5rem, 13vw, 7.5rem);
-            height: clamp(5rem, 13vw, 7.5rem);
+            width: clamp(12rem, 45vw, 24rem);
+            height: auto;
             object-fit: contain;
             margin-bottom: 1.15rem;
         }
@@ -40,11 +43,16 @@
             font-weight: 700;
             letter-spacing: 0.16em;
         }
-        .splash p {
-            margin: 1.25rem 0 0;
+        .splash-footer {
+            width: 100%;
+            padding: 1.25rem 1rem max(1.25rem, env(safe-area-inset-bottom));
             color: #8b93a4;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             letter-spacing: 0.025em;
+            text-align: center;
+        }
+        .splash-footer p {
+            margin: 0;
         }
         @keyframes reveal {
             from { opacity: 0; transform: translateY(8px); }
@@ -57,9 +65,10 @@
 </head>
 <body>
     <main class="splash" aria-label="Pakabet loading">
-        <img src="{% static 'logo icon.png' %}" alt="Pakabet logo">
-        <h1>PAKABET</h1>
-        <p>Powered by Pixelfrost Cloud Co.</p>
+        <img src="{% static 'pakabet logo-03.png' %}" alt="Pakabet logo">
     </main>
+    <footer class="splash-footer">
+        <p>Powered by Pixelfrost Cloud Co.</p>
+    </footer>
 </body>
 </html>

@@ -58,11 +58,12 @@ def hash_server_seed(server_seed):
 
 
 def build_client_seed(user, request=None):
-    profile = getattr(user, 'profile', None)
+    profile = getattr(user, 'profile', None) if user else None
     if profile and profile.client_seed:
         return profile.client_seed
     ip = get_client_ip(request) if request else 'local'
-    raw = f'{user.id}:{user.username}:{timezone.now().timestamp()}:{ip}:{secrets.token_hex(8)}'
+    user_identity = f'{user.id}:{user.username}' if user else 'guest'
+    raw = f'{user_identity}:{timezone.now().timestamp()}:{ip}:{secrets.token_hex(8)}'
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
 

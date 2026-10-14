@@ -74,7 +74,7 @@
                         {% csrf_token %}
                         <input type="hidden" name="action" value="password">
                         {% for field in password_form %}
-                            <label><span>{{ field.label }}</span>{{ field }}
+                            <label for="{{ field.id_for_label }}"><span>{{ field.label }}</span>{{ field }}
                                 {% for error in field.errors %}<small class="payment-field-error">{{ error }}</small>{% endfor %}
                             </label>
                         {% endfor %}

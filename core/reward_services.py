@@ -245,6 +245,10 @@ def record_game_presence(user, presence_key):
         ).delete()
 
 
+def remove_game_presence(user, presence_key):
+    GamePresence.objects.filter(user=user, presence_key=presence_key).delete()
+
+
 def send_chat_rain(sender, total_amount, player_count, ip_address='', device_identifier=''):
     total_amount = quantize_money(total_amount)
     player_count = int(player_count)

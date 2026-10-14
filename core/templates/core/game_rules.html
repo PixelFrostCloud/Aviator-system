@@ -1,12 +1,79 @@
 {% extends 'core/base.html' %}
 {% block title %}Game Rules | Pakabet{% endblock %}
 {% block content %}
-<section class="panel-panel">
-    <div class="profile-card">
-        <h1>Game Rules</h1>
-        <p>Bets are accepted only during the betting countdown. Cashout requests are validated server-side.</p>
-        <p>If the server receives cashout before the crash, winnings are credited instantly. Bets still active at crash lose.</p>
-        <p>Responsible play limits and self-exclusion controls may restrict play.</p>
+<section class="account-page account-rules-page">
+    {% include 'core/partials/account_sidebar.html' %}
+    <div class="account-workspace">
+        {% include 'core/partials/account_topbar.html' %}
+        <main class="account-main account-main-wide">
+            <section class="account-content">
+                <div class="account-title-row">
+                    <div>
+                        <h1>Game Rules</h1>
+                        <p>Clear, simple rules for every Aviator round.</p>
+                    </div>
+                    <a class="account-close-link" href="{% url 'play' %}" aria-label="Back to game"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></a>
+                </div>
+
+                <section class="account-card rules-overview">
+                    <span class="rules-overview-icon" aria-hidden="true"><svg class="ui-icon"><use href="#icon-plane"></use></svg></span>
+                    <div>
+                        <h2>Know how each round works</h2>
+                        <p>Place your bet before the countdown ends. Once the plane takes off, cash out before it flies away to secure your result.</p>
+                    </div>
+                </section>
+
+                <div class="account-feature-grid rules-step-grid" aria-label="How a round works">
+                    <article class="account-card rules-step-card">
+                        <div class="rules-step-heading">
+                            <span class="activity-icon positive" aria-hidden="true">01</span>
+                            <h2>Place your bet</h2>
+                        </div>
+                        <p>Bets are accepted during the betting countdown. When the round begins, the betting window closes.</p>
+                    </article>
+                    <article class="account-card rules-step-card">
+                        <div class="rules-step-heading">
+                            <span class="activity-icon blue" aria-hidden="true">02</span>
+                            <h2>Cash out in time</h2>
+                        </div>
+                        <p>Cashout requests are checked by the server. A successful cashout before the crash is credited at the confirmed result.</p>
+                    </article>
+                    <article class="account-card rules-step-card">
+                        <div class="rules-step-heading">
+                            <span class="activity-icon gold" aria-hidden="true">03</span>
+                            <h2>Know the outcome</h2>
+                        </div>
+                        <p>If the plane crashes while your bet is still active, that bet loses. Each round ends when the crash occurs.</p>
+                    </article>
+                </div>
+
+                <section class="account-card rules-server-note">
+                    <span class="rules-server-icon" aria-hidden="true"><svg class="ui-icon"><use href="#icon-shield-check"></use></svg></span>
+                    <div>
+                        <h2>Server-verified results</h2>
+                        <p>Bet and cashout actions are validated by the game server. You can review completed rounds on the fairness page.</p>
+                    </div>
+                    <a class="account-action-button" href="{% url 'provably_fair' %}">Verify a round</a>
+                </section>
+            </section>
+
+            <aside class="account-right-rail">
+                <section class="account-card rules-links-card">
+                    <div class="vip-head"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-list"></use></svg></span><strong>Quick links</strong></div>
+                    <ul class="rail-list">
+                        <li><span>Start playing</span><strong><a href="{% url 'play' %}">Play</a></strong></li>
+                        <li><span>Round fairness</span><strong><a href="{% url 'provably_fair' %}">Review</a></strong></li>
+                        <li><span>Game guide</span><strong><a href="{% url 'how_to_play' %}">Learn</a></strong></li>
+                    </ul>
+                </section>
+
+                <section class="account-card rules-responsible-card">
+                    <div class="vip-head"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-shield-check"></use></svg></span><strong>Play responsibly</strong></div>
+                    <p>Set limits that work for you, or take a break whenever you need one.</p>
+                    <a class="rail-button" href="{% url 'game_limits' %}">Manage play settings</a>
+                </section>
+            </aside>
+        </main>
     </div>
 </section>
 {% endblock %}

@@ -1,6 +1,11 @@
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import (
+    AuthenticationForm,
+    PasswordChangeForm as DjangoPasswordChangeForm,
+    PasswordResetForm as DjangoPasswordResetForm,
+    SetPasswordForm as DjangoSetPasswordForm,
+    UserCreationForm,
+)
 from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator
 from .constants import MAXIMUM_DEPOSIT_AMOUNT, MINIMUM_MOBILE_MONEY_AMOUNT
@@ -92,6 +97,12 @@ class RegisterForm(PhoneNumberFormMixin, UserCreationForm):
             raise forms.ValidationError('An account with this phone number already exists.')
         return phone_number
 
+    def clean_email(self):
+        email = self.cleaned_data['email'].strip()
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError('An account with this email address already exists.')
+        return email
+
 
 class PhoneOrUsernameAuthenticationForm(AuthenticationForm):
     username = forms.CharField(
@@ -124,6 +135,57 @@ class PhoneOrUsernameAuthenticationForm(AuthenticationForm):
             else:
                 self.cleaned_data['username'] = identifier
         return super().clean()
+
+
+class AccountPasswordChangeForm(DjangoPasswordChangeForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['old_password'].widget.attrs.update({
+            'placeholder': 'Enter your current password',
+            'autocomplete': 'current-password',
+        })
+        self.fields['new_password1'].widget.attrs.update({
+            'placeholder': 'Choose a new password',
+            'autocomplete': 'new-password',
+        })
+        self.fields['new_password2'].widget.attrs.update({
+            'placeholder': 'Enter your new password again',
+            'autocomplete': 'new-password',
+        })
+
+
+class AccountPasswordResetForm(DjangoPasswordResetForm):
+    email = forms.EmailField(
+        label='Email address',
+        widget=forms.EmailInput(attrs={
+            'placeholder': 'Enter the email on your account',
+            'autocomplete': 'email',
+            'autofocus': True,
+        }),
+    )
+
+    def get_users(self, email):
+        users = list(
+            User._default_manager.filter(email__iexact=email, is_active=True)
+            .order_by('pk')[:2]
+        )
+        if len(users) != 1 or not users[0].has_usable_password():
+            return
+        yield users[0]
+
+
+class AccountSetPasswordForm(DjangoSetPasswordForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['new_password1'].widget.attrs.update({
+            'placeholder': 'Choose a new password',
+            'autocomplete': 'new-password',
+            'autofocus': True,
+        })
+        self.fields['new_password2'].widget.attrs.update({
+            'placeholder': 'Enter your new password again',
+            'autocomplete': 'new-password',
+        })
 
 
 class PlayForm(forms.Form):

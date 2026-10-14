@@ -94,6 +94,7 @@ class PaymentRequest(models.Model):
     ]
 
     STATUS_CHOICES = [
+        ('queued', 'Queued'),
         ('pending', 'Pending'),
         ('processing', 'Processing'),
         ('completed', 'Completed'),
@@ -107,6 +108,7 @@ class PaymentRequest(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     phone_number = models.CharField(max_length=20, blank=True)
     external_reference = models.CharField(max_length=80, unique=True, db_index=True)
+    idempotency_key = models.CharField(max_length=64, blank=True)
     provider_reference = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='pending')
     failure_reason = models.CharField(max_length=255, blank=True)
@@ -123,6 +125,11 @@ class PaymentRequest(models.Model):
             models.Index(fields=['payment_type', 'status', '-created_at']),
         ]
         constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'idempotency_key'],
+                condition=~models.Q(idempotency_key=''),
+                name='unique_user_payment_idempotency_key',
+            ),
             models.CheckConstraint(
                 check=models.Q(provider__in=['mtn_momo', 'airtel_money']),
                 name='paymentrequest_mobile_money_only',
@@ -135,6 +142,12 @@ class PaymentRequest(models.Model):
 
     def __str__(self):
         return f'{self.get_provider_display()} {self.payment_type} {self.amount}'
+
+
+class PaymentDispatchLock(models.Model):
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    lock_token = models.CharField(max_length=32, blank=True)
+    locked_at = models.DateTimeField(null=True, blank=True)
 
 
 class Referral(models.Model):
@@ -473,6 +486,9 @@ class GameRound(models.Model):
     crash_point = models.DecimalField(max_digits=8, decimal_places=2)
     house_edge = models.DecimalField(max_digits=5, decimal_places=4, default=Decimal('0.0100'))
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='flying')
+    betting_ends_at = models.DateTimeField(null=True, blank=True)
+    bet_count = models.PositiveIntegerField(default=0)
+    winning_bet_count = models.PositiveIntegerField(default=0)
     started_at = models.DateTimeField(default=timezone.now)
     crashed_at = models.DateTimeField(null=True, blank=True)
     revealed_at = models.DateTimeField(null=True, blank=True)
@@ -492,14 +508,44 @@ class GameRound(models.Model):
         return f'Round {self.public_id} ({self.crash_point}x)'
 
 
+class SharedGameState(models.Model):
+    active_round = models.ForeignKey(
+        GameRound,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='shared_game_states',
+    )
+
+    def __str__(self):
+        return f'Shared game state (round={self.active_round_id})'
+
+
 class GameSession(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     round = models.ForeignKey(GameRound, on_delete=models.SET_NULL, null=True, blank=True, related_name='bets')
     stake = models.DecimalField(max_digits=8, decimal_places=2)
     crash_point = models.DecimalField(max_digits=8, decimal_places=2)
+    auto_cashout_at = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    bet_request_id = models.CharField(max_length=32, blank=True)
     cashed_out_at = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     won_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['round', '-stake']),
+            models.Index(fields=['round', '-won_amount']),
+            models.Index(fields=['round', 'user']),
+            models.Index(fields=['round', 'cashed_out_at', 'auto_cashout_at']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'bet_request_id'],
+                condition=~models.Q(bet_request_id=''),
+                name='unique_user_bet_request',
+            ),
+        ]
 
     @property
     def is_winner(self):

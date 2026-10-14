@@ -1,15 +1,50 @@
 from pathlib import Path
 import os
 
+import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env')
 
 APP_NAME = os.getenv('APP_NAME', 'Pakabet')
 
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-replace-this-with-a-secure-key')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set in the environment or .env file.')
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ['true', '1', 'yes']
 
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost,testserver').split(',')
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost,testserver').split(',')
+    if host.strip()
+]
+ADMINS = [
+    (email.strip(), email.strip())
+    for email in os.getenv('DJANGO_ADMINS', '').split(',')
+    if email.strip()
+]
+SECURITY_LOGIN_FAILURE_THRESHOLD = int(os.getenv('SECURITY_LOGIN_FAILURE_THRESHOLD', '5'))
+SECURITY_LOGIN_FAILURE_WINDOW_SECONDS = int(os.getenv('SECURITY_LOGIN_FAILURE_WINDOW_SECONDS', '600'))
+SECURITY_ALERT_COOLDOWN_SECONDS = int(os.getenv('SECURITY_ALERT_COOLDOWN_SECONDS', '900'))
+SECURITY_LOGIN_ACCOUNT_LIMIT = int(os.getenv('SECURITY_LOGIN_ACCOUNT_LIMIT', '10'))
+SECURITY_LOGIN_IP_LIMIT = int(os.getenv('SECURITY_LOGIN_IP_LIMIT', '50'))
+SECURITY_LOGIN_RATE_WINDOW_SECONDS = int(os.getenv('SECURITY_LOGIN_RATE_WINDOW_SECONDS', '900'))
+SECURITY_BET_ACCOUNT_LIMIT = int(os.getenv('SECURITY_BET_ACCOUNT_LIMIT', '30'))
+SECURITY_BET_IP_LIMIT = int(os.getenv('SECURITY_BET_IP_LIMIT', '90'))
+SECURITY_CASHOUT_ACCOUNT_LIMIT = int(os.getenv('SECURITY_CASHOUT_ACCOUNT_LIMIT', '30'))
+SECURITY_CASHOUT_IP_LIMIT = int(os.getenv('SECURITY_CASHOUT_IP_LIMIT', '120'))
+SECURITY_GAME_RATE_WINDOW_SECONDS = int(os.getenv('SECURITY_GAME_RATE_WINDOW_SECONDS', '60'))
+SECURITY_REGISTER_IP_LIMIT = int(os.getenv('SECURITY_REGISTER_IP_LIMIT', '5'))
+SECURITY_REGISTER_WINDOW_SECONDS = int(os.getenv('SECURITY_REGISTER_WINDOW_SECONDS', '3600'))
+SECURITY_PAYMENT_ACCOUNT_LIMIT = int(os.getenv('SECURITY_PAYMENT_ACCOUNT_LIMIT', '8'))
+SECURITY_PAYMENT_IP_LIMIT = int(os.getenv('SECURITY_PAYMENT_IP_LIMIT', '20'))
+SECURITY_PAYMENT_WINDOW_SECONDS = int(os.getenv('SECURITY_PAYMENT_WINDOW_SECONDS', '3600'))
+SECURITY_ROOM_CREATE_ACCOUNT_LIMIT = int(os.getenv('SECURITY_ROOM_CREATE_ACCOUNT_LIMIT', '5'))
+SECURITY_ROOM_CREATE_IP_LIMIT = int(os.getenv('SECURITY_ROOM_CREATE_IP_LIMIT', '20'))
+SECURITY_ROOM_CREATE_WINDOW_SECONDS = int(os.getenv('SECURITY_ROOM_CREATE_WINDOW_SECONDS', '3600'))
 
 INSTALLED_APPS = [
     'daphne',
@@ -31,6 +66,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'core.security.SecurityEventMiddleware',
 ]
 
 ROOT_URLCONF = 'aviator_system.urls'
@@ -53,12 +89,25 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'aviator_system.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=int(os.getenv('DATABASE_CONN_MAX_AGE', '600')),
+            ssl_require=not DEBUG,
+        ),
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.getenv('SQLITE_DATABASE_PATH') or BASE_DIR / 'db.sqlite3',
+            'OPTIONS': {
+                'timeout': 20,
+            },
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -104,6 +153,19 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_REDIRECT_URL = 'play'
 LOGIN_URL = 'login'
 LOGOUT_REDIRECT_URL = 'home'
+PASSWORD_RESET_TIMEOUT = 3600
+
+EMAIL_BACKEND = os.getenv(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
+) or ('django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST') or 'localhost'
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False').lower() in ['true', '1', 'yes']
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False').lower() in ['true', '1', 'yes']
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Pakabet <no-reply@localhost>')
 
 ASGI_APPLICATION = 'aviator_system.asgi.application'
 
@@ -111,7 +173,7 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [('127.0.0.1', 6379)],
+            'hosts': [os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')],
         },
     } if os.getenv('DJANGO_USE_REDIS', 'False').lower() in ['true', '1', 'yes'] else {
         'BACKEND': 'channels.layers.InMemoryChannelLayer'

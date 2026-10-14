@@ -13,6 +13,7 @@
     <hr>
     <a class="account-side-link {% if request.resolver_match.url_name == 'game_limits' %}active{% endif %}" href="{% url 'game_limits' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg> Settings</a>
     <a class="account-side-link {% if request.resolver_match.url_name == 'how_to_play' %}active{% endif %}" href="{% url 'how_to_play' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-help"></use></svg> Support</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'game_rules' %}active{% endif %}" href="{% url 'game_rules' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-list"></use></svg> Game Rules</a>
     <a class="account-side-link" href="{% url 'logout' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-logout"></use></svg> Logout</a>
 
     <div class="account-invite-card">

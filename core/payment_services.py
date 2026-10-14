@@ -1,13 +1,21 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import re
+import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction as db_transaction
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .constants import MAXIMUM_DEPOSIT_AMOUNT, MINIMUM_MOBILE_MONEY_AMOUNT
-from .models import PaymentRequest, Profile, Transaction
-from .payment_gateway import IotecPayGateway, PaymentGatewayError, PaymentGatewayResult
+from .models import PaymentDispatchLock, PaymentRequest, Profile, Transaction
+from .payment_gateway import (
+    IotecPayGateway,
+    PaymentGatewayConfigurationError,
+    PaymentGatewayError,
+    PaymentGatewayResult,
+)
 from .referral_services import credit_first_deposit_referral_reward
 from .utils import can_deposit, generate_payment_reference
 
@@ -105,7 +113,15 @@ def split_mobile_money_phone(phone_number):
     return '256', value
 
 
-def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''):
+def initiate_deposit(
+    *,
+    user,
+    amount,
+    provider,
+    phone_number='',
+    redirect_url='',
+    idempotency_key='',
+):
     if amount < IOTEC_MINIMUM_AMOUNT:
         return None, None, 'ioTec Pay mobile-money transactions must be at least 500 UGX.'
     if amount > MAXIMUM_DEPOSIT_AMOUNT:
@@ -121,9 +137,26 @@ def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''
         return None, None, availability_error
 
     gateway = IotecPayGateway()
+    idempotency_key, error = _validated_idempotency_key(idempotency_key)
+    if error:
+        return None, None, error
     external_reference = generate_payment_reference('DEP')
     with db_transaction.atomic():
         locked_profile = Profile.objects.select_for_update().get(user=user)
+        existing = PaymentRequest.objects.filter(
+            user=user,
+            idempotency_key=idempotency_key,
+        ).first()
+        if existing:
+            if (
+                existing.payment_type != 'deposit'
+                or existing.provider != provider
+                or existing.amount != amount
+                or existing.phone_number != phone_number
+            ):
+                return None, None, 'This payment request key was already used with different details.'
+            return existing, None, ''
+
         allowed, reason = can_deposit(locked_profile, amount)
         if not allowed:
             return None, None, reason
@@ -134,6 +167,7 @@ def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''
             amount=amount,
             phone_number=phone_number,
             external_reference=external_reference,
+            idempotency_key=idempotency_key,
             status='pending',
             metadata={'gateway': 'iotec_pay', 'mode': gateway.mode},
         )
@@ -153,7 +187,7 @@ def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''
             status='Pending' if exc.retryable else 'Failed',
             status_code='gateway_error',
             status_message='Provider response is delayed.' if exc.retryable else 'Provider rejected the request.',
-            raw={'gateway_error': str(exc)},
+            raw={'gateway_error_code': exc.provider_code or 'gateway_error'},
         ))
         return payment, None, str(exc)
 
@@ -162,7 +196,14 @@ def initiate_deposit(*, user, amount, provider, phone_number='', redirect_url=''
     return payment, result, ''
 
 
-def initiate_withdrawal(*, user, amount, provider, phone_number=''):
+def initiate_withdrawal(
+    *,
+    user,
+    amount,
+    provider,
+    phone_number='',
+    idempotency_key='',
+):
     if amount < IOTEC_MINIMUM_AMOUNT:
         return None, None, 'ioTec Pay mobile-money transactions must be at least 500 UGX.'
     if provider not in MOBILE_MONEY_PROVIDERS:
@@ -176,13 +217,31 @@ def initiate_withdrawal(*, user, amount, provider, phone_number=''):
         return None, None, availability_error
 
     gateway = IotecPayGateway()
+    idempotency_key, error = _validated_idempotency_key(idempotency_key)
+    if error:
+        return None, None, error
     external_reference = generate_payment_reference('WDR')
 
     with db_transaction.atomic():
         locked_profile = Profile.objects.select_for_update().get(user=user)
+        existing = PaymentRequest.objects.filter(
+            user=user,
+            idempotency_key=idempotency_key,
+        ).first()
+        if existing:
+            if (
+                existing.payment_type != 'withdraw'
+                or existing.provider != provider
+                or existing.amount != amount
+                or existing.phone_number != phone_number
+            ):
+                return None, None, 'This payment request key was already used with different details.'
+            return existing, None, ''
+
         if amount > locked_profile.balance:
             return None, None, 'Insufficient balance for withdrawal.'
 
+        queued = not gateway.is_sandbox
         payment = PaymentRequest.objects.create(
             user=user,
             payment_type='withdraw',
@@ -190,8 +249,18 @@ def initiate_withdrawal(*, user, amount, provider, phone_number=''):
             amount=amount,
             phone_number=phone_number,
             external_reference=external_reference,
-            status='pending',
-            metadata={'gateway': 'iotec_pay', 'mode': gateway.mode, 'wallet_debited': True},
+            idempotency_key=idempotency_key,
+            status='queued' if queued else 'pending',
+            failure_reason=(
+                'Payout is waiting for provider funds to become available.'
+                if queued else ''
+            ),
+            metadata={
+                'gateway': 'iotec_pay',
+                'mode': gateway.mode,
+                'wallet_debited': True,
+                'dispatch_state': 'queued' if queued else 'submitting',
+            },
         )
         locked_profile.balance -= amount
         locked_profile.save(update_fields=['balance'])
@@ -201,8 +270,15 @@ def initiate_withdrawal(*, user, amount, provider, phone_number=''):
             amount=amount,
             status='pending',
             reference=external_reference,
-            description=f'{payment.get_provider_display()} withdrawal request',
+            description=(
+                f'{payment.get_provider_display()} withdrawal queued'
+                if queued
+                else f'{payment.get_provider_display()} withdrawal request'
+            ),
         )
+
+    if queued:
+        return payment, None, ''
 
     try:
         result = gateway.disburse_mobile_money(
@@ -220,7 +296,7 @@ def initiate_withdrawal(*, user, amount, provider, phone_number=''):
             status='Pending' if exc.retryable else 'Failed',
             status_code='gateway_error',
             status_message='Provider response is delayed.' if exc.retryable else 'Provider rejected the request.',
-            raw={'gateway_error': str(exc)},
+            raw={'gateway_error_code': exc.provider_code or 'gateway_error'},
         )
         payment = apply_provider_result(payment, result)
         return payment, None, str(exc)
@@ -228,6 +304,180 @@ def initiate_withdrawal(*, user, amount, provider, phone_number=''):
     payment = apply_provider_result(payment, result)
     payment.refresh_from_db()
     return payment, result, ''
+
+
+def process_next_queued_withdrawal():
+    lock_token = uuid.uuid4().hex
+    now = timezone.now()
+    lock_expiry = now - timedelta(seconds=120)
+    acquired = PaymentDispatchLock.objects.filter(pk=1).filter(
+        Q(locked_at__isnull=True) | Q(locked_at__lt=lock_expiry),
+    ).update(lock_token=lock_token, locked_at=now)
+    if not acquired:
+        return 'locked'
+
+    try:
+        stale_check_cutoff = timezone.now() - timedelta(minutes=2)
+        with db_transaction.atomic():
+            PaymentRequest.objects.filter(
+                payment_type='withdraw',
+                status='processing',
+                metadata__dispatch_state='checking_balance',
+                metadata__dispatch_started_at__lt=stale_check_cutoff.isoformat(),
+            ).update(
+                status='queued',
+                failure_reason='Payout is waiting for provider funds to become available.',
+            )
+            payment = PaymentRequest.objects.select_for_update().filter(
+                payment_type='withdraw',
+                status='queued',
+            ).order_by('created_at', 'id').first()
+            if payment is None:
+                return 'empty'
+            metadata = dict(payment.metadata or {})
+            metadata['dispatch_state'] = 'checking_balance'
+            metadata['dispatch_started_at'] = timezone.now().isoformat()
+            payment.status = 'processing'
+            payment.failure_reason = ''
+            payment.metadata = metadata
+            payment.save(update_fields=['status', 'failure_reason', 'metadata', 'updated_at'])
+
+        gateway = IotecPayGateway()
+        try:
+            wallet_balance = gateway.provider_wallet_balance()
+        except PaymentGatewayConfigurationError:
+            _return_withdrawal_to_queue(
+                payment.pk,
+                reason='provider_not_configured',
+                user_message='Payout is waiting for the payment provider to become available.',
+            )
+            return 'deferred'
+        except PaymentGatewayError:
+            _return_withdrawal_to_queue(
+                payment.pk,
+                reason='provider_balance_unavailable',
+                user_message='Payout is waiting for the payment provider to become available.',
+            )
+            return 'deferred'
+
+        if not isinstance(wallet_balance, dict):
+            _return_withdrawal_to_queue(
+                payment.pk,
+                reason='provider_balance_invalid',
+                user_message='Payout is waiting for the payment provider to become available.',
+            )
+            return 'deferred'
+
+        currency = _currency(payment.user)
+        provider_currency = str(wallet_balance.get('currency') or '').upper()
+        available_value = wallet_balance.get('availableBalance')
+        try:
+            available_balance = Decimal(str(available_value))
+        except (InvalidOperation, TypeError, ValueError):
+            available_balance = Decimal('-1')
+        if (
+            provider_currency != currency.upper()
+            or not available_balance.is_finite()
+            or available_balance < 0
+        ):
+            _return_withdrawal_to_queue(
+                payment.pk,
+                reason='provider_balance_invalid',
+                user_message='Payout is waiting for the payment provider to become available.',
+            )
+            return 'deferred'
+
+        reserved = PaymentRequest.objects.filter(
+            payment_type='withdraw',
+            status__in=['pending', 'processing'],
+        ).exclude(pk=payment.pk).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        if available_balance - reserved < payment.amount:
+            _return_withdrawal_to_queue(
+                payment.pk,
+                reason='insufficient_provider_balance',
+                user_message='Payout is waiting for provider funds to become available.',
+            )
+            return 'deferred'
+
+        with db_transaction.atomic():
+            locked_payment = PaymentRequest.objects.select_for_update().get(pk=payment.pk)
+            if locked_payment.status != 'processing':
+                return 'changed'
+            metadata = dict(locked_payment.metadata or {})
+            metadata['dispatch_state'] = 'submitting'
+            metadata['dispatch_started_at'] = timezone.now().isoformat()
+            locked_payment.metadata = metadata
+            locked_payment.save(update_fields=['metadata', 'updated_at'])
+
+        try:
+            result = gateway.disburse_mobile_money(
+                external_id=payment.external_reference,
+                amount=payment.amount,
+                currency=currency,
+                payee=payment.phone_number,
+                payee_name=payment.user.get_full_name() or payment.user.username,
+                payee_email=payment.user.email,
+            )
+        except PaymentGatewayError as exc:
+            if exc.insufficient_balance:
+                _return_withdrawal_to_queue(
+                    payment.pk,
+                    reason='insufficient_provider_balance',
+                    user_message='Payout is waiting for provider funds to become available.',
+                    provider_code=exc.provider_code,
+                )
+                return 'deferred'
+            result = PaymentGatewayResult(
+                provider_reference=payment.provider_reference or payment.external_reference,
+                status='Pending' if exc.retryable else 'Failed',
+                status_code=exc.provider_code or 'gateway_error',
+                status_message=(
+                    'Provider confirmation is pending.'
+                    if exc.retryable else 'Provider rejected the request.'
+                ),
+                raw={
+                    'gateway_error_code': exc.provider_code or 'gateway_error',
+                    'response_uncertain': exc.retryable,
+                },
+            )
+
+        apply_provider_result(payment, result)
+        return 'submitted'
+    finally:
+        PaymentDispatchLock.objects.filter(
+            pk=1,
+            lock_token=lock_token,
+        ).update(lock_token='', locked_at=None)
+
+
+def _return_withdrawal_to_queue(payment_id, *, reason, user_message, provider_code=''):
+    with db_transaction.atomic():
+        payment = PaymentRequest.objects.select_for_update().get(pk=payment_id)
+        if payment.status != 'processing':
+            return
+        metadata = dict(payment.metadata or {})
+        metadata['dispatch_state'] = 'queued'
+        metadata['queue_reason'] = reason
+        if provider_code:
+            metadata['provider_error_code'] = provider_code[:80]
+        payment.status = 'queued'
+        payment.failure_reason = user_message
+        payment.metadata = metadata
+        payment.save(update_fields=['status', 'failure_reason', 'metadata', 'updated_at'])
+        Transaction.objects.filter(
+            user=payment.user,
+            reference=payment.external_reference,
+            transaction_type='withdraw',
+        ).update(description=f'{payment.get_provider_display()} withdrawal queued')
+
+
+def _validated_idempotency_key(key):
+    key = str(key or '')
+    if not key:
+        key = uuid.uuid4().hex
+    if not re.fullmatch(r'[0-9a-f]{32}', key):
+        return '', 'Invalid payment request identifier. Refresh the page and try again.'
+    return key, ''
 
 
 def apply_provider_result(payment, result):
@@ -244,6 +494,8 @@ def apply_provider_result(payment, result):
         metadata['provider_status'] = result.status
         metadata['provider_status_code'] = result.status_code
         metadata['provider_response'] = result.raw or {}
+        if locked_payment.payment_type == 'withdraw':
+            metadata['dispatch_state'] = 'submitted'
         if result.redirect_url:
             metadata['redirect_url'] = result.redirect_url
 
@@ -274,6 +526,16 @@ def apply_provider_result(payment, result):
 
 
 def sync_payment(payment):
+    if payment.payment_type == 'withdraw' and (
+        payment.status == 'queued'
+        or (
+            payment.status == 'processing'
+            and (payment.metadata or {}).get('dispatch_state') == 'checking_balance'
+        )
+    ):
+        raise PaymentGatewayError(
+            'This withdrawal has not been submitted to the provider yet.',
+        )
     gateway = IotecPayGateway()
     if payment.payment_type == 'deposit':
         result = gateway.sync_collection(payment.external_reference)

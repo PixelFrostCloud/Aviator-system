@@ -151,6 +151,7 @@ function attachPlayWidget() {
     });
     const sendPresence = () => {
       if (document.visibilityState !== 'visible') {
+        releasePresence();
         return;
       }
       const formData = new FormData();
@@ -168,10 +169,26 @@ function attachPlayWidget() {
         console.error('Unable to update game presence.', error);
       });
     };
+    const releasePresence = () => {
+      const formData = new FormData();
+      formData.append('action', 'presence_leave');
+      formData.append('presence_key', presenceKey);
+      fetch(window.aviatorConfig.playUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+        body: formData,
+        keepalive: true,
+      }).catch((error) => {
+        console.error('Unable to release game presence.', error);
+      });
+    };
     sendPresence();
     const presenceInterval = setInterval(sendPresence, 30000);
     document.addEventListener('visibilitychange', sendPresence);
-    window.addEventListener('pagehide', () => clearInterval(presenceInterval), { once: true });
+    window.addEventListener('pagehide', () => {
+      clearInterval(presenceInterval);
+      releasePresence();
+    }, { once: true });
   }
 
   if (chatList) {
@@ -697,10 +714,25 @@ function attachPlayWidget() {
     });
 
     if (onlineCount) {
-      setInterval(() => {
-        const current = parseInt(onlineCount.textContent, 10) || 1093;
-        onlineCount.textContent = Math.max(900, current + Math.floor(Math.random() * 7) - 3).toString();
-      }, 6000);
+      const refreshOnlineCount = async () => {
+        try {
+          const response = await fetch(onlineCount.dataset.url, {
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+          });
+          if (!response.ok) {
+            throw new Error(`Online count request failed (${response.status}).`);
+          }
+          const payload = await response.json();
+          if (Number.isInteger(payload.online_count) && payload.online_count >= 0) {
+            onlineCount.textContent = String(payload.online_count);
+          }
+        } catch (error) {
+          console.error('Unable to refresh online player count.', error);
+        }
+      };
+      refreshOnlineCount();
+      setInterval(refreshOnlineCount, 15000);
     }
   }
 
@@ -717,24 +749,46 @@ function attachPlayWidget() {
     const roundHistoryToggle = document.querySelector('.round-history-toggle');
     const ledgerList = document.getElementById('ledger-list');
     const totalBetsCount = document.getElementById('total-bets-count');
+    const ledgerPageStatus = document.getElementById('ledger-page-status');
+    const ledgerPrevious = document.getElementById('ledger-previous');
+    const ledgerNext = document.getElementById('ledger-next');
     const ledgerTabs = [...document.querySelectorAll('[data-ledger-tab]')];
     const ledgerPanel = document.getElementById('ledger-list');
     const currency = window.aviatorConfig.currency || 'UGX';
     let currentMultiplier = 1.0;
     let queuedSlips = new Set();
     let activeSlipSessions = new Map();
-    let activeSlipRows = new Map();
+    let betPlacementPending = new Set();
+    let placedBetRounds = new Map();
+    let betRequestKeys = new Map();
+    let settledBets = new Map();
+    let insufficientBets = new Set();
+    let autoRepeatSlips = new Set();
+    let autoRepeatStoppedSlips = new Set();
     let cashedOutSlips = new Set();
     let pendingCashoutSlips = new Set();
     let autoSlips = new Set();
     let phase = 'betting';
     let currentLedgerTab = 'all';
-    let publicRows = [];
-    const myBetData = document.getElementById('my-bet-data');
-    let myRows = myBetData ? JSON.parse(myBetData.textContent) : [];
-    let currentRoundRows = [];
+    let ledgerRows = [];
+    let ledgerRoundId = null;
+    let ledgerPage = 1;
+    let ledgerTotalCount = 0;
+    let ledgerTabCount = 0;
+    let ledgerCursor = null;
+    let ledgerPreviousCursor = null;
+    let ledgerNextCursor = null;
+    let ledgerHasPrevious = false;
+    let ledgerHasNext = false;
+    let ledgerRequestId = 0;
+    let ledgerLoading = false;
+    let ledgerRefreshQueued = false;
     let flightAnimationFrame = null;
     let flightStartedAt = 0;
+    let finishCurrentFlight = null;
+    let lastHandledCrashRoundId = null;
+    let bettingDeadlineMonotonic = 0;
+    let bettingOpen = false;
 
     if (roundStrip && roundHistoryToggle) {
       const setRoundHistoryExpanded = (expanded) => {
@@ -784,9 +838,9 @@ function attachPlayWidget() {
       }
     }
 
-    function startFlightMotion() {
+    function startFlightMotion(elapsedOffset = 0) {
       stopFlightMotion();
-      flightStartedAt = performance.now();
+      flightStartedAt = performance.now() - elapsedOffset;
       const draw = (now) => {
         if (phase !== 'flying') {
           flightAnimationFrame = null;
@@ -807,19 +861,72 @@ function attachPlayWidget() {
         const start = slip.querySelector('.start-bet strong');
         const cashout = slip.querySelector('.cashout-bet strong');
         const stake = Math.max(parseFloat(input.value) || 0, 0);
+        const placedThisRound = placedBetRounds.get(slip) === currentSession?.round_id;
+        const settled = settledBets.get(slip);
+        const settledWon = Boolean(settled && settled.won_amount > 0);
         if (start) {
-          start.textContent = queuedSlips.has(slip) ? 'NEXT ROUND' : `${stake.toFixed(2)} ${currency}`;
+          start.textContent = betPlacementPending.has(slip)
+            ? 'PLACING BET...'
+            : settled
+              ? `${settled.won_amount.toFixed(2)} ${currency}`
+              : queuedSlips.has(slip)
+                ? 'NEXT ROUND'
+              : placedThisRound
+                ? 'BET PLACED'
+                : `${stake.toFixed(2)} ${currency}`;
         }
         if (startLabel) {
-          startLabel.textContent = queuedSlips.has(slip) ? 'CANCEL' : 'BET';
+          startLabel.textContent = insufficientBets.has(slip)
+            ? 'AMOUNT NOT ENOUGH'
+            : settled
+              ? settledWon ? 'CASHED OUT' : 'LOST'
+            : queuedSlips.has(slip)
+              ? 'CANCEL'
+              : 'BET';
         }
         if (cashout) {
-          cashout.textContent = `${(stake * currentMultiplier).toFixed(2)} ${currency}`;
+          cashout.textContent = settled
+            ? `${settled.won_amount.toFixed(2)} ${currency}`
+            : `${(stake * currentMultiplier).toFixed(2)} ${currency}`;
         }
         slip.classList.toggle('is-queued', queuedSlips.has(slip));
-        slip.classList.toggle('is-running', activeSlipSessions.has(slip) && !cashedOutSlips.has(slip));
+        slip.classList.toggle(
+          'is-running',
+          phase === 'flying'
+            && activeSlipSessions.has(slip)
+            && !cashedOutSlips.has(slip),
+        );
         slip.classList.toggle('is-auto', autoSlips.has(slip));
+        slip.classList.toggle('is-settled-won', settledWon);
+        slip.classList.toggle('is-settled-lost', Boolean(settled && !settledWon));
+        slip.classList.toggle('has-insufficient-balance', insufficientBets.has(slip));
       });
+    }
+
+    function setWalletBalance(balance) {
+      if (!Number.isFinite(balance)) {
+        return;
+      }
+      window.aviatorConfig.walletBalance = balance;
+      const balanceDisplay = document.querySelector('#play-balance strong');
+      if (balanceDisplay) {
+        balanceDisplay.textContent = balance.toFixed(2);
+      }
+      insufficientBets.forEach((slip) => {
+        const amount = Number(slip.querySelector('.stake-input').value);
+        if (Number.isFinite(amount) && amount <= balance) {
+          insufficientBets.delete(slip);
+        }
+      });
+    }
+
+    function clearInsufficientIfAffordable(slip) {
+      if (
+        insufficientBets.has(slip)
+        && Number(slip.querySelector('.stake-input').value) <= walletBalance()
+      ) {
+        insufficientBets.delete(slip);
+      }
     }
 
     function syncSlipStates() {
@@ -829,7 +936,17 @@ function attachPlayWidget() {
       });
       startButtons.forEach((button) => {
         const slip = button.closest('.aviator-bet-slip');
-        button.disabled = phase !== 'betting' && phase !== 'flying';
+        button.disabled = (
+          (phase !== 'betting' && phase !== 'flying')
+          || (phase === 'betting' && !bettingOpen)
+          || betPlacementPending.has(slip)
+          || insufficientBets.has(slip)
+          || (
+            phase === 'betting'
+            && placedBetRounds.get(slip) === currentSession?.round_id
+            && !queuedSlips.has(slip)
+          )
+        );
       });
       syncBetLabels();
     }
@@ -837,9 +954,8 @@ function attachPlayWidget() {
     function resetRound() {
       currentSession = null;
       currentMultiplier = 1.0;
-      currentRoundRows = [];
       activeSlipSessions.clear();
-      activeSlipRows.clear();
+      settledBets.clear();
       cashedOutSlips.clear();
       pendingCashoutSlips.clear();
       multiplierValue.textContent = '1.00x';
@@ -868,11 +984,6 @@ function attachPlayWidget() {
       [...roundHistoryList.querySelectorAll('.round-pill')].slice(50).forEach((item) => item.remove());
     }
 
-    function shortName(index) {
-      const letters = ['m', 'r', 's', 'a', 'l', 'k', 'n', 't', 'p', 'j'];
-      return `${letters[index % letters.length]}***${(index % 9) + 1}`;
-    }
-
     const ledgerMoneyFormatter = new Intl.NumberFormat(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -881,9 +992,9 @@ function attachPlayWidget() {
     function rowTemplate(row) {
       return `
         <div class="ledger-row ${row.status === 'won' ? 'won' : 'muted'}">
-          <span class="ledger-user"><span class="player-avatar">${row.avatar || ''}</span>${row.user}</span>
+          <span class="ledger-user"><span class="player-avatar">${escapeHtml(row.avatar || '')}</span>${escapeHtml(row.user || '')}</span>
           <span>${ledgerMoneyFormatter.format(row.bet)}</span>
-          <span>${row.multiplier ? formatMultiplier(row.multiplier) : ''}</span>
+          <span>${Number.isFinite(row.multiplier) ? formatMultiplier(row.multiplier) : ''}</span>
           <span>${row.win ? ledgerMoneyFormatter.format(row.win) : ''}</span>
         </div>
       `;
@@ -893,18 +1004,27 @@ function attachPlayWidget() {
       if (!ledgerList) {
         return;
       }
-      let rows = [...publicRows, ...currentRoundRows];
-      if (currentLedgerTab === 'mine') {
-        rows = myRows;
-      }
-      if (currentLedgerTab === 'top') {
-        rows = rows
-          .sort((a, b) => (b.win || 0) - (a.win || 0) || b.bet - a.bet)
-          .slice(0, 28);
-      }
-      ledgerList.innerHTML = rows.length ? rows.map(rowTemplate).join('') : '<div class="ledger-empty">No bets in this view yet.</div>';
+      const emptyMessage = currentLedgerTab === 'top'
+        ? 'No winners in this round yet.'
+        : currentLedgerTab === 'mine' && window.aviatorConfig?.isAuthenticated
+          ? 'You have not placed a bet in this round.'
+          : currentLedgerTab === 'mine'
+            ? 'Log in to view your bets.'
+            : 'No players have placed bets in this round yet.';
+      ledgerList.innerHTML = ledgerRows.length
+        ? ledgerRows.map(rowTemplate).join('')
+        : `<div class="ledger-empty">${emptyMessage}</div>`;
       if (totalBetsCount) {
-        totalBetsCount.textContent = rows.length;
+        totalBetsCount.textContent = ledgerTotalCount.toLocaleString();
+      }
+      if (ledgerPageStatus) {
+        ledgerPageStatus.textContent = `Page ${ledgerPage} · ${ledgerTabCount.toLocaleString()} bets`;
+      }
+      if (ledgerPrevious) {
+        ledgerPrevious.disabled = !ledgerHasPrevious;
+      }
+      if (ledgerNext) {
+        ledgerNext.disabled = !ledgerHasNext;
       }
       ledgerPanel?.setAttribute(
         'aria-labelledby',
@@ -912,16 +1032,104 @@ function attachPlayWidget() {
       );
     }
 
+    async function loadLedger() {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      if (ledgerLoading) {
+        ledgerRefreshQueued = true;
+        return;
+      }
+      ledgerLoading = true;
+      ledgerRefreshQueued = false;
+      const requestId = ++ledgerRequestId;
+      const requestedTab = currentLedgerTab;
+      const requestedPage = ledgerPage;
+      const requestedCursor = ledgerCursor;
+      const formData = new FormData();
+      formData.append('action', 'ledger');
+      formData.append('tab', requestedTab);
+      if (requestedCursor) {
+        formData.append('cursor', requestedCursor);
+      }
+
+      try {
+        const response = await fetch(window.aviatorConfig.playUrl, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCsrfToken() },
+          body: formData,
+        });
+        if (response.status === 409) {
+          ledgerCursor = null;
+          ledgerPreviousCursor = null;
+          ledgerNextCursor = null;
+          ledgerPage = 1;
+          ledgerRefreshQueued = true;
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(`Live bet list request failed (${response.status}).`);
+        }
+        const payload = await response.json();
+        if (
+          requestId !== ledgerRequestId
+          || requestedTab !== currentLedgerTab
+          || requestedPage !== ledgerPage
+          || requestedCursor !== ledgerCursor
+        ) {
+          return;
+        }
+        if (!payload.success) {
+          throw new Error(payload.message || 'Unable to load current-round bets.');
+        }
+        if (ledgerRoundId !== payload.round_id) {
+          ledgerRoundId = payload.round_id;
+          ledgerPage = 1;
+          ledgerCursor = null;
+          ledgerPreviousCursor = null;
+          ledgerNextCursor = null;
+          if (requestedPage !== 1) {
+            ledgerRefreshQueued = true;
+            return;
+          }
+        }
+        ledgerTotalCount = payload.total_count;
+        ledgerTabCount = payload.tab_count;
+        ledgerRows = payload.rows;
+        ledgerHasPrevious = payload.has_previous;
+        ledgerHasNext = payload.has_next;
+        ledgerPreviousCursor = payload.previous_cursor;
+        ledgerNextCursor = payload.next_cursor;
+        renderLedger();
+      } catch (error) {
+        console.error('Unable to refresh live bets.', error);
+      } finally {
+        ledgerLoading = false;
+        if (ledgerRefreshQueued) {
+          loadLedger();
+        }
+      }
+    }
+
     ledgerTabs.forEach((tab) => {
       tab.addEventListener('click', () => {
         currentLedgerTab = tab.dataset.ledgerTab || 'all';
+        ledgerRequestId += 1;
         ledgerTabs.forEach((item) => {
           const selected = item === tab;
           item.classList.toggle('active', selected);
           item.setAttribute('aria-selected', String(selected));
           item.tabIndex = selected ? 0 : -1;
         });
+        ledgerRows = [];
+        ledgerPage = 1;
+        ledgerCursor = null;
+        ledgerPreviousCursor = null;
+        ledgerNextCursor = null;
+        ledgerHasPrevious = false;
+        ledgerHasNext = false;
         renderLedger();
+        loadLedger();
       });
       tab.addEventListener('keydown', (event) => {
         const currentIndex = ledgerTabs.indexOf(tab);
@@ -942,27 +1150,6 @@ function attachPlayWidget() {
         ledgerTabs[nextIndex].click();
       });
     });
-
-    function seedPublicBets() {
-      const count = 18 + Math.floor(Math.random() * 16);
-      const rows = [];
-      for (let i = 0; i < count; i += 1) {
-        const amount = [25, 20, 18, 15, 12, 10, 8, 5][Math.min(i, 7)] || 5;
-        const cashed = phase === 'flying' && currentMultiplier > 1.15 && Math.random() > 0.6;
-        const multiplier = cashed ? Math.min(currentMultiplier - 0.04, 1 + Math.random() * 2.4) : null;
-        const user = shortName(i);
-        rows.push({
-          user,
-          avatar: user.slice(0, 1).toUpperCase(),
-          bet: amount,
-          multiplier,
-          win: multiplier ? amount * multiplier : 0,
-          status: cashed ? 'won' : 'pending',
-        });
-      }
-      publicRows = rows;
-      renderLedger();
-    }
 
     async function settleCrashedRound() {
       if (!currentSession) {
@@ -999,76 +1186,161 @@ function attachPlayWidget() {
           const autoMode = button.dataset.mode === 'auto';
           if (autoMode) {
             autoSlips.add(slip);
-            gameMessage.textContent = 'Auto bet enabled for this panel.';
+            autoRepeatStoppedSlips.delete(slip);
+            if (phase === 'flying' || activeSlipSessions.has(slip)) {
+              autoRepeatSlips.add(slip);
+              if (activeSlipSessions.has(slip)) {
+                queuedSlips.delete(slip);
+                gameMessage.textContent = 'Auto bet enabled for the next round. Current bet remains active.';
+              } else {
+                queuedSlips.add(slip);
+                gameMessage.textContent = 'Auto bet queued for the next round.';
+              }
+            } else {
+              gameMessage.textContent = 'Auto bet enabled for this panel.';
+            }
           } else {
             autoSlips.delete(slip);
+            autoRepeatSlips.delete(slip);
+            autoRepeatStoppedSlips.add(slip);
             queuedSlips.delete(slip);
             gameMessage.textContent = 'Manual bet mode enabled.';
           }
           modeButtons.forEach((item) => item.classList.toggle('active', item === button));
           syncSlipStates();
-          renderLedger();
         });
       });
       slip.querySelectorAll('[data-stake]').forEach((button) => {
         button.addEventListener('click', () => {
           input.value = parseFloat(button.dataset.stake).toFixed(2);
-          syncBetLabels();
+          clearInsufficientIfAffordable(slip);
+          syncSlipStates();
         });
       });
       const minus = slip.querySelector('.amount-minus');
       const plus = slip.querySelector('.amount-plus');
       minus.addEventListener('click', () => {
         input.value = Math.max(1, (parseFloat(input.value) || 1) - 1).toFixed(2);
-        syncBetLabels();
+        clearInsufficientIfAffordable(slip);
+        syncSlipStates();
       });
       plus.addEventListener('click', () => {
         input.value = ((parseFloat(input.value) || 0) + 1).toFixed(2);
-        syncBetLabels();
+        clearInsufficientIfAffordable(slip);
+        syncSlipStates();
       });
-      input.addEventListener('input', syncBetLabels);
+      input.addEventListener('input', () => {
+        clearInsufficientIfAffordable(slip);
+        syncSlipStates();
+      });
     });
 
-    async function createServerRoundFromQueue() {
-      if (!window.aviatorConfig?.isAuthenticated) {
-        gameMessage.textContent = 'Sign in to watch server-verified rounds.';
-        return null;
+    function createBetRequestId() {
+      const bytes = new Uint8Array(16);
+      window.crypto.getRandomValues(bytes);
+      return [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function placeBetForSlip(slip, roundId) {
+      if (
+        !window.aviatorConfig?.isAuthenticated
+        || phase !== 'betting'
+        || currentSession?.round_id !== roundId
+        || betPlacementPending.has(slip)
+        || placedBetRounds.get(slip) === roundId
+      ) {
+        return;
       }
-      const stakes = [...queuedSlips]
-        .map((slip) => parseFloat(slip.querySelector('.stake-input').value))
-        .filter((stake) => stake > 0);
-      if (stakes.length !== queuedSlips.size) {
-        gameMessage.textContent = 'One or more bet amounts are invalid. Please review them and try again.';
-        queuedSlips.clear();
-        syncBetLabels();
-        return null;
+      const amount = Number(slip.querySelector('.stake-input').value);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        gameMessage.textContent = 'Enter a valid bet amount.';
+        return;
       }
+
+      let request = betRequestKeys.get(slip);
+      if (!request || request.roundId !== roundId) {
+        request = { roundId, id: createBetRequestId() };
+        betRequestKeys.set(slip, request);
+      }
+      const autoCashoutInput = slip.querySelector('.auto-cashout-input');
+      const autoCashoutAt = autoSlips.has(slip)
+        ? Number(autoCashoutInput?.value)
+        : null;
+      if (autoSlips.has(slip) && (!Number.isFinite(autoCashoutAt) || autoCashoutAt < 1.01)) {
+        gameMessage.textContent = 'Enter an auto cashout target of at least 1.01x.';
+        return;
+      }
+
+      betPlacementPending.add(slip);
+      syncSlipStates();
       const formData = new FormData();
       formData.append('action', 'start');
-      formData.append('bet_data', JSON.stringify(stakes));
-
+      formData.append('bet_data', JSON.stringify([{
+        amount,
+        auto_cashout_at: autoCashoutAt,
+        request_id: request.id,
+      }]));
       try {
         const response = await fetch(window.aviatorConfig.playUrl, {
           method: 'POST',
-          headers: {
-            'X-CSRFToken': getCsrfToken(),
-          },
+          headers: { 'X-CSRFToken': getCsrfToken() },
           body: formData,
         });
-
         const payload = await response.json();
-        if (payload.success) {
-          return payload;
+        if (!response.ok || !payload.success) {
+          if (response.status === 409 && payload.code === 'betting_closed') {
+            queuedSlips.add(slip);
+            if (autoSlips.has(slip)) {
+              autoRepeatSlips.add(slip);
+            }
+            gameMessage.textContent = 'Betting closed before your bet was accepted. Bet queued for the next round.';
+          } else if (payload.code === 'insufficient_balance') {
+            insufficientBets.add(slip);
+            autoRepeatSlips.delete(slip);
+            autoRepeatStoppedSlips.add(slip);
+            queuedSlips.delete(slip);
+            if (Number.isFinite(payload.balance)) {
+              setWalletBalance(payload.balance);
+            }
+            gameMessage.textContent = 'Insufficient balance for this bet. Lower the stake or add funds.';
+          } else {
+            gameMessage.textContent = payload.message || 'Bet was not accepted. Your balance was not changed.';
+            queuedSlips.delete(slip);
+            autoRepeatSlips.delete(slip);
+          }
+          return;
         }
-        gameMessage.textContent = payload.message || 'Unable to begin the round.';
-        queuedSlips.clear();
-        syncBetLabels();
-        return null;
-      } catch {
-        gameMessage.textContent = 'Unable to reach the game server. No round was started; please try again.';
-        queuedSlips.clear();
-        syncBetLabels();
-        return null;
+        if (payload.round_id !== roundId || payload.status !== 'betting') {
+          queuedSlips.add(slip);
+          gameMessage.textContent = 'Round changed before the bet was confirmed. Bet queued for the next round.';
+          return;
+        }
+        const placedSession = payload.sessions?.find((session) => session.bet_request_id === request.id);
+        if (!placedSession) {
+          throw new Error('The server accepted the bet but did not return its bet record.');
+        }
+        activeSlipSessions.set(slip, placedSession.id);
+        placedBetRounds.set(slip, roundId);
+        betRequestKeys.delete(slip);
+        if (autoSlips.has(slip)) {
+          autoRepeatSlips.add(slip);
+          autoRepeatStoppedSlips.delete(slip);
+          queuedSlips.delete(slip);
+        } else {
+          queuedSlips.delete(slip);
+        }
+        if (Number.isFinite(payload.balance)) {
+          setWalletBalance(payload.balance);
+        }
+        gameMessage.textContent = `Bet accepted for round ${roundId}.`;
+        loadLedger();
+      } catch (error) {
+        console.error('Unable to confirm bet placement.', error);
+        queuedSlips.add(slip);
+        gameMessage.textContent = 'Bet confirmation is delayed. The same request will be retried safely.';
+      } finally {
+        betPlacementPending.delete(slip);
+        syncSlipStates();
       }
     }
 
@@ -1077,97 +1349,151 @@ function attachPlayWidget() {
         gameMessage.textContent = 'Wait for the next betting window.';
         return;
       }
-      if (activeSlipSessions.has(slip)) {
+      if (phase === 'betting') {
+        if (activeSlipSessions.has(slip)) {
+          if (autoSlips.has(slip)) {
+            if (queuedSlips.has(slip)) {
+              queuedSlips.delete(slip);
+              autoRepeatSlips.delete(slip);
+              autoRepeatStoppedSlips.add(slip);
+              gameMessage.textContent = 'Next-round auto bet cancelled.';
+            } else {
+              queuedSlips.add(slip);
+              autoRepeatSlips.add(slip);
+              autoRepeatStoppedSlips.delete(slip);
+              gameMessage.textContent = 'Auto bet queued for the next round.';
+            }
+            syncSlipStates();
+          }
+          return;
+        }
+        placeBetForSlip(slip, currentSession.round_id);
         return;
       }
       if (queuedSlips.has(slip)) {
         queuedSlips.delete(slip);
+        autoRepeatSlips.delete(slip);
+        if (autoSlips.has(slip)) {
+          autoRepeatStoppedSlips.add(slip);
+        }
         gameMessage.textContent = 'Bet removed from the next round.';
         syncSlipStates();
-        renderLedger();
+        return;
+      }
+      if (activeSlipSessions.has(slip) && !autoSlips.has(slip)) {
         return;
       }
       queuedSlips.add(slip);
+      if (autoSlips.has(slip)) {
+        autoRepeatSlips.add(slip);
+        autoRepeatStoppedSlips.delete(slip);
+      }
       gameMessage.textContent = phase === 'flying'
-        ? 'Bet accepted for the next round.'
+        ? autoSlips.has(slip)
+          ? 'Auto bet queued for the next round.'
+          : 'Bet accepted for the next round.'
         : 'Bet accepted for the next flight.';
       syncSlipStates();
-      renderLedger();
     }
 
-    async function startFlight() {
+    function activateFlight(payload, enteredSlips = [], consumeQueued = false, elapsedOffset = null) {
       if (flightTimer) {
         clearInterval(flightTimer);
       }
-      stopFlightMotion();
-
-      phase = 'starting';
-      syncSlipStates();
-      gameMessage.textContent = queuedSlips.size ? 'Bets closed. Starting round...' : 'Bets closed. Watch the flight.';
-
-      const enteredSlips = [...queuedSlips];
-      const payload = await createServerRoundFromQueue();
-      if (!payload) {
-        queuedSlips.clear();
-        phase = 'crashed';
-        syncSlipStates();
-        if (window.aviatorConfig?.isAuthenticated) {
-          setTimeout(startBettingWindow, 1200);
-        }
-        return;
+      if (bettingTimer) {
+        clearInterval(bettingTimer);
+        bettingTimer = null;
       }
-
+      flightStage?.classList.remove('is-betting');
+      if (countdown) {
+        countdown.style.display = 'none';
+      }
+      stopFlightMotion();
       currentSession = payload;
+      bettingOpen = false;
       activeSlipSessions.clear();
-      activeSlipRows.clear();
-      enteredSlips.forEach((slip, index) => {
-        if (payload.session_ids[index]) {
-          activeSlipSessions.set(slip, payload.session_ids[index]);
-          const amount = Math.max(parseFloat(slip.querySelector('.stake-input').value) || 0, 0);
-          const row = {
-            user: 'You',
-            avatar: 'Y',
-            bet: amount,
-            multiplier: null,
-            win: 0,
-            status: 'pending',
-            sessionId: payload.session_ids[index],
-          };
-          currentRoundRows.unshift(row);
-          myRows.unshift(row);
-          activeSlipRows.set(slip, row);
+      settledBets.clear();
+      const sessions = payload.sessions || (payload.session_ids || []).map((id) => ({ id }));
+      sessions.forEach((session, index) => {
+        const slip = enteredSlips[index] || slips[index];
+        if (!slip) {
+          return;
         }
+        const autoCashoutInput = slip.querySelector('.auto-cashout-input');
+        if (Number.isFinite(session.auto_cashout_at) && autoCashoutInput) {
+          autoCashoutInput.value = session.auto_cashout_at.toFixed(2);
+          autoSlips.add(slip);
+          if (!autoRepeatStoppedSlips.has(slip)) {
+            autoRepeatSlips.add(slip);
+          }
+        }
+        if (session.cashed_out_at == null) {
+          return;
+        }
+        settledBets.set(slip, {
+          cashed_out_at: session.cashed_out_at,
+          won_amount: session.won_amount || 0,
+        });
+        cashedOutSlips.add(slip);
       });
-      myRows = myRows.slice(0, 40);
-      setFairnessText('Hash', payload.server_seed_hash);
-      const committedHash = document.querySelector('[data-server-seed-hash]');
-      if (committedHash) {
-        committedHash.textContent = payload.server_seed_hash;
+      sessions
+        .filter((session) => session.cashed_out_at == null)
+        .slice(0, slips.length)
+        .forEach((session, index) => {
+          const slip = enteredSlips[index] || slips[index];
+          if (!slip) {
+            return;
+          }
+          activeSlipSessions.set(slip, session.id);
+          placedBetRounds.set(slip, payload.round_id);
+          if (Number.isFinite(session.stake)) {
+            slip.querySelector('.stake-input').value = session.stake.toFixed(2);
+          }
+        });
+      loadLedger();
+      if (payload.server_seed_hash) {
+        setFairnessText('Hash', payload.server_seed_hash);
+        const committedHash = document.querySelector('[data-server-seed-hash]');
+        if (committedHash) {
+          committedHash.textContent = payload.server_seed_hash;
+        }
       }
       const seedStatus = document.querySelector('[data-server-seed-status]');
-      if (seedStatus) {
+      if (seedStatus && payload.server_seed_hash) {
         seedStatus.textContent = 'Commitment published before this round began.';
       }
       const balanceDisplay = document.querySelector('#play-balance strong');
-      if (balanceDisplay) {
+      if (balanceDisplay && Number.isFinite(payload.balance)) {
         balanceDisplay.textContent = payload.balance.toFixed(2);
       }
 
-      queuedSlips.clear();
-      currentMultiplier = 1.0;
+      if (consumeQueued) {
+        queuedSlips.clear();
+      }
+      const initialElapsed = Number.isFinite(elapsedOffset)
+        ? elapsedOffset
+        : Number.isFinite(payload.current_multiplier)
+          ? ((payload.current_multiplier - 1) / FLIGHT_INCREMENT) * FLIGHT_TICK_MS
+          : 0;
+      currentMultiplier = 1 + Math.round(initialElapsed / FLIGHT_TICK_MS) * FLIGHT_INCREMENT;
       cashedOutSlips.clear();
-      multiplierValue.textContent = '1.00x';
+      multiplierValue.textContent = formatMultiplier(currentMultiplier);
       plane?.classList.remove('is-flew-away');
       flightStage?.classList.remove('is-crashed');
-      setFlightProgress(0);
+      let tick = Math.max(0, Math.round(initialElapsed / FLIGHT_TICK_MS));
+      setFlightProgress(calculateMaskedFlightProgress(tick), initialElapsed);
       phase = 'flying';
-      startFlightMotion();
+      startFlightMotion(initialElapsed);
       syncSlipStates();
 
       gameMessage.textContent = activeSlipSessions.size ? 'Cash out before the flight crashes.' : 'Watching live round. Place a bet next round.';
-      let tick = 0;
       let crashCheckInFlight = false;
+      let crashFinished = false;
       function finishCrashedRound(crashPoint, revealPromise) {
+        if (crashFinished) {
+          return;
+        }
+        crashFinished = true;
         clearInterval(flightTimer);
         stopFlightMotion();
         multiplierValue.textContent = formatMultiplier(crashPoint);
@@ -1177,27 +1503,20 @@ function attachPlayWidget() {
         gameMessage.textContent = `Flew away at ${formatMultiplier(crashPoint)}. Round over.`;
         addHistoryPill(crashPoint);
         revealPromise.finally(() => {
-          activeSlipRows.forEach((row, slip) => {
-            if (!cashedOutSlips.has(slip)) {
-              row.status = 'lost';
-              row.multiplier = null;
-              row.win = 0;
-            }
-          });
-          renderLedger();
+          loadLedger();
           phase = 'crashed';
+          lastHandledCrashRoundId = currentSession?.round_id || lastHandledCrashRoundId;
           currentSession = null;
           activeSlipSessions.clear();
           cashedOutSlips.clear();
-          activeSlipRows.clear();
           pendingCashoutSlips.clear();
           syncSlipStates();
-          setTimeout(startBettingWindow, 1200);
         });
       }
+      finishCurrentFlight = finishCrashedRound;
 
       flightTimer = setInterval(() => {
-        tick += 1;
+        tick = Math.max(0, Math.round((performance.now() - flightStartedAt) / FLIGHT_TICK_MS));
         currentMultiplier = 1 + tick * FLIGHT_INCREMENT;
         const progress = calculateMaskedFlightProgress(tick);
         multiplierValue.textContent = formatMultiplier(currentMultiplier);
@@ -1205,13 +1524,6 @@ function attachPlayWidget() {
           setFlightProgress(progress, tick * FLIGHT_TICK_MS);
         }
         syncBetLabels();
-        activeSlipRows.forEach((row, slip) => {
-          if (cashedOutSlips.has(slip)) {
-            return;
-          }
-          row.multiplier = currentMultiplier;
-          row.win = row.bet * currentMultiplier;
-        });
         autoSlips.forEach((slip) => {
           if (!activeSlipSessions.has(slip) || cashedOutSlips.has(slip)) {
             return;
@@ -1224,12 +1536,6 @@ function attachPlayWidget() {
             }
           }
         });
-        if (tick % 12 === 0) {
-          seedPublicBets();
-        } else if (currentLedgerTab === 'mine') {
-          renderLedger();
-        }
-
         if (currentSession && !crashCheckInFlight && tick % 5 === 0) {
           crashCheckInFlight = true;
           settleCrashedRound()
@@ -1248,35 +1554,196 @@ function attachPlayWidget() {
       }, FLIGHT_TICK_MS);
     }
 
-    function startBettingWindow() {
+    function placeQueuedBets(roundId) {
+      if (!bettingOpen || phase !== 'betting') {
+        return;
+      }
+      autoRepeatSlips.forEach((slip) => {
+        if (placedBetRounds.get(slip) !== roundId) {
+          queuedSlips.add(slip);
+        }
+      });
+      [...queuedSlips].forEach((slip) => placeBetForSlip(slip, roundId));
+    }
+
+    function startBettingWindow(payload, synchronizedDeadline = null) {
+      if (!payload?.round_id || !Number.isFinite(payload.seconds_remaining)) {
+        throw new Error('The server did not provide a valid shared betting window.');
+      }
+      if (bettingTimer) {
+        clearInterval(bettingTimer);
+        bettingTimer = null;
+      }
       phase = 'betting';
       resetRound();
-      autoSlips.forEach((slip) => queueBet(slip));
-      seedPublicBets();
+      currentSession = { round_id: payload.round_id };
+      bettingDeadlineMonotonic = Number.isFinite(synchronizedDeadline)
+        ? synchronizedDeadline
+        : performance.now() + (payload.seconds_remaining * 1000);
+      const remainingMs = Math.max(bettingDeadlineMonotonic - performance.now(), 0);
+      bettingOpen = remainingMs > 0;
       if (flightStage) {
         flightStage.classList.add('is-betting');
       }
       if (countdown) {
         countdown.style.display = 'grid';
+        countdown.querySelector('strong').textContent = Math.ceil(remainingMs / 1000);
       }
-      let secondsLeft = 4;
+      let secondsLeft = Math.ceil(remainingMs / 1000);
       gameMessage.textContent = 'Place your bets for the next round.';
-      const interval = setInterval(() => {
+      placeQueuedBets(payload.round_id);
+      bettingTimer = setInterval(() => {
+        secondsLeft = Math.max(0, Math.ceil((bettingDeadlineMonotonic - performance.now()) / 1000));
         if (countdown) {
           countdown.querySelector('strong').textContent = secondsLeft;
         }
-        secondsLeft -= 1;
-        if (secondsLeft < 0) {
-          clearInterval(interval);
-          if (flightStage) {
-            flightStage.classList.remove('is-betting');
-          }
-          if (countdown) {
-            countdown.style.display = '';
-          }
-          startFlight();
+        if (secondsLeft <= 0) {
+          bettingOpen = false;
+          clearInterval(bettingTimer);
+          bettingTimer = null;
+          gameMessage.textContent = 'Bets are closed. Waiting for the shared flight to start.';
+          syncSlipStates();
+          syncSharedRound();
         }
-      }, 1000);
+      }, 100);
+    }
+
+    async function syncSharedRound() {
+      if (syncingSharedState) {
+        return;
+      }
+      syncingSharedState = true;
+      const requestStartedAt = performance.now();
+      try {
+        const formData = new FormData();
+        formData.append('action', 'state');
+        const response = await fetch(window.aviatorConfig.playUrl, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCsrfToken() },
+          body: formData,
+        });
+        if (!response.ok) {
+          throw new Error(`Unable to load shared round state (${response.status}).`);
+        }
+        const payload = await response.json();
+        const responseReceivedAt = performance.now();
+        const roundTripMs = responseReceivedAt - requestStartedAt;
+        const serverTimeMs = Date.parse(payload.server_time);
+        const estimatedDeadline = Date.parse(payload.betting_ends_at);
+        const synchronizedDeadline = (
+          Number.isFinite(serverTimeMs) && Number.isFinite(estimatedDeadline)
+        )
+          ? responseReceivedAt + estimatedDeadline - serverTimeMs - (roundTripMs / 2)
+          : null;
+        const flyingSinceMs = Date.parse(payload.flying_since);
+        const elapsedAtServerSnapshot = (
+          Number.isFinite(serverTimeMs) && Number.isFinite(flyingSinceMs)
+        )
+          ? serverTimeMs - flyingSinceMs
+          : Number.isFinite(payload.current_multiplier)
+            ? ((payload.current_multiplier - 1) / FLIGHT_INCREMENT) * FLIGHT_TICK_MS
+            : null;
+        const estimatedFlightElapsed = Number.isFinite(elapsedAtServerSnapshot)
+          ? Math.max(0, elapsedAtServerSnapshot + (roundTripMs / 2))
+          : null;
+        if (payload.status === 'betting' && payload.round_id) {
+          const newSharedRound = (
+            phase !== 'betting'
+            || currentSession?.round_id !== payload.round_id
+          );
+          if (newSharedRound) {
+            startBettingWindow(payload, synchronizedDeadline);
+          } else {
+            bettingDeadlineMonotonic = Number.isFinite(synchronizedDeadline)
+              ? synchronizedDeadline
+              : responseReceivedAt + (payload.seconds_remaining * 1000);
+            bettingOpen = bettingDeadlineMonotonic > responseReceivedAt;
+            if (!bettingTimer && bettingOpen) {
+              startBettingWindow(payload, synchronizedDeadline);
+            }
+          }
+          currentSession = { round_id: payload.round_id };
+          (payload.sessions || []).forEach((session, index) => {
+            const slip = slips.find((candidate) => activeSlipSessions.get(candidate) === session.id)
+              || slips.find((candidate) => betRequestKeys.get(candidate)?.id === session.bet_request_id)
+              || slips[index];
+            if (!slip) {
+              return;
+            }
+            placedBetRounds.set(slip, payload.round_id);
+            activeSlipSessions.set(slip, session.id);
+            if (Number.isFinite(session.stake)) {
+              slip.querySelector('.stake-input').value = session.stake.toFixed(2);
+            }
+            if (Number.isFinite(session.auto_cashout_at)) {
+              const autoInput = slip.querySelector('.auto-cashout-input');
+              if (autoInput) {
+                autoInput.value = session.auto_cashout_at.toFixed(2);
+              }
+              autoSlips.add(slip);
+              if (!autoRepeatStoppedSlips.has(slip)) {
+                autoRepeatSlips.add(slip);
+              }
+            } else if (!autoRepeatSlips.has(slip)) {
+              queuedSlips.delete(slip);
+            }
+          });
+          placeQueuedBets(payload.round_id);
+          syncSlipStates();
+          return;
+        }
+        if (payload.status === 'flying') {
+          if (phase !== 'flying' || currentSession?.round_id !== payload.round_id) {
+            activateFlight(payload, [], false, estimatedFlightElapsed);
+          } else {
+            if (Number.isFinite(estimatedFlightElapsed)) {
+              flightStartedAt = responseReceivedAt - estimatedFlightElapsed;
+            }
+            currentMultiplier = Number.isFinite(estimatedFlightElapsed)
+              ? 1 + Math.round(estimatedFlightElapsed / FLIGHT_TICK_MS) * FLIGHT_INCREMENT
+              : payload.current_multiplier;
+            multiplierValue.textContent = formatMultiplier(currentMultiplier);
+            const activeSessionIds = new Set(payload.session_ids || []);
+            activeSlipSessions.forEach((sessionId, slip) => {
+              if (!activeSessionIds.has(sessionId)) {
+                  const settledSession = payload.sessions?.find((session) => session.id === sessionId);
+                  if (settledSession?.cashed_out_at != null) {
+                    settledBets.set(slip, {
+                      cashed_out_at: settledSession.cashed_out_at,
+                      won_amount: settledSession.won_amount || 0,
+                    });
+                  }
+                  activeSlipSessions.delete(slip);
+                  cashedOutSlips.add(slip);
+                }
+            });
+            syncBetLabels();
+          }
+        } else if (payload.status === 'crashed') {
+          if (phase === 'flying' && currentSession?.round_id === payload.round_id) {
+            const reveal = await settleCrashedRound();
+            if (reveal?.success) {
+              finishCurrentFlight?.(payload.crash_point, Promise.resolve(reveal));
+            }
+          } else if (
+            phase !== 'flying'
+            && phase !== 'starting'
+            && lastHandledCrashRoundId !== payload.round_id
+          ) {
+            lastHandledCrashRoundId = payload.round_id;
+            phase = 'crashed';
+            multiplierValue.textContent = formatMultiplier(payload.crash_point);
+            setFairnessText('Seed', payload.server_seed);
+            gameMessage.textContent = 'Waiting for the next shared betting window.';
+          }
+        } else if (phase !== 'flying' && phase !== 'starting') {
+          gameMessage.textContent = 'Waiting for the next shared betting window.';
+        }
+      } catch (error) {
+        console.error('Unable to synchronize the shared game round.', error);
+      } finally {
+        syncingSharedState = false;
+      }
     }
 
     async function cashOutRound(button) {
@@ -1292,18 +1759,31 @@ function attachPlayWidget() {
       formData.append('action', 'cashout');
       formData.append('session_ids', String(sessionId));
 
-      const response = await fetch(window.aviatorConfig.playUrl, {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: formData,
-      });
-
-      const payload = await response.json();
+      let payload;
+      try {
+        const response = await fetch(window.aviatorConfig.playUrl, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: formData,
+        });
+        payload = await response.json();
+      } catch (error) {
+        console.error('Unable to confirm cashout.', error);
+        pendingCashoutSlips.delete(slip);
+        syncSlipStates();
+        gameMessage.textContent = 'Cashout confirmation is delayed. Checking the server for the settled result.';
+        syncSharedRound();
+        return;
+      }
       if (!payload.success) {
         pendingCashoutSlips.delete(slip);
         syncSlipStates();
+        if (payload.message?.includes('already been cashed out')) {
+          syncSharedRound();
+          return;
+        }
         gameMessage.textContent = payload.message || 'Unable to cash out.';
         return;
       }
@@ -1311,21 +1791,16 @@ function attachPlayWidget() {
       pendingCashoutSlips.delete(slip);
       gameMessage.textContent = payload.message;
       const balanceDisplay = document.querySelector('#play-balance strong');
-      if (balanceDisplay) {
-        balanceDisplay.textContent = payload.balance.toFixed(2);
-      }
+      setWalletBalance(payload.balance);
       cashedOutSlips.add(slip);
-      const row = activeSlipRows.get(slip);
-      if (row) {
-        row.multiplier = payload.cashout_multiplier;
-        row.win = payload.won_amount;
-        row.status = payload.status === 'won' ? 'won' : 'lost';
-      }
+      settledBets.set(slip, {
+        cashed_out_at: payload.cashout_multiplier,
+        won_amount: payload.won_amount,
+      });
       activeSlipSessions.delete(slip);
-      activeSlipRows.delete(slip);
       slip.classList.remove('is-running');
       syncSlipStates();
-      renderLedger();
+      loadLedger();
     }
 
     startButtons.forEach((button) => {
@@ -1334,7 +1809,34 @@ function attachPlayWidget() {
     cashoutButtons.forEach((button) => {
       button.addEventListener('click', () => cashOutRound(button));
     });
-    startBettingWindow();
+    ledgerPrevious?.addEventListener('click', () => {
+      if (ledgerHasPrevious && ledgerPreviousCursor) {
+        ledgerCursor = ledgerPreviousCursor;
+        ledgerPage -= 1;
+        loadLedger();
+      }
+    });
+    ledgerNext?.addEventListener('click', () => {
+      if (ledgerHasNext && ledgerNextCursor) {
+        ledgerCursor = ledgerNextCursor;
+        ledgerPage += 1;
+        loadLedger();
+      }
+    });
+    loadLedger();
+    const ledgerInterval = setInterval(loadLedger, 2500);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        loadLedger();
+        syncSharedRound();
+      }
+    });
+    window.addEventListener('pagehide', () => clearInterval(ledgerInterval), { once: true });
+    let bettingTimer = null;
+    let syncingSharedState = false;
+    syncSharedRound();
+    const sharedStateInterval = setInterval(syncSharedRound, 1000);
+    window.addEventListener('pagehide', () => clearInterval(sharedStateInterval), { once: true });
     return;
   }
 

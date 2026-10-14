@@ -1,23 +1,219 @@
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
+from itertools import count
 from unittest.mock import patch
+from urllib.error import HTTPError
 
-from django.contrib.auth.models import User
+from asgiref.sync import async_to_sync
+from channels.routing import URLRouter
+from channels.testing import WebsocketCommunicator
+from django.conf import settings
+from django.contrib import admin
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import AnonymousUser, User
+from django.core import mail
 from django.http import Http404, HttpResponse
-from django.test import RequestFactory, TestCase, override_settings
+from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
+from django.template.loader import render_to_string
+from django.urls import path, resolve
 from django.utils import timezone
 
-from .forms import WalletForm
-from .models import ChatMessage, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GamePresence, GameRound, GameSession, PaymentRequest, Profile, Referral, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, Transaction
+from .abuse import (
+    authorize_room_socket,
+    detect_account_creation_pattern,
+    detect_payment_pattern,
+    detect_reward_claim_pattern,
+)
+from .consumers import RoomSyncConsumer
+from .forms import (
+    AccountPasswordChangeForm,
+    AccountPasswordResetForm,
+    AccountSetPasswordForm,
+    WalletForm,
+)
+from .models import AuditLog, ChatMessage, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GamePresence, GameRound, GameSession, PaymentDispatchLock, PaymentRequest, Profile, Referral, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, SharedGameState, Transaction
 from .payment_gateway import IotecPayGateway, PaymentGatewayError, PaymentGatewayResult
-from .payment_services import apply_provider_result, initiate_deposit, initiate_withdrawal
+from .payment_services import apply_provider_result, initiate_deposit, initiate_withdrawal, process_next_queued_withdrawal
 from .reward_services import claim_reward
 from .utils import activate_self_exclusion, calculate_crash_point, can_deposit, create_game_round, generate_financial_report, hash_server_seed, is_self_excluded, reveal_game_round, verify_game_round
-from .views import play
+from .views import play, request_payload
+from . import security
+from .security import SecurityEventMiddleware
+
+
+_BET_REQUEST_IDS = count(1)
+
+
+def bet_payload(*stakes):
+    return json.dumps([
+        {'amount': stake, 'request_id': f'{next(_BET_REQUEST_IDS):032x}'}
+        for stake in stakes
+    ])
+
+
+def room_socket_application(user):
+    router = URLRouter([
+        path('ws/room/<int:room_id>/', RoomSyncConsumer.as_asgi()),
+    ])
+
+    async def add_user(scope, receive, send):
+        await router({**scope, 'user': user}, receive, send)
+
+    return add_user
 
 
 class AuthenticationTests(TestCase):
+    def test_auth_pages_display_clear_placeholders_and_forgot_password_link(self):
+        from .forms import PhoneOrUsernameAuthenticationForm, RegisterForm
+
+        login_page = render_to_string('core/login.html', {
+            'form': PhoneOrUsernameAuthenticationForm(),
+            'next': '',
+        })
+        register_page = render_to_string('core/register.html', {
+            'form': RegisterForm(),
+        })
+
+        self.assertIn('Username or 07XXXXXXXX', login_page)
+        self.assertIn('Enter your password', login_page)
+        self.assertIn('Forgot password?', login_page)
+        self.assertIn('Choose a username', register_page)
+        self.assertIn('name@example.com', register_page)
+        self.assertIn('Create a password', register_page)
+
+    def test_password_forms_have_professional_placeholders_and_autocomplete(self):
+        user = User.objects.create_user(username='placeholder-user', password='strong-test-pass')
+
+        change_form = AccountPasswordChangeForm(user)
+        reset_form = AccountPasswordResetForm()
+        set_password_form = AccountSetPasswordForm(user)
+
+        self.assertEqual(
+            change_form.fields['old_password'].widget.attrs['placeholder'],
+            'Enter your current password',
+        )
+        self.assertEqual(
+            change_form.fields['new_password1'].widget.attrs['autocomplete'],
+            'new-password',
+        )
+        self.assertEqual(
+            reset_form.fields['email'].widget.attrs['placeholder'],
+            'Enter the email on your account',
+        )
+        self.assertEqual(
+            set_password_form.fields['new_password2'].widget.attrs['placeholder'],
+            'Enter your new password again',
+        )
+        reset_page = render_to_string('core/password_reset_form.html', {
+            'form': reset_form,
+        })
+        reset_confirm_page = render_to_string('core/password_reset_confirm.html', {
+            'form': set_password_form,
+            'validlink': True,
+        })
+        self.assertIn('Enter the email on your account', reset_page)
+        self.assertIn('Choose a new password', reset_confirm_page)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_password_reset_sends_one_time_link_and_completes_end_to_end(self):
+        user = User.objects.create_user(
+            username='reset-player',
+            email='reset-player@example.com',
+            password='strong-test-pass',
+        )
+
+        request = RequestFactory().post(
+            '/account/password/reset/',
+            {'email': 'reset-player@example.com'},
+            HTTP_HOST='testserver',
+        )
+        request._dont_enforce_csrf_checks = True
+        response = resolve('/account/password/reset/').func(request)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], '/account/password/reset/sent/')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Reset your Pakabet password', mail.outbox[0].subject)
+        self.assertIn('one hour', mail.outbox[0].body)
+        reset_path = mail.outbox[0].body.split('http://testserver', 1)[1].split()[0]
+        uidb64, token = reset_path.rstrip('/').split('/')[-2:]
+        reset_link_view = resolve(reset_path).func
+        confirm_get = RequestFactory().get(reset_path, HTTP_HOST='testserver')
+        confirm_get.session = {}
+        confirm_response = reset_link_view(confirm_get, uidb64=uidb64, token=token)
+        self.assertEqual(confirm_response.status_code, 302)
+        reset_path = confirm_response['Location']
+
+        reset_post = RequestFactory().post(reset_path, {
+            'new_password1': 'New-reset-password-2026!',
+            'new_password2': 'New-reset-password-2026!',
+        }, HTTP_HOST='testserver')
+        reset_post._dont_enforce_csrf_checks = True
+        reset_post.session = confirm_get.session
+        reset = resolve(reset_path).func(reset_post, uidb64=uidb64, token='set-password')
+
+        self.assertEqual(reset.status_code, 302)
+        self.assertEqual(reset['Location'], '/account/password/reset/complete/')
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('New-reset-password-2026!'))
+        complete_request = RequestFactory().get('/account/password/reset/complete/')
+        complete_page = resolve('/account/password/reset/complete/').func(complete_request)
+        self.assertIn('Password updated', complete_page.render().content.decode())
+        invalid_request = RequestFactory().get(reset_path)
+        invalid_request.session = confirm_get.session
+        invalid_link = resolve(reset_path).func(invalid_request, uidb64=uidb64, token='set-password')
+        self.assertIn('no longer valid', invalid_link.render().content.decode())
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_password_reset_response_does_not_disclose_unknown_email(self):
+        missing_request = RequestFactory().post(
+            '/account/password/reset/',
+            {'email': 'no-account@example.com'},
+            HTTP_HOST='testserver',
+        )
+        missing_request._dont_enforce_csrf_checks = True
+        existing = resolve('/account/password/reset/').func(missing_request)
+        missing_account_mail_count = len(mail.outbox)
+
+        user = User.objects.create_user(
+            username='existing-reset-player',
+            email='existing-reset@example.com',
+            password='strong-test-pass',
+        )
+        matching_request = RequestFactory().post(
+            '/account/password/reset/',
+            {'email': user.email},
+            HTTP_HOST='testserver',
+        )
+        matching_request._dont_enforce_csrf_checks = True
+        matching = resolve('/account/password/reset/').func(matching_request)
+
+        self.assertEqual(existing.status_code, 302)
+        self.assertEqual(existing['Location'], '/account/password/reset/sent/')
+        self.assertEqual(matching.status_code, 302)
+        self.assertEqual(matching['Location'], '/account/password/reset/sent/')
+        self.assertEqual(missing_account_mail_count, 0)
+        self.assertEqual(len(mail.outbox), 1)
+
+        User.objects.create_user(
+            username='duplicate-reset-player',
+            email=user.email,
+            password='strong-test-pass',
+        )
+        duplicate_request = RequestFactory().post(
+            '/account/password/reset/',
+            {'email': user.email},
+            HTTP_HOST='testserver',
+        )
+        duplicate_request._dont_enforce_csrf_checks = True
+        duplicate_response = resolve('/account/password/reset/').func(duplicate_request)
+
+        self.assertEqual(duplicate_response.status_code, 302)
+        self.assertEqual(duplicate_response['Location'], '/account/password/reset/sent/')
+        self.assertEqual(len(mail.outbox), 1)
+
     def test_protected_account_pages_redirect_to_project_login(self):
         response = self.client.get('/profile/')
 
@@ -26,7 +222,7 @@ class AuthenticationTests(TestCase):
     def test_guest_game_actions_require_login(self):
         bet_response = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         })
 
         self.assertEqual(bet_response.status_code, 401)
@@ -87,6 +283,101 @@ class AuthenticationTests(TestCase):
 
         self.assertRedirects(registration, '/play/')
         self.assertEqual(User.objects.get(username='kenya-player').profile.phone_number, '254712345678')
+
+
+class SecurityMonitoringTests(TestCase):
+    def setUp(self):
+        security._configuration_check_complete = False
+
+    def tearDown(self):
+        security._configuration_check_complete = False
+
+    @override_settings(
+        ADMINS=[('Security', 'security@example.com')],
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        SECURITY_LOGIN_FAILURE_THRESHOLD=2,
+        SECURITY_LOGIN_FAILURE_WINDOW_SECONDS=600,
+        SECURITY_ALERT_COOLDOWN_SECONDS=900,
+    )
+    def test_repeated_failed_logins_alert_without_recording_password(self):
+        submitted_password = 'never-store-this-password'
+        request = RequestFactory().post('/login/', REMOTE_ADDR='203.0.113.24')
+        authenticate(request=request, username='unknown-player', password=submitted_password)
+        authenticate(request=request, username='unknown-player', password=submitted_password)
+
+        login_failures = AuditLog.objects.filter(
+            action_type='risk_alert',
+            data__event='login_failed',
+        )
+        self.assertEqual(login_failures.count(), 2)
+        self.assertEqual(AuditLog.objects.filter(
+            action_type='risk_alert',
+            data__event='login_failure_alert',
+        ).count(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('repeated failed logins', mail.outbox[0].subject)
+        self.assertNotIn(submitted_password, mail.outbox[0].body)
+        for entry in AuditLog.objects.filter(action_type='risk_alert'):
+            self.assertNotIn(submitted_password, str(entry.data))
+            self.assertNotIn(submitted_password, entry.description)
+
+    def test_forbidden_responses_are_logged_with_route_not_request_data(self):
+        request = RequestFactory().post(
+            '/wallet/',
+            {'payment_token': 'do-not-log-this'},
+            REMOTE_ADDR='203.0.113.12',
+        )
+        request.user = AnonymousUser()
+        request.resolver_match = resolve('/wallet/')
+        response = SecurityEventMiddleware(
+            lambda _request: HttpResponse(status=403),
+        )(request)
+
+        self.assertEqual(response.status_code, 403)
+        event = AuditLog.objects.get(
+            action_type='risk_alert',
+            data__event='permission_denied',
+        )
+        self.assertEqual(event.ip_address, '203.0.113.12')
+        self.assertEqual(event.data['route'], 'wallet/')
+        self.assertNotIn('payment_token', str(event.data))
+        self.assertNotIn('do-not-log-this', str(event.data))
+
+    @override_settings(
+        ADMINS=[('Security', 'security@example.com')],
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        IOTEC_PAY_CALLBACK_TOKEN='do-not-log-this-callback-token',
+    )
+    def test_security_configuration_changes_alert_without_recording_secrets(self):
+        middleware = SecurityEventMiddleware(lambda _request: HttpResponse(status=200))
+        request = RequestFactory().get('/', REMOTE_ADDR='203.0.113.20')
+        request.user = AnonymousUser()
+        middleware(request)
+
+        security._configuration_check_complete = False
+        with override_settings(DEBUG=not settings.DEBUG):
+            middleware(request)
+
+        snapshot = AuditLog.objects.filter(
+            action_type='risk_alert',
+            data__event='configuration_snapshot',
+        ).order_by('-created_at').first()
+        self.assertIn('changed_settings', snapshot.data)
+        self.assertIn('debug', snapshot.data['changed_settings'])
+        self.assertNotIn('do-not-log-this-callback-token', str(snapshot.data))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertNotIn('do-not-log-this-callback-token', mail.outbox[0].body)
+
+    def test_audit_logs_are_visible_only_to_superusers_and_never_editable(self):
+        log_admin = admin.site._registry[AuditLog]
+        request = RequestFactory().get('/admin/core/auditlog/')
+        staff_user = User(is_staff=True, is_superuser=False)
+        request.user = staff_user
+
+        self.assertFalse(log_admin.has_view_permission(request))
+        self.assertFalse(log_admin.has_add_permission(request))
+        self.assertFalse(log_admin.has_change_permission(request))
+        self.assertFalse(log_admin.has_delete_permission(request))
 
 
 class ReferralFeatureTests(TestCase):
@@ -241,6 +532,34 @@ class IotecGatewayRequestTests(TestCase):
 
         self.assertTrue(raised.exception.retryable)
         urlopen.assert_called_once()
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header('Authorization'), 'Bearer test-token')
+
+    @patch(
+        'core.payment_gateway.request.urlopen',
+        side_effect=HTTPError(
+            'https://pay.example.test/disburse',
+            400,
+            'Bad Request',
+            {},
+            BytesIO(b'{"code":"InsufficientBalance","message":"Insufficient funds"}'),
+        ),
+    )
+    def test_insufficient_balance_error_is_classified_without_exposing_response_body(self, urlopen):
+        gateway = IotecPayGateway()
+
+        with self.assertRaises(PaymentGatewayError) as raised:
+            gateway._json_request(
+                'https://pay.example.test/disburse',
+                data=b'{}',
+                headers={},
+                auth=False,
+            )
+
+        self.assertTrue(raised.exception.insufficient_balance)
+        self.assertEqual(raised.exception.provider_code, 'InsufficientBalance')
+        self.assertNotIn('Insufficient funds', str(raised.exception))
+        urlopen.assert_called_once()
 
     @override_settings(
         IOTEC_PAY_MODE='live',
@@ -387,6 +706,83 @@ class PlayEndpointTests(TestCase):
         self.profile = Profile.objects.create(user=self.user, balance=Decimal('1000.00'))
         self.client.login(username='player', password='strong-test-pass')
 
+    def test_online_count_endpoint_counts_unique_recent_players_from_server_presence(self):
+        other_user = User.objects.create_user(
+            username='other-player',
+            password='strong-test-pass',
+        )
+        active_time = timezone.now()
+        GamePresence.objects.create(
+            user=self.user,
+            presence_key='a' * 32,
+            last_seen=active_time,
+        )
+        GamePresence.objects.create(
+            user=self.user,
+            presence_key='b' * 32,
+            last_seen=active_time,
+        )
+        GamePresence.objects.create(
+            user=other_user,
+            presence_key='c' * 32,
+            last_seen=active_time,
+        )
+        GamePresence.objects.create(
+            user=other_user,
+            presence_key='d' * 32,
+            last_seen=active_time - timedelta(minutes=5),
+        )
+
+        response = self.client.get('/api/online-count/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'online_count': 2})
+
+    def test_presence_leave_removes_only_the_current_browser_presence(self):
+        presence_key = 'a' * 32
+        GamePresence.objects.create(
+            user=self.user,
+            presence_key=presence_key,
+            last_seen=timezone.now(),
+        )
+        GamePresence.objects.create(
+            user=self.user,
+            presence_key='b' * 32,
+            last_seen=timezone.now(),
+        )
+
+        response = self.client.post('/play/', {
+            'action': 'presence_leave',
+            'presence_key': presence_key,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            GamePresence.objects.filter(
+                user=self.user,
+                presence_key=presence_key,
+            ).exists()
+        )
+        self.assertTrue(
+            GamePresence.objects.filter(
+                user=self.user,
+                presence_key='b' * 32,
+            ).exists()
+        )
+
+    def test_play_page_renders_actual_initial_online_count(self):
+        GamePresence.objects.create(
+            user=self.user,
+            presence_key='a' * 32,
+            last_seen=timezone.now(),
+        )
+
+        with patch('core.views.render', return_value=HttpResponse('ok')) as render_page:
+            response = self.client.get('/play/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(render_page.call_args.args[2]['online_count'], 1)
+
     def test_fairness_modal_shows_saved_seed_and_players_latest_commitment(self):
         game_round = create_game_round(self.user)
         GameSession.objects.create(
@@ -407,7 +803,7 @@ class PlayEndpointTests(TestCase):
     def test_start_round_commits_seed_and_debits_wallet(self):
         response = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10, 20]),
+            'bet_data': bet_payload(10, 20),
         })
 
         self.assertEqual(response.status_code, 200)
@@ -441,11 +837,269 @@ class PlayEndpointTests(TestCase):
     def test_start_round_does_not_reveal_crash_point(self):
         response = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         })
 
         self.assertEqual(response.status_code, 200)
         self.assertNotIn('crash_point', response.json())
+
+    @patch('core.utils.calculate_crash_point', return_value=Decimal('3.21'))
+    def test_bet_ignores_client_balance_and_round_odds(self, _calculate_crash_point):
+        forged_bet = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([{
+                'amount': 10,
+                'crash_point': '99999.99',
+                'odds': '99999.99',
+            }]),
+        })
+        self.assertEqual(forged_bet.status_code, 400)
+
+        response = self.client.post('/play/', {
+            'action': 'start',
+            'balance': '999999999.99',
+            'crash_point': '99999.99',
+            'bet_data': json.dumps([{
+                'amount': 10,
+                'request_id': 'f' * 32,
+            }]),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        game_round = GameRound.objects.get(public_id=response.json()['round_id'])
+        session = GameSession.objects.get(id=response.json()['session_ids'][0])
+        self.profile.refresh_from_db()
+
+        self.assertEqual(game_round.crash_point, Decimal('3.21'))
+        self.assertEqual(session.crash_point, game_round.crash_point)
+        self.assertEqual(self.profile.balance, Decimal('990.00'))
+
+    @patch('core.utils.calculate_crash_point', return_value=Decimal('3.21'))
+    def test_sql_injection_shaped_bet_and_cashout_inputs_are_rejected(self, _calculate_crash_point):
+        original_balance = self.profile.balance
+        invalid_bet = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps(['10); UPDATE core_profile SET balance=999999']),
+        })
+        self.assertEqual(invalid_bet.status_code, 400)
+
+        valid_bet = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(10),
+        })
+        self.assertEqual(valid_bet.status_code, 200)
+        session = GameSession.objects.get(id=valid_bet.json()['session_ids'][0])
+        balance_after_bet = original_balance - Decimal('10.00')
+
+        invalid_cashout = self.client.post('/play/', {
+            'action': 'cashout',
+            'session_ids': f'{session.id} OR 1=1',
+        })
+
+        session.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(invalid_cashout.status_code, 400)
+        self.assertIsNone(session.cashed_out_at)
+        self.assertEqual(self.profile.balance, balance_after_bet)
+
+    def test_state_opens_one_shared_betting_window_and_flight_starts_at_its_deadline(self):
+        first_state = self.client.post('/play/', {'action': 'state'}).json()
+        second_state = self.client.post('/play/', {'action': 'state'}).json()
+        game_round = GameRound.objects.get(public_id=first_state['round_id'])
+
+        self.assertEqual(first_state['status'], 'betting')
+        self.assertEqual(second_state['round_id'], first_state['round_id'])
+        self.assertEqual(second_state['status'], 'betting')
+        self.assertIn('server_time', first_state)
+        self.assertEqual(GameRound.objects.count(), 1)
+
+        game_round.crash_point = Decimal('40.00')
+        game_round.betting_ends_at = timezone.now() - timedelta(milliseconds=1)
+        game_round.save(update_fields=['crash_point', 'betting_ends_at'])
+        flight_state = self.client.post('/play/', {'action': 'state'}).json()
+
+        game_round.refresh_from_db()
+        self.assertEqual(flight_state['status'], 'flying')
+        self.assertEqual(game_round.status, 'flying')
+        self.assertEqual(game_round.started_at, game_round.betting_ends_at)
+        self.assertIn('server_time', flight_state)
+        snapshot_time = datetime.fromisoformat(flight_state['server_time'])
+        elapsed = max((snapshot_time - game_round.started_at).total_seconds(), 0)
+        expected_multiplier = (
+            Decimal('1.00') + Decimal(str(elapsed)) * Decimal('0.10')
+        ).quantize(Decimal('0.01'))
+        self.assertEqual(Decimal(str(flight_state['current_multiplier'])), expected_multiplier)
+
+    def test_guest_state_starts_a_shared_round_after_the_previous_round_crashes(self):
+        crashed_round = create_game_round(self.user)
+        crashed_round.status = 'crashed'
+        crashed_round.server_seed = crashed_round.server_seed_private
+        crashed_round.save(update_fields=['status', 'server_seed'])
+        SharedGameState.objects.create(active_round=crashed_round)
+        self.client.logout()
+
+        state = self.client.post('/play/', {'action': 'state'}).json()
+
+        self.assertEqual(state['status'], 'betting')
+        new_round = GameRound.objects.get(public_id=state['round_id'])
+        self.assertIsNone(new_round.created_by)
+        self.assertEqual(SharedGameState.objects.get(pk=1).active_round, new_round)
+
+    def test_bet_request_is_idempotent_within_the_shared_betting_window(self):
+        request_id = 'a' * 32
+        bet_data = json.dumps([{
+            'amount': 25,
+            'auto_cashout_at': 2,
+            'request_id': request_id,
+        }])
+
+        first = self.client.post('/play/', {'action': 'start', 'bet_data': bet_data})
+        retry = self.client.post('/play/', {'action': 'start', 'bet_data': bet_data})
+
+        self.profile.refresh_from_db()
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(first.json()['session_ids'], retry.json()['session_ids'])
+        self.assertEqual(GameSession.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(self.profile.balance, Decimal('975.00'))
+        session = GameSession.objects.get(user=self.user)
+        self.assertEqual(session.auto_cashout_at, Decimal('2.00'))
+
+        changed_retry = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([{
+                'amount': 30,
+                'auto_cashout_at': 2,
+                'request_id': request_id,
+            }]),
+        })
+        self.profile.refresh_from_db()
+        self.assertEqual(changed_retry.status_code, 409)
+        self.assertEqual(self.profile.balance, Decimal('975.00'))
+
+    def test_bet_request_requires_a_request_identifier(self):
+        response = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([10]),
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(GameSession.objects.filter(user=self.user).count(), 0)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+
+    @override_settings(
+        SECURITY_BET_ACCOUNT_LIMIT=1,
+        SECURITY_BET_IP_LIMIT=100,
+        SECURITY_GAME_RATE_WINDOW_SECONDS=60,
+    )
+    def test_bet_rate_limit_records_signal_and_rejects_excess_request(self):
+        first = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(10),
+        })
+        second = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(10),
+        })
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        self.assertTrue(second.json()['rate_limited'])
+        self.assertEqual(GameSession.objects.filter(user=self.user).count(), 1)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('990.00'))
+        self.assertTrue(AuditLog.objects.filter(
+            action_type='risk_alert',
+            data__event='rate_limit_exceeded',
+            data__action='bet',
+            user=self.user,
+        ).exists())
+
+    @override_settings(
+        SECURITY_BET_ACCOUNT_LIMIT=100,
+        SECURITY_BET_IP_LIMIT=1,
+        SECURITY_GAME_RATE_WINDOW_SECONDS=60,
+    )
+    def test_bet_rate_limit_is_shared_across_accounts_at_the_same_ip(self):
+        first = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(10),
+        })
+        other_user = User.objects.create_user(
+            username='same-ip-player',
+            email='same-ip@example.com',
+            password='strong-test-pass',
+        )
+        other_profile = Profile.objects.create(user=other_user, balance=Decimal('1000.00'))
+        self.client.force_login(other_user)
+        second = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(10),
+        })
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(GameSession.objects.filter(user=other_user).count(), 0)
+        other_profile.refresh_from_db()
+        self.assertEqual(other_profile.balance, Decimal('1000.00'))
+
+    def test_insufficient_balance_bet_returns_specific_code_without_debit(self):
+        self.profile.balance = Decimal('10.00')
+        self.profile.save(update_fields=['balance'])
+
+        response = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(25),
+        })
+
+        self.profile.refresh_from_db()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['code'], 'insufficient_balance')
+        self.assertEqual(response.json()['balance'], 10.0)
+        self.assertEqual(self.profile.balance, Decimal('10.00'))
+        self.assertFalse(GameSession.objects.filter(user=self.user).exists())
+
+    def test_invalid_or_repeated_bet_requests_do_not_create_zero_value_bets(self):
+        tiny_bet = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([{
+                'amount': 0.001,
+                'request_id': 'c' * 32,
+            }]),
+        })
+        duplicate_ids = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([
+                {'amount': 5, 'request_id': 'd' * 32},
+                {'amount': 10, 'request_id': 'd' * 32},
+            ]),
+        })
+
+        self.profile.refresh_from_db()
+        self.assertEqual(tiny_bet.status_code, 400)
+        self.assertEqual(duplicate_ids.status_code, 400)
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        self.assertFalse(GameSession.objects.filter(user=self.user).exists())
+
+    def test_bet_after_shared_deadline_is_rejected_without_debit(self):
+        state = self.client.post('/play/', {'action': 'state'}).json()
+        game_round = GameRound.objects.get(public_id=state['round_id'])
+        game_round.crash_point = Decimal('40.00')
+        game_round.betting_ends_at = timezone.now() - timedelta(milliseconds=1)
+        game_round.save(update_fields=['crash_point', 'betting_ends_at'])
+        response = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(10),
+        })
+
+        self.profile.refresh_from_db()
+        game_round.refresh_from_db()
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['code'], 'betting_closed')
+        self.assertEqual(game_round.status, 'flying')
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        self.assertFalse(GameSession.objects.filter(user=self.user).exists())
 
     def test_server_starts_and_tracks_no_bet_rounds_without_exposing_the_outcome(self):
         balance_before = self.profile.balance
@@ -465,14 +1119,16 @@ class PlayEndpointTests(TestCase):
         self.assertEqual(game_round.created_by, self.user)
         self.assertFalse(GameSession.objects.filter(round=game_round).exists())
 
-    def test_server_rejects_a_second_round_while_the_users_round_is_flying(self):
+    def test_start_joins_the_shared_round_while_it_is_flying(self):
         first = self.client.post('/play/', {
             'action': 'start',
             'bet_data': json.dumps([]),
         })
         first_round = GameRound.objects.get(public_id=first.json()['round_id'])
         first_round.crash_point = Decimal('40.00')
-        first_round.save(update_fields=['crash_point'])
+        first_round.status = 'flying'
+        first_round.started_at = timezone.now()
+        first_round.save(update_fields=['crash_point', 'status', 'started_at'])
 
         second = self.client.post('/play/', {
             'action': 'start',
@@ -480,8 +1136,180 @@ class PlayEndpointTests(TestCase):
         })
 
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 409)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()['round_id'], first.json()['round_id'])
         self.assertEqual(GameRound.objects.filter(created_by=self.user).count(), 1)
+
+    def test_different_players_share_one_round_and_refresh_restores_it(self):
+        first = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(10),
+        })
+        first_round = GameRound.objects.get(public_id=first.json()['round_id'])
+        first_round.crash_point = Decimal('40.00')
+        first_round.save(update_fields=['crash_point'])
+
+        other_user = User.objects.create_user(
+            username='other-player',
+            email='other@example.com',
+            password='strong-test-pass',
+        )
+        Profile.objects.create(user=other_user, balance=Decimal('1000.00'))
+        self.client.force_login(other_user)
+        second = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(20),
+        })
+
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()['round_id'], first.json()['round_id'])
+        self.assertEqual(GameRound.objects.count(), 1)
+        self.assertEqual(GameSession.objects.filter(round=first_round).count(), 2)
+        self.assertEqual(SharedGameState.objects.get(pk=1).active_round, first_round)
+
+        refreshed_state = self.client.post('/play/', {'action': 'state'}).json()
+        self.assertEqual(refreshed_state['round_id'], first.json()['round_id'])
+        self.assertEqual(refreshed_state['status'], 'betting')
+        self.assertNotIn('crash_point', refreshed_state)
+        self.assertEqual(refreshed_state['session_ids'], second.json()['session_ids'])
+        self.assertEqual(refreshed_state['sessions'][0]['stake'], 20.0)
+        self.client.logout()
+        guest_state = self.client.post('/play/', {'action': 'state'}).json()
+        self.assertEqual(guest_state['round_id'], first.json()['round_id'])
+        self.assertEqual(guest_state['session_ids'], [])
+
+    def test_shared_round_state_reveals_crash_after_the_flight_ends(self):
+        started = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([]),
+        })
+        game_round = GameRound.objects.get(public_id=started.json()['round_id'])
+        game_round.crash_point = Decimal('1.01')
+        game_round.status = 'flying'
+        game_round.started_at = timezone.now() - timedelta(seconds=1)
+        game_round.save(update_fields=['crash_point', 'status', 'started_at'])
+
+        state = self.client.post('/play/', {'action': 'state'}).json()
+
+        game_round.refresh_from_db()
+        self.assertEqual(state['round_id'], game_round.public_id)
+        self.assertEqual(state['status'], 'crashed')
+        self.assertEqual(state['crash_point'], 1.01)
+        self.assertTrue(game_round.is_revealed)
+
+    def test_live_ledger_uses_current_round_bets_and_pages_with_a_fixed_limit(self):
+        started = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': bet_payload(1),
+        })
+        game_round = GameRound.objects.get(public_id=started.json()['round_id'])
+        players = User.objects.bulk_create([
+            User(username=f'ledger-player-{index}')
+            for index in range(50)
+        ])
+        sessions = [
+            GameSession(
+                user=player,
+                round=game_round,
+                stake=Decimal(index + 2),
+                crash_point=game_round.crash_point,
+            )
+            for index, player in enumerate(players)
+        ]
+        sessions[20].cashed_out_at = Decimal('2.00')
+        sessions[20].won_amount = Decimal('75.00')
+        sessions[49].cashed_out_at = Decimal('2.00')
+        sessions[49].won_amount = Decimal('110.00')
+        GameSession.objects.bulk_create(sessions)
+        game_round.bet_count = 51
+        game_round.winning_bet_count = 2
+        game_round.save(update_fields=['bet_count', 'winning_bet_count'])
+
+        all_first_page = self.client.post('/play/', {
+            'action': 'ledger',
+            'tab': 'all',
+        }).json()
+        all_second_page = self.client.post('/play/', {
+            'action': 'ledger',
+            'tab': 'all',
+            'cursor': all_first_page['next_cursor'],
+        }).json()
+        top = self.client.post('/play/', {
+            'action': 'ledger',
+            'tab': 'top',
+        }).json()
+        mine = self.client.post('/play/', {
+            'action': 'ledger',
+            'tab': 'mine',
+        }).json()
+
+        self.assertEqual(all_first_page['total_count'], 51)
+        self.assertEqual(all_first_page['tab_count'], 51)
+        self.assertEqual(len(all_first_page['rows']), 50)
+        self.assertEqual(all_first_page['rows'][0]['bet'], 51.0)
+        self.assertEqual(all_first_page['rows'][0]['user'], 'ledger-player-49')
+        self.assertTrue(all_first_page['has_next'])
+        self.assertIsNone(all_first_page['previous_cursor'])
+        self.assertEqual(len(all_second_page['rows']), 1)
+        self.assertEqual(all_second_page['rows'][0]['bet'], 1.0)
+        self.assertTrue(all_second_page['has_previous'])
+        self.assertFalse(all_second_page['has_next'])
+        all_previous_page = self.client.post('/play/', {
+            'action': 'ledger',
+            'tab': 'all',
+            'cursor': all_second_page['previous_cursor'],
+        }).json()
+        self.assertEqual(all_previous_page['rows'], all_first_page['rows'])
+        self.assertEqual([row['win'] for row in top['rows']], [110.0, 75.0])
+        self.assertEqual(top['tab_count'], 2)
+        self.assertEqual([row['bet'] for row in mine['rows']], [1.0])
+
+    def test_my_bets_lists_all_rounds_for_24_hours_and_keeps_old_records(self):
+        game_round = create_game_round(self.user)
+        previous_round = create_game_round(self.user)
+        now = timezone.now()
+        recent_sessions = [
+            GameSession(
+                user=self.user,
+                round=game_round,
+                stake=Decimal(index + 1),
+                crash_point=game_round.crash_point,
+                created_at=now - timedelta(minutes=index),
+            )
+            for index in range(51)
+        ]
+        recent_sessions[0].round = previous_round
+        GameSession.objects.bulk_create(recent_sessions)
+        expired_session = GameSession.objects.create(
+            user=self.user,
+            round=game_round,
+            stake=Decimal('99.00'),
+            crash_point=game_round.crash_point,
+            created_at=now - timedelta(days=1, seconds=1),
+        )
+
+        first_page = self.client.post('/play/', {
+            'action': 'ledger',
+            'tab': 'mine',
+        }).json()
+        second_page = self.client.post('/play/', {
+            'action': 'ledger',
+            'tab': 'mine',
+            'cursor': first_page['next_cursor'],
+        }).json()
+        previous_page = self.client.post('/play/', {
+            'action': 'ledger',
+            'tab': 'mine',
+            'cursor': second_page['previous_cursor'],
+        }).json()
+
+        self.assertEqual(first_page['total_count'], 51)
+        self.assertEqual(first_page['tab_count'], 51)
+        self.assertEqual(len(first_page['rows']), 50)
+        self.assertEqual(len(second_page['rows']), 1)
+        self.assertEqual(second_page['total_count'], 51)
+        self.assertEqual(previous_page['rows'], first_page['rows'])
+        self.assertTrue(GameSession.objects.filter(pk=expired_session.pk).exists())
 
     def test_owner_can_reveal_a_completed_no_bet_round(self):
         start = self.client.post('/play/', {
@@ -523,15 +1351,55 @@ class PlayEndpointTests(TestCase):
         other_round.refresh_from_db()
         self.assertFalse(other_round.server_seed)
 
+    @patch('core.views.multiplier_at_elapsed_time', return_value=Decimal('5.00'))
+    def test_server_auto_cashout_credits_the_configured_target(self, _multiplier):
+        start = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([{
+                'amount': 10,
+                'auto_cashout_at': 2,
+                'request_id': 'b' * 32,
+            }]),
+        }).json()
+        game_round = GameRound.objects.get(public_id=start['round_id'])
+        session = GameSession.objects.get(id=start['session_ids'][0])
+        game_round.crash_point = Decimal('10.00')
+        game_round.status = 'flying'
+        game_round.started_at = timezone.now() - timedelta(seconds=10)
+        game_round.save(update_fields=['crash_point', 'status', 'started_at'])
+
+        state = self.client.post('/play/', {'action': 'state'}).json()
+        repeated_state = self.client.post('/play/', {'action': 'state'}).json()
+
+        session.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(state['status'], 'flying')
+        self.assertEqual(repeated_state['status'], 'flying')
+        self.assertEqual(session.cashed_out_at, Decimal('2.00'))
+        self.assertEqual(session.won_amount, Decimal('20.00'))
+        self.assertEqual(self.profile.balance, Decimal('1010.00'))
+        self.assertEqual(
+            Transaction.objects.filter(
+                user=self.user,
+                reference=game_round.public_id,
+                transaction_type='win',
+            ).count(),
+            1,
+        )
+
     def test_successful_cashout_before_crash_does_not_reveal_crash_point(self):
         start = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         }).json()
         game_round = GameRound.objects.get(public_id=start['round_id'])
+        session = GameSession.objects.get(id=start['session_ids'][0])
         game_round.crash_point = Decimal('10.00')
+        game_round.status = 'flying'
         game_round.started_at = timezone.now()
-        game_round.save(update_fields=['crash_point', 'started_at'])
+        game_round.save(update_fields=['crash_point', 'status', 'started_at'])
+        session.crash_point = game_round.crash_point
+        session.save(update_fields=['crash_point'])
 
         response = self.client.post('/play/', {
             'action': 'cashout',
@@ -543,16 +1411,50 @@ class PlayEndpointTests(TestCase):
         payload = response.json()
         self.assertEqual(payload['status'], 'won')
         self.assertIsNone(payload['crash_point'])
+        game_round.refresh_from_db()
+        self.assertEqual(game_round.winning_bet_count, 1)
+
+    @patch('core.views.multiplier_at_elapsed_time', return_value=Decimal('1.25'))
+    def test_manual_cashout_before_auto_target_uses_current_server_multiplier(self, _multiplier):
+        start = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([{
+                'amount': 10,
+                'auto_cashout_at': 2,
+                'request_id': 'e' * 32,
+            }]),
+        }).json()
+        game_round = GameRound.objects.get(public_id=start['round_id'])
+        session = GameSession.objects.get(id=start['session_ids'][0])
+        game_round.crash_point = Decimal('10.00')
+        game_round.status = 'flying'
+        game_round.started_at = timezone.now()
+        game_round.save(update_fields=['crash_point', 'status', 'started_at'])
+        session.crash_point = game_round.crash_point
+        session.save(update_fields=['crash_point'])
+
+        response = self.client.post('/play/', {
+            'action': 'cashout',
+            'session_ids': str(start['session_ids'][0]),
+        })
+
+        session.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['cashout_multiplier'], 1.25)
+        self.assertEqual(session.cashed_out_at, Decimal('1.25'))
+        self.assertEqual(session.won_amount, Decimal('12.50'))
 
     @patch('core.views.multiplier_at_elapsed_time', return_value=Decimal('1.25'))
     def test_cashout_ignores_client_multiplier_and_uses_server_multiplier(self, _multiplier):
         start = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         }).json()
         game_round = GameRound.objects.get(public_id=start['round_id'])
         game_round.crash_point = Decimal('10.00')
-        game_round.save(update_fields=['crash_point'])
+        game_round.status = 'flying'
+        game_round.started_at = timezone.now()
+        game_round.save(update_fields=['crash_point', 'status', 'started_at'])
         session = GameSession.objects.get(id=start['session_ids'][0])
         session.crash_point = Decimal('10.00')
         session.save(update_fields=['crash_point'])
@@ -571,10 +1473,28 @@ class PlayEndpointTests(TestCase):
         self.assertEqual(session.won_amount, Decimal('12.50'))
         self.assertEqual(self.profile.balance, Decimal('1002.50'))
 
+        retry = self.client.post('/play/', {
+            'action': 'cashout',
+            'session_ids': str(session.id),
+            'cashout_multiplier': '100.00',
+        })
+        self.profile.refresh_from_db()
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry.json()['won_amount'], 12.5)
+        self.assertEqual(self.profile.balance, Decimal('1002.50'))
+        self.assertEqual(
+            Transaction.objects.filter(
+                user=self.user,
+                reference=game_round.public_id,
+                transaction_type='win',
+            ).count(),
+            1,
+        )
+
     def test_cashout_rejects_sessions_from_different_rounds(self):
         start = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         }).json()
         other_round = create_game_round(self.user)
         other_session = GameSession.objects.create(
@@ -835,7 +1755,7 @@ class PlayEndpointTests(TestCase):
     def test_round_seed_cannot_be_revealed_before_server_crash_time(self):
         start = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         }).json()
         game_round = GameRound.objects.get(public_id=start['round_id'])
         game_round.crash_point = Decimal('10.00')
@@ -851,7 +1771,7 @@ class PlayEndpointTests(TestCase):
     def test_round_reveals_after_server_crash_time_and_verifies(self):
         start = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         }).json()
         game_round = GameRound.objects.get(public_id=start['round_id'])
         game_round.started_at = timezone.now() - timedelta(seconds=(float(game_round.crash_point) - 1) / 0.10 + 1)
@@ -880,7 +1800,7 @@ class PlayEndpointTests(TestCase):
 
         response = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         })
 
         self.assertEqual(response.status_code, 403)
@@ -935,6 +1855,19 @@ class RoomEndpointTests(TestCase):
         self.assertEqual(player.won_amount, Decimal('15.00'))
         self.assertEqual(self.profile.balance, Decimal('1015.00'))
 
+        replay = self.client.post(f'/rooms/{self.room.id}/action/', {
+            'action': 'cashout',
+            'cashout_multiplier': '100.00',
+        })
+        self.profile.refresh_from_db()
+        self.assertEqual(replay.status_code, 409)
+        self.assertEqual(self.profile.balance, Decimal('1015.00'))
+        self.assertTrue(AuditLog.objects.filter(
+            action_type='risk_alert',
+            data__event='room_cashout_replay',
+            user=self.user,
+        ).exists())
+
     def test_self_exclusion_blocks_joining_a_room(self):
         room = Room.objects.create(name='Join Room', host=self.user)
         SelfExclusion.objects.create(
@@ -967,6 +1900,200 @@ class RoomEndpointTests(TestCase):
         self.assertIn('self-excluded', response.json()['message'])
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'waiting')
+
+
+class AbuseAndWebSocketTests(TransactionTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='abuse-player',
+            email='abuse@example.com',
+            password='strong-test-pass',
+        )
+        self.room = Room.objects.create(name='Socket Room', host=self.user)
+        RoomPlayer.objects.create(room=self.room, user=self.user, stake=Decimal('10.00'))
+
+    def test_account_creation_and_payment_volume_are_investigation_signals(self):
+        request = RequestFactory().post('/register/', REMOTE_ADDR='203.0.113.31')
+        request.user = self.user
+        for _ in range(4):
+            detect_account_creation_pattern(request, self.user)
+        detect_payment_pattern(request, self.user)
+        for _ in range(8):
+            detect_payment_pattern(request, self.user)
+
+        self.assertTrue(AuditLog.objects.filter(
+            data__event='unusual_account_creation_volume',
+            user=self.user,
+        ).exists())
+        self.assertTrue(AuditLog.objects.filter(
+            data__event='unusual_payment_request_volume',
+            user=self.user,
+        ).exists())
+        self.assertEqual(AuditLog.objects.filter(
+            data__event='unusual_account_creation_volume',
+            user=self.user,
+        ).count(), 1)
+
+    def test_shared_reward_ip_and_user_agent_are_recorded_as_weak_signals(self):
+        now = timezone.now()
+        event = RewardEvent.objects.create(
+            title='Shared identity test',
+            description='',
+            total_reward_pool=Decimal('100.00'),
+            remaining_reward_pool=Decimal('100.00'),
+            maximum_claims=10,
+            reward_per_claim=Decimal('10.00'),
+            starts_at=now - timedelta(minutes=1),
+            ends_at=now + timedelta(hours=1),
+            created_by=self.user,
+        )
+        for index in range(3):
+            claimant = User.objects.create_user(
+                username=f'reward-claimant-{index}',
+                email=f'reward-claimant-{index}@example.com',
+                password='strong-test-pass',
+            )
+            RewardClaim.objects.create(
+                reward_event=event,
+                user=claimant,
+                amount_claimed=Decimal('10.00'),
+                ip_address='203.0.113.33',
+                device_identifier='SharedBrowser/1.0',
+                transaction_reference=f'reward-claim-{index}',
+            )
+
+        request = RequestFactory().post(
+            '/api/rewards/claim/',
+            REMOTE_ADDR='203.0.113.33',
+            HTTP_USER_AGENT='SharedBrowser/1.0',
+        )
+        request.user = self.user
+        detect_reward_claim_pattern(request, self.user)
+
+        signal = AuditLog.objects.get(
+            data__event='shared_reward_claim_identity',
+            user=self.user,
+        )
+        self.assertEqual(signal.data['distinct_ip_accounts'], 3)
+        self.assertEqual(signal.data['distinct_device_accounts'], 3)
+
+    def test_room_socket_reconnect_limit_records_and_rejects_excess_connections(self):
+        for _ in range(20):
+            self.assertTrue(authorize_room_socket(
+                self.room.pk,
+                self.user,
+                '203.0.113.32',
+            ))
+
+        self.assertFalse(authorize_room_socket(
+            self.room.pk,
+            self.user,
+            '203.0.113.32',
+        ))
+        self.assertTrue(AuditLog.objects.filter(
+            data__event='room_socket_reconnect_limit',
+            user=self.user,
+        ).exists())
+
+    def test_room_socket_accepts_heartbeat_and_rejects_client_game_outcomes(self):
+        async def exercise_socket():
+            communicator = WebsocketCommunicator(
+                room_socket_application(self.user),
+                f'/ws/room/{self.room.pk}/',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await communicator.send_json_to({'type': 'heartbeat'})
+            self.assertEqual(
+                await communicator.receive_json_from(),
+                {'type': 'heartbeat'},
+            )
+
+            await communicator.send_json_to({
+                'type': 'room_update',
+                'crash_point': 99999,
+                'status': 'ended',
+            })
+            close_event = await communicator.receive_output()
+            self.assertEqual(close_event['type'], 'websocket.close')
+            self.assertEqual(close_event['code'], 1008)
+            await communicator.wait()
+
+        async_to_sync(exercise_socket)()
+        event = AuditLog.objects.get(
+            data__event='invalid_websocket_message',
+            user=self.user,
+        )
+        self.assertEqual(event.data['socket'], 'room')
+        self.assertNotIn('99999', str(event.data))
+
+    def test_room_socket_rejects_oversized_messages(self):
+        async def exercise_socket():
+            communicator = WebsocketCommunicator(
+                room_socket_application(self.user),
+                f'/ws/room/{self.room.pk}/',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await communicator.send_to(text_data=' ' * 4097)
+            close_event = await communicator.receive_output()
+            self.assertEqual(close_event['type'], 'websocket.close')
+            self.assertEqual(close_event['code'], 1008)
+            await communicator.wait()
+
+        async_to_sync(exercise_socket)()
+        self.assertTrue(AuditLog.objects.filter(
+            data__event='invalid_websocket_message',
+            user=self.user,
+            data__socket='room',
+        ).exists())
+
+    def test_anonymous_room_socket_is_rejected(self):
+        async def exercise_socket():
+            communicator = WebsocketCommunicator(
+                room_socket_application(AnonymousUser()),
+                f'/ws/room/{self.room.pk}/',
+            )
+            connected, close_code = await communicator.connect()
+            self.assertFalse(connected)
+            self.assertEqual(close_code, 4403)
+            await communicator.wait()
+
+        async_to_sync(exercise_socket)()
+
+    def test_non_member_room_socket_is_rejected_and_recorded(self):
+        other_user = User.objects.create_user(
+            username='socket-outsider',
+            email='socket-outsider@example.com',
+            password='strong-test-pass',
+        )
+
+        async def exercise_socket():
+            communicator = WebsocketCommunicator(
+                room_socket_application(other_user),
+                f'/ws/room/{self.room.pk}/',
+            )
+            connected, close_code = await communicator.connect()
+            self.assertFalse(connected)
+            self.assertEqual(close_code, 4403)
+            await communicator.wait()
+
+        async_to_sync(exercise_socket)()
+        self.assertTrue(AuditLog.objects.filter(
+            data__event='unauthorized_room_socket',
+            user=other_user,
+        ).exists())
+
+    def test_json_payload_parser_rejects_non_object_payloads(self):
+        request = RequestFactory().post(
+            '/api/rewards/claim/',
+            data='[]',
+            content_type='application/json',
+        )
+
+        self.assertEqual(request_payload(request), {})
 
 
 class WalletComplianceTests(TestCase):
@@ -1086,6 +2213,150 @@ class WalletComplianceTests(TestCase):
         self.assertEqual(self.profile.balance, Decimal('6000.00'))
         self.assertEqual(payment.status, 'completed')
         self.assertEqual(Transaction.objects.get(reference=payment.external_reference).transaction_type, 'deposit')
+        deposit_audit = AuditLog.objects.get(user=self.user, action_type='deposit')
+        self.assertEqual(deposit_audit.data, {'provider': 'mtn_momo'})
+        self.assertNotIn(payment.external_reference, str(deposit_audit.data))
+        self.assertNotIn('5000', deposit_audit.description)
+
+    def test_deposit_idempotency_key_prevents_duplicate_credit_and_detail_reuse(self):
+        first_payment, _, first_error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='256700000000',
+            idempotency_key='0123456789abcdef0123456789abcdef',
+        )
+        repeated_payment, repeated_result, repeated_error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='256700000000',
+            idempotency_key='0123456789abcdef0123456789abcdef',
+        )
+        self.assertEqual(first_error, '')
+        self.assertEqual(repeated_error, '')
+        self.assertIsNone(repeated_result)
+        self.assertEqual(first_payment.pk, repeated_payment.pk)
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1500.00'))
+        self.assertEqual(
+            PaymentRequest.objects.filter(user=self.user, payment_type='deposit').count(),
+            1,
+        )
+
+        changed_payment, _, changed_error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('600.00'),
+            provider='mtn_momo',
+            phone_number='256700000000',
+            idempotency_key='0123456789abcdef0123456789abcdef',
+        )
+        self.assertIsNone(changed_payment)
+        self.assertIn('already used with different details', changed_error)
+        self.assertEqual(
+            PaymentRequest.objects.filter(user=self.user, payment_type='deposit').count(),
+            1,
+        )
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1500.00'))
+
+    @override_settings(IOTEC_PAY_MODE='live')
+    def test_live_withdrawal_queues_and_submits_only_after_funds_are_confirmed(self):
+        payment, result, error = initiate_withdrawal(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='256700000000',
+            idempotency_key='1123456789abcdef0123456789abcdef',
+        )
+        self.assertEqual(error, '')
+        self.assertIsNone(result)
+        self.assertEqual(payment.status, 'queued')
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('500.00'))
+        self.assertTrue(PaymentDispatchLock.objects.filter(pk=1).exists())
+
+        provider_result = PaymentGatewayResult(
+            provider_reference='provider-payout-1',
+            status='Pending',
+        )
+        with (
+            patch(
+                'core.payment_services.IotecPayGateway.provider_wallet_balance',
+                return_value={'currency': 'UGX', 'availableBalance': '500.00'},
+            ),
+            patch(
+                'core.payment_services.IotecPayGateway.disburse_mobile_money',
+                return_value=provider_result,
+            ) as submit,
+        ):
+            outcome = process_next_queued_withdrawal()
+
+        self.assertEqual(outcome, 'submitted')
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(payment.metadata['dispatch_state'], 'submitted')
+        submit.assert_called_once_with(
+            external_id=payment.external_reference,
+            amount=Decimal('500.00'),
+            currency='UGX',
+            payee='256700000000',
+            payee_name=self.user.username,
+            payee_email=self.user.email,
+        )
+
+    @override_settings(IOTEC_PAY_MODE='live')
+    def test_queued_withdrawal_stays_held_if_available_balance_is_insufficient(self):
+        payment, _, error = initiate_withdrawal(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='256700000000',
+            idempotency_key='2123456789abcdef0123456789abcdef',
+        )
+        self.assertEqual(error, '')
+
+        with (
+            patch(
+                'core.payment_services.IotecPayGateway.provider_wallet_balance',
+                return_value={
+                    'currency': 'UGX',
+                    'actualBalance': '10000.00',
+                    'availableBalance': '499.99',
+                },
+            ),
+            patch('core.payment_services.IotecPayGateway.disburse_mobile_money') as submit,
+        ):
+            outcome = process_next_queued_withdrawal()
+
+        self.assertEqual(outcome, 'deferred')
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'queued')
+        self.assertEqual(payment.metadata['queue_reason'], 'insufficient_provider_balance')
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('500.00'))
+        submit.assert_not_called()
+
+    def test_queued_withdrawal_cannot_be_manually_synced(self):
+        payment = PaymentRequest.objects.create(
+            user=self.user,
+            payment_type='withdraw',
+            provider='mtn_momo',
+            amount=Decimal('500.00'),
+            phone_number='256700000000',
+            external_reference='WDR-QUEUED-SYNC',
+            status='queued',
+            metadata={'dispatch_state': 'queued'},
+        )
+
+        with patch('core.views.sync_payment') as sync_mock:
+            response = self.client.post(
+                f'/wallet/payments/{payment.external_reference}/sync/',
+            )
+
+        self.assertEqual(response.status_code, 302)
+        sync_mock.assert_not_called()
 
     def test_deposit_rejects_selected_country_where_service_is_not_available(self):
         response = self.client.post('/wallet/', {
@@ -1326,6 +2597,38 @@ class WalletComplianceTests(TestCase):
         payment.refresh_from_db()
         self.assertEqual(payment.status, 'pending')
 
+    @override_settings(IOTEC_PAY_CALLBACK_TOKEN='', DEBUG=True)
+    def test_payment_callback_rejects_success_when_token_is_unconfigured(self):
+        payment = PaymentRequest.objects.create(
+            user=self.user,
+            payment_type='deposit',
+            provider='mtn_momo',
+            amount=Decimal('250.00'),
+            phone_number='256700000000',
+            external_reference='DEP-CALLBACK-NO-TOKEN',
+            status='pending',
+            metadata={'gateway': 'iotec_pay'},
+        )
+
+        response = self.client.post(
+            '/api/payments/callback/',
+            data=json.dumps({
+                'externalId': payment.external_reference,
+                'status': 'Success',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        payment.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        self.assertFalse(Transaction.objects.filter(
+            reference=payment.external_reference,
+            transaction_type='deposit',
+        ).exists())
+
     def test_password_change_updates_authenticated_account(self):
         response = self.client.post('/account/password/', {
             'old_password': 'strong-test-pass',
@@ -1554,7 +2857,7 @@ class ComplianceFeatureTests(TestCase):
 
         play = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         })
 
         self.assertEqual(play.status_code, 403)
@@ -1595,7 +2898,7 @@ class ComplianceFeatureTests(TestCase):
 
         play = self.client.post('/play/', {
             'action': 'start',
-            'bet_data': json.dumps([10]),
+            'bet_data': bet_payload(10),
         })
 
         self.assertEqual(play.status_code, 403)
@@ -1634,6 +2937,17 @@ class ComplianceFeatureTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Verify a round')
         self.assertContains(response, 'Open responsible play settings')
+
+    def test_game_rules_page_uses_account_layout_and_links_related_controls(self):
+        response = self.client.get('/game-rules/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Game Rules')
+        self.assertContains(response, 'Server-verified results')
+        self.assertContains(response, 'Verify a round')
+        self.assertContains(response, 'Manage play settings')
+        self.assertContains(response, "href='/game-rules/'")
+        self.assertNotContains(response, 'Built with Django, HTML, CSS, and JavaScript')
 
     def test_scam_related_chat_is_blocked_and_creates_risk_alert(self):
         response = self.client.post('/play/', {
@@ -1721,6 +3035,71 @@ class GameDataPageTests(TestCase):
         self.assertEqual(lost_response.context['sessions'][0].round.public_id, 'DATA-LOST')
         self.assertEqual(live_response.context['page_obj'].paginator.count, 1)
         self.assertEqual(live_response.context['sessions'][0].round.public_id, 'DATA-LIVE')
+
+    def test_bet_history_api_returns_live_game_records_and_current_balance(self):
+        response = self.client.get('/api/bet-history/?outcome=all')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        data = response.json()
+        self.assertEqual(data['total_bets'], 3)
+        self.assertEqual(data['settled_bets'], 2)
+        self.assertEqual(data['balance'], str(self.profile.balance))
+        self.assertEqual(data['total_staked'], '150.00')
+        self.assertEqual(data['total_returned'], '150.00')
+        self.assertEqual(data['filter_counts'], {
+            'all': 3,
+            'won': 1,
+            'lost': 1,
+            'live': 1,
+            'void': 0,
+        })
+        live_bet = next(session for session in data['sessions'] if session['round_id'] == 'DATA-LIVE')
+        self.assertEqual(live_bet['status'], 'live')
+        self.assertEqual(live_bet['multiplier'], '1.00')
+        self.assertNotIn('crash_point', live_bet)
+
+    def test_bet_history_reveals_overdue_rounds_through_game_settlement(self):
+        overdue_round = GameRound.objects.create(
+            public_id='DATA-OVERDUE',
+            server_seed_hash='d' * 64,
+            server_seed_private='overdue-test-seed',
+            client_seed='data-test',
+            crash_point=Decimal('1.50'),
+            status='flying',
+            started_at=timezone.now() - timedelta(seconds=20),
+        )
+        GameSession.objects.create(
+            user=self.user,
+            round=overdue_round,
+            stake=Decimal('10.00'),
+            crash_point=overdue_round.crash_point,
+        )
+
+        response = self.client.get('/api/bet-history/?outcome=live')
+
+        self.assertIn('DATA-OVERDUE', response.json()['settle_rounds'])
+        settle_response = self.client.post('/play/', {
+            'action': 'settle_crash',
+            'round_id': overdue_round.public_id,
+        })
+
+        self.assertEqual(settle_response.status_code, 200)
+        overdue_round.refresh_from_db()
+        self.assertEqual(overdue_round.status, 'crashed')
+        self.assertTrue(overdue_round.is_revealed)
+        updated_response = self.client.get('/api/bet-history/?outcome=lost')
+        self.assertEqual(updated_response.json()['filter_counts']['lost'], 2)
+
+    def test_bet_history_page_uses_full_width_live_activity_layout(self):
+        response = self.client.get('/bet-history/?outcome=live')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-history-url="/api/bet-history/"')
+        self.assertContains(response, 'data-history-stat="total_returned"')
+        self.assertContains(response, 'data-history-filter="live"')
+        self.assertContains(response, 'bet_history.js')
+        self.assertContains(response, 'Live bets update automatically.')
 
 
 class FinancialReportTests(TestCase):

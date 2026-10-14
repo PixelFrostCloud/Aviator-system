@@ -61,7 +61,7 @@ class PaymentRequestAdmin(admin.ModelAdmin):
 
     @admin.action(description='Mark selected payment requests failed and refund withdrawal holds')
     def mark_failed(self, request, queryset):
-        for payment in queryset.filter(status__in=['pending', 'processing']):
+        for payment in queryset.filter(status__in=['queued', 'pending', 'processing']):
             apply_provider_result(payment, PaymentGatewayResult(
                 provider_reference=payment.provider_reference or payment.external_reference,
                 status='Failed',
@@ -238,4 +238,16 @@ class AuditLogAdmin(admin.ModelAdmin):
     list_display = ('action_type', 'user', 'ip_address', 'created_at')
     list_filter = ('action_type', 'created_at')
     search_fields = ('user__username', 'ip_address', 'description')
-    readonly_fields = ('created_at', 'data')
+    readonly_fields = tuple(field.name for field in AuditLog._meta.fields)
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

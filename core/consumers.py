@@ -1,120 +1,144 @@
+import ipaddress
 import json
+
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils import timezone
-from .models import Room, RoomPlayer, AuditLog
+
+from .abuse import authorize_reward_socket, authorize_room_socket, record_activity
 from .reward_services import REWARD_GROUP, mark_participant
 
 
-class RoomSyncConsumer(AsyncWebsocketConsumer):
+MAX_MESSAGE_BYTES = 4096
+
+
+def _scope_ip(scope):
+    client = scope.get('client')
+    if not client:
+        return None
+    try:
+        return str(ipaddress.ip_address(client[0]))
+    except (TypeError, ValueError):
+        return None
+
+
+@database_sync_to_async
+def _authorize_room(room_id, user, ip_address):
+    return authorize_room_socket(room_id, user, ip_address)
+
+
+@database_sync_to_async
+def _authorize_rewards(user, ip_address):
+    return authorize_reward_socket(user, ip_address)
+
+
+@database_sync_to_async
+def _record_socket_event(event, user, ip_address, socket_name):
+    return record_activity(
+        event,
+        user=user,
+        ip_address=ip_address,
+        details={'socket': socket_name},
+    )
+
+
+@database_sync_to_async
+def _mark_reward_participant(user, channel_name, session_key):
+    mark_participant(user, channel_name, session_key)
+
+
+class ValidatedWebSocketConsumer(AsyncWebsocketConsumer):
+    socket_name = 'unknown'
+
+    async def _reject_message(self, reason):
+        if not getattr(self, 'invalid_message_recorded', False):
+            self.invalid_message_recorded = True
+            await _record_socket_event(
+                'invalid_websocket_message',
+                self.scope.get('user'),
+                self.peer_ip,
+                self.socket_name,
+            )
+        await self.close(code=1008, reason=reason)
+
+    async def _parse_heartbeat(self, text_data, bytes_data):
+        if bytes_data is not None or text_data is None:
+            await self._reject_message('Only JSON heartbeat messages are accepted.')
+            return False
+        if len(text_data.encode('utf-8')) > MAX_MESSAGE_BYTES:
+            await self._reject_message('Message is too large.')
+            return False
+        try:
+            payload = json.loads(text_data)
+        except (TypeError, json.JSONDecodeError):
+            await self._reject_message('Invalid JSON message.')
+            return False
+        if not isinstance(payload, dict) or payload != {'type': 'heartbeat'}:
+            await self._reject_message('Unsupported message.')
+            return False
+        return True
+
+
+class RoomSyncConsumer(ValidatedWebSocketConsumer):
+    socket_name = 'room'
+
     async def connect(self):
+        self.invalid_message_recorded = False
+        self.peer_ip = _scope_ip(self.scope)
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group_name = f'room_{self.room_id}'
-
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
-
+        user = self.scope.get('user')
+        if not await _authorize_room(self.room_id, user, self.peer_ip):
+            await self.close(code=4403)
+            return
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.room_group_name,
-            self.channel_name
-        )
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
-    async def receive(self, text_data):
-        try:
-            data = json.loads(text_data)
-            event_type = data.get('type')
-
-            if event_type == 'room_update':
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        'type': 'room_update',
-                        'message': data.get('message'),
-                        'crash_point': data.get('crash_point'),
-                        'status': data.get('status'),
-                    }
-                )
-            elif event_type == 'player_cashout':
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        'type': 'player_cashout',
-                        'username': data.get('username'),
-                        'multiplier': data.get('multiplier'),
-                        'won_amount': data.get('won_amount'),
-                        'is_winner': data.get('is_winner'),
-                    }
-                )
-            elif event_type == 'player_joined':
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        'type': 'player_joined',
-                        'username': data.get('username'),
-                        'player_count': data.get('player_count'),
-                    }
-                )
-        except json.JSONDecodeError:
-            pass
-
-    async def room_update(self, event):
-        await self.send(text_data=json.dumps({
-            'type': 'room_update',
-            'message': event['message'],
-            'crash_point': event.get('crash_point'),
-            'status': event.get('status'),
-        }))
-
-    async def player_cashout(self, event):
-        await self.send(text_data=json.dumps({
-            'type': 'player_cashout',
-            'username': event['username'],
-            'multiplier': event['multiplier'],
-            'won_amount': event['won_amount'],
-            'is_winner': event['is_winner'],
-        }))
-
-    async def player_joined(self, event):
-        await self.send(text_data=json.dumps({
-            'type': 'player_joined',
-            'username': event['username'],
-            'player_count': event['player_count'],
-        }))
+    async def receive(self, text_data=None, bytes_data=None):
+        if await self._parse_heartbeat(text_data, bytes_data):
+            await self.send(text_data=json.dumps({'type': 'heartbeat'}))
 
 
-class RewardConsumer(AsyncWebsocketConsumer):
+class RewardConsumer(ValidatedWebSocketConsumer):
+    socket_name = 'rewards'
+
     async def connect(self):
+        self.invalid_message_recorded = False
+        self.peer_ip = _scope_ip(self.scope)
         self.user = self.scope.get('user')
-        if not self.user or not self.user.is_authenticated:
-            await self.close()
+        if not await _authorize_rewards(self.user, self.peer_ip):
+            await self.close(code=4403)
             return
         await self.channel_layer.group_add(REWARD_GROUP, self.channel_name)
         await self.accept()
-        mark_participant(self.user, self.channel_name, self.scope.get('session').session_key if self.scope.get('session') else '')
-        await self.send(text_data=json.dumps({
-            'type': 'participant_joined',
-            'user_id': self.user.id,
-        }))
+        session = self.scope.get('session')
+        await _mark_reward_participant(
+            self.user,
+            self.channel_name,
+            session.session_key if session else '',
+        )
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(REWARD_GROUP, self.channel_name)
 
-    async def receive(self, text_data):
-        try:
-            data = json.loads(text_data)
-        except json.JSONDecodeError:
+    async def receive(self, text_data=None, bytes_data=None):
+        if not await self._parse_heartbeat(text_data, bytes_data):
             return
-        if data.get('type') in ['heartbeat', 'participant_joined']:
-            mark_participant(self.user, self.channel_name, data.get('session_id', ''))
-            await self.send(text_data=json.dumps({
-                'type': 'participant_joined',
-                'user_id': self.user.id,
-                'last_activity': timezone.now().isoformat(),
-            }))
+        session = self.scope.get('session')
+        await _mark_reward_participant(
+            self.user,
+            self.channel_name,
+            session.session_key if session else '',
+        )
+        await self.send(text_data=json.dumps({
+            'type': 'participant_joined',
+            'user_id': self.user.id,
+            'last_activity': timezone.now().isoformat(),
+        }))
 
     async def reward_event(self, event):
         await self.send(text_data=json.dumps({

@@ -106,6 +106,7 @@
                         <form id="deposit-form" class="payment-form" method="post" data-payment-form>
                             {% csrf_token %}
                             <input type="hidden" name="action" value="deposit">
+                            <input type="hidden" name="deposit-idempotency_key" value="{{ deposit_idempotency_key }}">
                             <h3>Deposit</h3>
                             <p>We will send a payment prompt to your phone. Approve it with your Mobile Money PIN.</p>
                             {% for field in deposit_form %}
@@ -125,8 +126,9 @@
                         <form id="withdraw-form" class="payment-form" method="post" data-payment-form>
                             {% csrf_token %}
                             <input type="hidden" name="action" value="withdraw">
+                            <input type="hidden" name="withdraw-idempotency_key" value="{{ withdraw_idempotency_key }}">
                             <h3>Withdraw</h3>
-                            <p>The amount stays on hold until ioTec Pay confirms or rejects the payout.</p>
+                            <p>The amount stays on hold until ioTec Pay confirms or rejects the payout. If the provider wallet needs funding, your request is queued and retried automatically.</p>
                             {% for field in withdraw_form %}
                                 {% if field.name == 'country_code' %}
                                 {% elif field.name == 'phone_number' %}
@@ -162,7 +164,9 @@
                                     </div>
                                     {% if payment.failure_reason %}<small class="payment-failure">{{ payment.failure_reason }}</small>{% endif %}
                                 </div>
-                                {% if payment.status == 'pending' or payment.status == 'processing' %}
+                                {% if payment.status == 'queued' %}
+                                    <small class="payment-failure">Your amount remains on hold. We will retry this payout when provider funds are available.</small>
+                                {% elif payment.status == 'pending' or payment.status == 'processing' and payment.metadata.dispatch_state != 'checking_balance' %}
                                     <form method="post" action="{% url 'payment_sync' payment.external_reference %}">
                                         {% csrf_token %}
                                         <button class="payment-refresh-button" type="submit" aria-label="Refresh status for {{ payment.external_reference }}" title="Refresh payment status"><svg class="ui-icon" aria-hidden="true"><use href="#icon-refresh"></use></svg><span>Refresh</span></button>

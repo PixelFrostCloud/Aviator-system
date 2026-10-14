@@ -2087,6 +2087,20 @@ body:has(.aviator-play-page) main.container {
   background: linear-gradient(180deg, #ef2745, #bd0822);
 }
 
+.bet-slip.is-settled-won .start-bet {
+  background: linear-gradient(180deg, #20b90f, #18a107);
+}
+
+.bet-slip.is-settled-lost .start-bet {
+  background: linear-gradient(180deg, #ef2745, #bd0822);
+}
+
+.bet-slip.has-insufficient-balance .start-bet {
+  background: linear-gradient(180deg, #7c2730, #5a1b23);
+  cursor: not-allowed;
+  animation: none;
+}
+
 .bet-slip.is-auto .bet-mode-toggle[data-mode='auto'] {
   background: #303338;
   color: #fff;
@@ -5711,9 +5725,35 @@ body:has(.auth-screen) main.container {
   font: inherit;
 }
 
+.auth-form input::placeholder,
+body:has(.account-settings-page) .password-settings-form input::placeholder {
+  color: #89939f;
+  opacity: 1;
+}
+
 .auth-form input:focus {
   border-color: #24e65a;
   box-shadow: 0 0 0 3px rgba(36, 230, 90, 0.12);
+}
+
+.auth-password-help {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -7px;
+  color: #89939f;
+  font-size: 11px;
+}
+
+.auth-password-help a {
+  color: #24e65a;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.auth-password-help a:hover,
+.auth-foot a:hover {
+  text-decoration: underline;
 }
 
 .auth-submit {
@@ -5728,8 +5768,49 @@ body:has(.auth-screen) main.container {
   cursor: pointer;
 }
 
+.auth-submit-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  color: #08130b;
+  text-decoration: none;
+}
+
 .auth-submit:hover {
   background: #24e65a;
+}
+
+.auth-screen.auth-screen-single {
+  display: flex;
+  justify-content: center;
+  width: min(520px, calc(100% - 28px));
+  min-height: min(72vh, 620px);
+  margin: 0 auto;
+  padding: 48px 0;
+}
+
+.password-reset-card {
+  align-self: center;
+  width: 100%;
+}
+
+.password-reset-note {
+  display: grid;
+  gap: 6px;
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid #343a3f;
+  border-radius: 8px;
+  background: #141719;
+  color: #aab2bc;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.password-reset-note strong {
+  color: #f5f7fb;
 }
 
 .auth-foot {
@@ -9345,6 +9426,12 @@ body:has(.account-settings-page) .password-settings-form input {
   color: var(--account-text);
 }
 
+body:has(.account-settings-page) .password-settings-form input:focus {
+  border-color: #24e65a;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(36, 230, 90, 0.12);
+}
+
 body:has(.account-settings-page) .password-settings-form .account-action-button {
   grid-column: 1 / -1;
 }
@@ -9743,39 +9830,20 @@ body:has(.aviator-play-page) .plane-silhouette {
   z-index: 3;
   left: var(--plane-x, 0%) !important;
   bottom: var(--plane-y, 0%) !important;
-  width: clamp(78px, 9vw, 156px) !important;
+  width: clamp(88px, 11vw, 176px) !important;
   height: auto !important;
-  aspect-ratio: 2.25 / 1;
+  aspect-ratio: 2.68 / 1;
   transform: translate(-18%, 38%) rotate(var(--plane-angle, 0deg)) !important;
   transform-origin: 18% 62%;
   filter: drop-shadow(0 0 8px rgba(255, 23, 77, 0.7)) !important;
   will-change: left, bottom, transform;
 }
 
-body:has(.aviator-play-page) .plane-art {
+body:has(.aviator-play-page) .plane-logo {
   display: block;
   width: 100%;
   height: 100%;
-  overflow: visible;
-}
-
-body:has(.aviator-play-page) .plane-art__body,
-body:has(.aviator-play-page) .plane-art__wing,
-body:has(.aviator-play-page) .plane-art__tail {
-  fill: #ff174d;
-}
-
-body:has(.aviator-play-page) .plane-art__wing {
-  fill: #ff315e;
-}
-
-body:has(.aviator-play-page) .plane-art__mark,
-body:has(.aviator-play-page) .plane-art__prop {
-  fill: none;
-  stroke: #611021;
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  object-fit: contain;
 }
 
 body:has(.aviator-play-page) .stage-multiplier {
@@ -9942,6 +10010,33 @@ body:has(.aviator-play-page) .ledger-list::-webkit-scrollbar-thumb {
 
 body:has(.aviator-play-page) .ledger-list::-webkit-scrollbar-thumb:hover {
   background: #5d666b !important;
+}
+
+body:has(.aviator-play-page) .ledger-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 6px;
+  border-top: 1px solid #303539;
+  color: #aeb7bc;
+  font-size: 10px;
+}
+
+body:has(.aviator-play-page) .ledger-pagination button {
+  padding: 5px 9px;
+  border: 1px solid #3b4145;
+  border-radius: 4px;
+  background: #23272a;
+  color: #dce1e4;
+  font: inherit;
+  cursor: pointer;
+}
+
+body:has(.aviator-play-page) .ledger-pagination button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 body:has(.aviator-play-page) .ledger-empty {
@@ -10414,12 +10509,11 @@ body:has(.aviator-play-page) .game-brand {
 }
 
 body:has(.aviator-play-page) .game-brand img {
-  width: 25px;
-  height: 25px;
+  width: 150px;
+  height: 32px;
   flex: 0 0 auto;
-  padding: 2px;
-  border-radius: 50%;
-  background: #f2f4f4;
+  padding: 0;
+  background: transparent;
   object-fit: contain;
 }
 
@@ -10589,8 +10683,8 @@ body:has(.aviator-play-page) .menu-links .ui-icon {
   }
 
   body:has(.aviator-play-page) .game-brand img {
-    width: 21px;
-    height: 21px;
+    width: 128px;
+    height: 28px;
   }
 
   body:has(.aviator-play-page) .topbar-right > .help-chip {
@@ -11894,6 +11988,129 @@ body:has(.account-referrals-page) .account-main {
   min-width: 0;
 }
 
+body:has(.account-rules-page) .account-main {
+  align-items: start !important;
+}
+
+body:has(.account-rules-page) .account-right-rail {
+  align-content: start !important;
+}
+
+.rules-overview {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 20px !important;
+}
+
+.rules-overview-icon,
+.rules-server-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(32, 185, 15, 0.13);
+  color: #22d31e;
+}
+
+.rules-overview-icon .ui-icon,
+.rules-server-icon .ui-icon {
+  width: 23px;
+  height: 23px;
+}
+
+.rules-overview h2,
+.rules-server-note h2 {
+  margin: 0;
+  color: #f5f7fb;
+  font-size: 16px;
+}
+
+.rules-overview p,
+.rules-server-note p,
+.rules-responsible-card p {
+  margin: 6px 0 0;
+  color: #b4bdc6;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.rules-step-grid {
+  align-items: stretch;
+}
+
+.rules-step-card {
+  min-height: 168px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.rules-step-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rules-step-heading .activity-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.rules-step-heading h2 {
+  margin: 0;
+  color: #f4f7fa;
+  font-size: 16px;
+}
+
+.rules-step-card p {
+  margin: 0;
+  color: #b4bdc6;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.rules-server-note {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.rules-server-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.rules-server-icon .ui-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.rules-responsible-card .rail-button {
+  margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+  body:has(.account-rules-page) .rules-step-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .rules-server-note {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .rules-server-note .account-action-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
 .referral-share-card .section-heading {
   margin-bottom: 14px;
 }
@@ -12263,5 +12480,366 @@ body:has(.account-referrals-page) .account-main {
     border: 1px solid #2b2e31 !important;
     border-radius: 10px !important;
     overflow: hidden !important;
+  }
+}
+
+body:has(.account-bet-history-page) .account-main-history {
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-content: start !important;
+}
+
+body:has(.account-bet-history-page) .account-content {
+  min-width: 0 !important;
+  align-content: start !important;
+  gap: 18px !important;
+}
+
+.bet-history-title {
+  align-items: center !important;
+}
+
+.bet-history-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.history-sync-status {
+  min-height: 30px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #2d4935;
+  border-radius: 999px;
+  background: #17251b;
+  color: #a5e7b2;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.history-sync-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #24d75b;
+  box-shadow: 0 0 9px rgba(36, 215, 91, 0.55);
+}
+
+.history-sync-error .history-sync-status {
+  border-color: #5a3b2e;
+  background: #2a211d;
+  color: #f0bd8e;
+}
+
+.history-sync-error .history-sync-status i {
+  background: #e9a04b;
+  box-shadow: none;
+}
+
+.bet-history-summary {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  align-content: start !important;
+}
+
+.bet-history-summary article {
+  min-height: 92px;
+  padding: 15px 17px !important;
+  align-content: space-between;
+  gap: 12px !important;
+  border-color: #30363b !important;
+  border-radius: 8px !important;
+  background: linear-gradient(145deg, #202326, #1b1e20) !important;
+}
+
+.bet-history-summary article > span {
+  color: #aeb8c2 !important;
+  font-size: 11px !important;
+  font-weight: 600;
+}
+
+.bet-history-summary article > strong {
+  color: #f2f5f7 !important;
+  font-size: clamp(14px, 1.3vw, 18px) !important;
+  font-weight: 750 !important;
+  line-height: 1.25;
+}
+
+.bet-history-summary article > strong.positive {
+  color: #29dc5e !important;
+}
+
+.bet-history-summary article > strong.negative {
+  color: #ff6874 !important;
+}
+
+.bet-history-summary small {
+  color: #aeb8c2;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.bet-history-card {
+  min-width: 0;
+  min-height: 280px;
+}
+
+.bet-history-section-heading {
+  min-height: 62px;
+  align-items: center !important;
+  padding: 16px 20px !important;
+}
+
+.bet-history-section-heading > div {
+  min-width: 0;
+}
+
+.bet-history-section-heading p {
+  margin: 5px 0 0;
+  color: #9ca7b2;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.bet-history-section-heading > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.bet-history-section-heading .ui-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.bet-outcome-filters {
+  min-height: 48px;
+  padding-inline: 20px !important;
+  gap: 25px !important;
+}
+
+.bet-outcome-filters a {
+  position: relative;
+  font-size: 12px !important;
+}
+
+.bet-outcome-filters a.active {
+  color: #f4f7fa !important;
+}
+
+.bet-outcome-filters a.active::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: #20c957;
+  content: "";
+}
+
+.bet-outcome-filters a span {
+  min-width: 18px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #292e32;
+  color: #b5bec7 !important;
+  font-size: 10px !important;
+  text-align: center;
+}
+
+.bet-history-head,
+.bet-history-row {
+  grid-template-columns:
+    minmax(105px, 1fr)
+    minmax(105px, 0.9fr)
+    minmax(120px, 1.25fr)
+    minmax(95px, 0.8fr)
+    minmax(115px, 1fr)
+    minmax(90px, 0.8fr) !important;
+  gap: 14px !important;
+}
+
+.bet-history-head {
+  min-height: 42px !important;
+  padding-inline: 20px !important;
+  background: #1a1d1f;
+  color: #9ca7b2 !important;
+  font-size: 10px !important;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+}
+
+.bet-history-row {
+  min-height: 56px !important;
+  padding-inline: 20px !important;
+  color: #e4e9ed !important;
+  font-size: 12px !important;
+  transition: background 120ms ease;
+}
+
+.bet-history-row:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.bet-history-row > * {
+  min-width: 0;
+}
+
+.bet-history-row > strong,
+.bet-history-row > em {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.bet-history-row .bet-round {
+  color: #b8c2cb;
+  font-variant-numeric: tabular-nums;
+}
+
+.bet-status {
+  padding: 5px 9px !important;
+  border: 1px solid transparent;
+  border-radius: 999px !important;
+  font-size: 10px !important;
+  line-height: 1;
+}
+
+.bet-status.won {
+  border-color: #285b38;
+  background: #17291d !important;
+}
+
+.bet-status.lost {
+  border-color: #5a3034;
+  background: #2a1c1f !important;
+}
+
+.bet-status.live {
+  border-color: #65522b;
+  background: #2b261a !important;
+}
+
+.bet-status.void,
+.bet-status.unavailable {
+  border-color: #3b4145;
+  background: #262a2d !important;
+}
+
+.bet-history-rows > .account-empty-state {
+  min-height: 160px;
+  display: grid !important;
+  align-content: center;
+  justify-items: center;
+  color: #aeb8c2 !important;
+  text-align: center;
+}
+
+.bet-history-pagination[hidden] {
+  display: none !important;
+}
+
+.bet-history-pagination {
+  padding-inline: 20px !important;
+}
+
+@media (max-width: 1180px) {
+  .bet-history-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .bet-history-head,
+  .bet-history-row {
+    grid-template-columns:
+      minmax(90px, 1fr)
+      minmax(90px, 0.9fr)
+      minmax(105px, 1.1fr)
+      minmax(80px, 0.75fr)
+      minmax(100px, 0.95fr)
+      minmax(82px, 0.8fr) !important;
+    gap: 9px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .bet-history-title {
+    align-items: flex-start !important;
+  }
+
+  .bet-history-title-actions {
+    gap: 8px;
+  }
+
+  .history-sync-status {
+    min-height: 27px;
+    padding-inline: 8px;
+    font-size: 9px;
+  }
+
+  .bet-history-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .bet-history-summary article {
+    min-height: 80px;
+    padding: 12px !important;
+  }
+
+  .bet-history-section-heading {
+    align-items: flex-start !important;
+    padding: 14px !important;
+  }
+
+  .bet-outcome-filters {
+    padding-inline: 14px !important;
+    gap: 19px !important;
+  }
+
+  .bet-history-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 12px 14px !important;
+    padding: 14px !important;
+  }
+
+  .bet-history-row > * {
+    display: grid;
+    gap: 5px;
+    overflow-wrap: anywhere;
+  }
+
+  .bet-history-row > *::before {
+    color: #8e99a4;
+    content: attr(data-label);
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .bet-history-row .bet-round {
+    white-space: normal;
+  }
+
+  .bet-history-pagination {
+    padding-inline: 14px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .bet-history-summary {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .bet-history-title-actions .history-sync-status {
+    max-width: 132px;
+    white-space: normal;
+  }
+
+  .bet-history-section-heading > a {
+    font-size: 10px;
   }
 }
