@@ -3,6 +3,8 @@ import string
 import uuid
 from decimal import Decimal
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -16,6 +18,21 @@ def generate_client_seed():
     return uuid.uuid4().hex
 
 
+def validate_brand_asset(file):
+    if file.size > 2 * 1024 * 1024:
+        raise ValidationError('Branding images must be 2 MB or smaller.')
+    try:
+        from PIL import Image, UnidentifiedImageError
+        image = Image.open(file)
+        image.verify()
+        if image.format not in {'PNG', 'JPEG', 'WEBP', 'ICO'}:
+            raise ValidationError('Use a PNG, JPEG, WebP, or ICO image.')
+    except (OSError, UnidentifiedImageError) as exc:
+        raise ValidationError('Upload a valid image file.') from exc
+    finally:
+        file.seek(0)
+
+
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     referral_code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -23,8 +40,21 @@ class Profile(models.Model):
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=1000)
     currency = models.CharField(max_length=3, default='UGX')
     phone_number = models.CharField(max_length=20, blank=True)
-    daily_deposit_limit = models.DecimalField(max_digits=12, decimal_places=2, default=300000)
+    daily_deposit_limit = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=300000,
+        validators=[MinValueValidator(Decimal('500.00')), MaxValueValidator(Decimal('10000000.00'))],
+    )
     daily_loss_limit = models.DecimalField(max_digits=12, decimal_places=2, default=200000)
+    ACCOUNT_STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('locked', 'Locked'),
+        ('banned', 'Banned'),
+        ('anonymized', 'Anonymized'),
+    ]
+    account_status = models.CharField(max_length=12, choices=ACCOUNT_STATUS_CHOICES, default='active')
+    account_note = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -33,6 +63,38 @@ class Profile(models.Model):
     @property
     def total_transactions(self):
         return self.transactions.count()
+
+
+class PlatformSettings(models.Model):
+    site_name = models.CharField(max_length=80, default='Pakabet')
+    site_tagline = models.CharField(max_length=160, blank=True, default='Aviator gaming')
+    logo = models.FileField(
+        upload_to='branding/',
+        blank=True,
+        validators=[FileExtensionValidator(['png', 'jpg', 'jpeg', 'webp']), validate_brand_asset],
+    )
+    favicon = models.FileField(
+        upload_to='branding/',
+        blank=True,
+        validators=[FileExtensionValidator(['png', 'jpg', 'jpeg', 'webp', 'ico']), validate_brand_asset],
+    )
+    maximum_crash_point = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('286.00'),
+        validators=[MinValueValidator(Decimal('250.00')), MaxValueValidator(Decimal('286.00'))],
+    )
+    betting_seconds = models.PositiveSmallIntegerField(
+        default=4,
+        validators=[MinValueValidator(2), MaxValueValidator(15)],
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'platform settings'
+
+    def __str__(self):
+        return f'{self.site_name} platform settings'
 
 
 class GamePresence(models.Model):
@@ -254,6 +316,19 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f'{self.user.username}: {self.message[:40]}'
+
+
+class ChatModerationTerm(models.Model):
+    term = models.CharField(max_length=120, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['term']
+
+    def __str__(self):
+        return self.term
 
 
 class ChatReaction(models.Model):
@@ -529,7 +604,8 @@ class GameSession(models.Model):
     auto_cashout_at = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     bet_request_id = models.CharField(max_length=32, blank=True)
     cashed_out_at = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-    won_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    won_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    admin_refunded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -566,7 +642,7 @@ class Room(models.Model):
     name = models.CharField(max_length=100)
     host = models.ForeignKey(User, on_delete=models.CASCADE, related_name='hosted_rooms')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='waiting')
-    crash_point = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    crash_point = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
@@ -604,8 +680,8 @@ class RoomPlayer(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='room_entries')
     stake = models.DecimalField(max_digits=8, decimal_places=2)
     joined_at = models.DateTimeField(auto_now_add=True)
-    cashed_out_at = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
-    won_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    cashed_out_at = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    won_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     active = models.BooleanField(default=True)
 
     class Meta:

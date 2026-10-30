@@ -125,7 +125,7 @@ def initiate_deposit(
     if amount < IOTEC_MINIMUM_AMOUNT:
         return None, None, 'ioTec Pay mobile-money transactions must be at least 500 UGX.'
     if amount > MAXIMUM_DEPOSIT_AMOUNT:
-        return None, None, 'Deposits cannot exceed 300,000 UGX per transaction.'
+        return None, None, 'Deposits cannot exceed 10,000,000 UGX per transaction.'
     if provider not in MOBILE_MONEY_PROVIDERS:
         return None, None, 'Only MTN Mobile Money and Airtel Money are supported.'
     try:
@@ -224,6 +224,12 @@ def initiate_withdrawal(
 
     with db_transaction.atomic():
         locked_profile = Profile.objects.select_for_update().get(user=user)
+        try:
+            registered_phone = normalize_mobile_money_phone(locked_profile.phone_number)
+        except ValueError:
+            registered_phone = ''
+        if not registered_phone or phone_number != registered_phone:
+            return None, None, 'Withdrawals can only be sent to the phone number registered on your account.'
         existing = PaymentRequest.objects.filter(
             user=user,
             idempotency_key=idempotency_key,

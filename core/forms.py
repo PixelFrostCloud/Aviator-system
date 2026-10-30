@@ -8,8 +8,13 @@ from django.contrib.auth.forms import (
 )
 from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator
-from .constants import MAXIMUM_DEPOSIT_AMOUNT, MINIMUM_MOBILE_MONEY_AMOUNT
-from .models import ChatMessage, PaymentRequest, Profile, Room
+from .constants import (
+    MAXIMUM_DAILY_DEPOSIT_LIMIT,
+    MAXIMUM_DEPOSIT_AMOUNT,
+    MINIMUM_DAILY_DEPOSIT_LIMIT,
+    MINIMUM_MOBILE_MONEY_AMOUNT,
+)
+from .models import ChatMessage, PaymentRequest, PlatformSettings, Profile, Room
 from .chat_rules import get_chat_rule_violation
 from .payment_services import (
     MOBILE_MONEY_COUNTRY_CHOICES,
@@ -43,10 +48,6 @@ class PhoneNumberFormMixin:
 
 
 class RegisterForm(PhoneNumberFormMixin, UserCreationForm):
-    email = forms.EmailField(required=True, widget=forms.EmailInput(attrs={
-        'placeholder': 'name@example.com',
-        'autocomplete': 'email',
-    }))
     country_code = forms.ChoiceField(
         label='Country code',
         choices=MOBILE_MONEY_COUNTRY_CHOICES,
@@ -82,11 +83,11 @@ class RegisterForm(PhoneNumberFormMixin, UserCreationForm):
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password1', 'password2']
+        fields = ['username', 'password1', 'password2']
 
     def save(self, commit=True):
         user = super().save(commit=False)
-        user.email = self.cleaned_data['email']
+        user.email = ''
         if commit:
             user.save()
         return user
@@ -97,19 +98,14 @@ class RegisterForm(PhoneNumberFormMixin, UserCreationForm):
             raise forms.ValidationError('An account with this phone number already exists.')
         return phone_number
 
-    def clean_email(self):
-        email = self.cleaned_data['email'].strip()
-        if User.objects.filter(email__iexact=email).exists():
-            raise forms.ValidationError('An account with this email address already exists.')
-        return email
 
-
-class PhoneOrUsernameAuthenticationForm(AuthenticationForm):
+class PhoneNumberAuthenticationForm(AuthenticationForm):
     username = forms.CharField(
-        label='Username or phone number',
+        label='Phone number',
         widget=forms.TextInput(attrs={
-            'placeholder': 'Username or 07XXXXXXXX',
-            'autocomplete': 'username',
+            'placeholder': '07XXXXXXXX',
+            'autocomplete': 'tel',
+            'inputmode': 'tel',
             'autofocus': True,
         }),
     )
@@ -122,19 +118,123 @@ class PhoneOrUsernameAuthenticationForm(AuthenticationForm):
         })
 
     def clean(self):
-        identifier = self.cleaned_data.get('username', '').strip()
-        if identifier:
-            try:
-                phone_number = normalize_mobile_money_phone(identifier)
-            except ValueError:
-                phone_number = ''
-            if phone_number:
-                profile = Profile.objects.select_related('user').filter(phone_number=phone_number).first()
-                if profile:
-                    self.cleaned_data['username'] = profile.user.get_username()
-            else:
-                self.cleaned_data['username'] = identifier
+        phone_number = self.cleaned_data.get('username', '').strip()
+        try:
+            phone_number = normalize_mobile_money_phone(phone_number)
+        except ValueError:
+            phone_number = ''
+
+        profiles = Profile.objects.select_related('user').filter(
+            phone_number=phone_number,
+        ).order_by('pk')[:2] if phone_number else []
+        if len(profiles) == 1 and profiles[0].account_status == 'active':
+            self.cleaned_data['username'] = profiles[0].user.get_username()
+        else:
+            self.cleaned_data['username'] = 'invalid-phone-number'
         return super().clean()
+
+
+class PlatformBrandingForm(forms.ModelForm):
+    class Meta:
+        model = PlatformSettings
+        fields = ['site_name', 'site_tagline', 'logo', 'favicon']
+        widgets = {
+            'site_name': forms.TextInput(attrs={'placeholder': 'Your platform name'}),
+            'site_tagline': forms.TextInput(attrs={'placeholder': 'A short description shown with your brand'}),
+            'logo': forms.ClearableFileInput(attrs={'accept': '.png,.jpg,.jpeg,.webp'}),
+            'favicon': forms.ClearableFileInput(attrs={'accept': '.png,.jpg,.jpeg,.webp,.ico'}),
+        }
+
+
+class PlatformGameSettingsForm(forms.ModelForm):
+    class Meta:
+        model = PlatformSettings
+        fields = ['maximum_crash_point', 'betting_seconds']
+        widgets = {
+            'maximum_crash_point': forms.NumberInput(attrs={
+                'placeholder': '250.00 to 286.00',
+                'min': '250.00',
+                'max': '286.00',
+                'step': '0.01',
+            }),
+            'betting_seconds': forms.NumberInput(attrs={
+                'placeholder': '2 to 15 seconds',
+                'min': '2',
+                'max': '15',
+                'step': '1',
+            }),
+        }
+
+
+class AdminAccountCreationForm(forms.Form):
+    ROLE_CHOICES = (
+        ('staff', 'Operations administrator'),
+        ('superuser', 'Super administrator'),
+    )
+    username = forms.CharField(
+        max_length=150,
+        validators=User._meta.get_field('username').validators,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Choose a username',
+            'autocomplete': 'username',
+        }),
+    )
+    phone_number = forms.CharField(
+        max_length=20,
+        widget=forms.TextInput(attrs={
+            'placeholder': '07XXXXXXXX',
+            'autocomplete': 'tel',
+            'inputmode': 'tel',
+        }),
+    )
+    role = forms.ChoiceField(choices=ROLE_CHOICES)
+    password1 = forms.CharField(
+        label='Temporary password',
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Create a strong temporary password',
+            'autocomplete': 'new-password',
+        }),
+    )
+    password2 = forms.CharField(
+        label='Confirm password',
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Repeat the temporary password',
+            'autocomplete': 'new-password',
+        }),
+    )
+
+    def __init__(self, *args, allow_superuser=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not allow_superuser:
+            self.fields['role'].choices = (('staff', 'Operations administrator'),)
+        self.fields['role'].widget.attrs.update({'aria-label': 'Administrator role'})
+
+    def clean_phone_number(self):
+        try:
+            phone_number = normalize_mobile_money_phone(self.cleaned_data['phone_number'])
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        if Profile.objects.filter(phone_number=phone_number).exists():
+            raise forms.ValidationError('An account already uses this phone number.')
+        return phone_number
+
+    def clean_username(self):
+        username = self.cleaned_data['username'].strip()
+        if User.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError('An account with this username already exists.')
+        return username
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get('password1') != cleaned_data.get('password2'):
+            self.add_error('password2', 'The passwords do not match.')
+        from django.core.exceptions import ValidationError
+        from django.contrib.auth.password_validation import validate_password
+        try:
+            validate_password(cleaned_data.get('password1', ''))
+        except ValidationError as exc:
+            self.add_error('password1', exc)
+        return cleaned_data
 
 
 class AccountPasswordChangeForm(DjangoPasswordChangeForm):
@@ -213,7 +313,7 @@ class WalletForm(PhoneNumberFormMixin, forms.Form):
         min_value=MINIMUM_MOBILE_MONEY_AMOUNT,
         max_value=MAXIMUM_DEPOSIT_AMOUNT,
         widget=forms.NumberInput(attrs={
-            'placeholder': '500 - 300,000 UGX',
+            'placeholder': '500 - 10,000,000 UGX',
             'class': 'form-control',
             'min': str(MINIMUM_MOBILE_MONEY_AMOUNT),
             'max': str(MAXIMUM_DEPOSIT_AMOUNT),
@@ -257,6 +357,8 @@ class WalletForm(PhoneNumberFormMixin, forms.Form):
             ]
             amount_field.widget.attrs.pop('max', None)
             amount_field.widget.attrs['placeholder'] = 'Minimum 500 UGX'
+            self.fields['phone_number'].disabled = True
+            self.fields['country_code'].disabled = True
 
     def clean(self):
         cleaned_data = super().clean()
@@ -289,13 +391,13 @@ class ProfileComplianceForm(PhoneNumberFormMixin, forms.Form):
     daily_deposit_limit = forms.DecimalField(
         max_digits=12,
         decimal_places=2,
-        min_value=1,
-        max_value=MAXIMUM_DEPOSIT_AMOUNT,
+        min_value=MINIMUM_DAILY_DEPOSIT_LIMIT,
+        max_value=MAXIMUM_DAILY_DEPOSIT_LIMIT,
         widget=forms.NumberInput(attrs={
-            'placeholder': 'Maximum 300,000 UGX',
+            'placeholder': '500 - 10,000,000 UGX',
             'class': 'form-control',
-            'min': '1',
-            'max': str(MAXIMUM_DEPOSIT_AMOUNT),
+            'min': str(MINIMUM_DAILY_DEPOSIT_LIMIT),
+            'max': str(MAXIMUM_DAILY_DEPOSIT_LIMIT),
             'step': '0.01',
         })
     )
@@ -305,6 +407,11 @@ class ProfileComplianceForm(PhoneNumberFormMixin, forms.Form):
         min_value=1,
         widget=forms.NumberInput(attrs={'placeholder': 'Daily loss limit', 'class': 'form-control'})
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['country_code'].disabled = True
+        self.fields['phone_number'].disabled = True
 
 class SelfExclusionForm(forms.Form):
     DURATION_CHOICES = [
@@ -348,9 +455,20 @@ class FinancialReportForm(forms.Form):
         ('monthly', 'Monthly'),
     ]
 
-    report_type = forms.ChoiceField(choices=REPORT_TYPES, widget=forms.Select(attrs={'class': 'form-control'}))
-    period_start = forms.DateField(widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}))
-    period_end = forms.DateField(widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}))
+    report_type = forms.ChoiceField(
+        choices=REPORT_TYPES,
+        widget=forms.Select(attrs={'class': 'form-control', 'aria-label': 'Select report frequency'}),
+    )
+    period_start = forms.DateField(widget=forms.DateInput(attrs={
+        'type': 'date',
+        'class': 'form-control',
+        'placeholder': 'Select a start date',
+    }))
+    period_end = forms.DateField(widget=forms.DateInput(attrs={
+        'type': 'date',
+        'class': 'form-control',
+        'placeholder': 'Select an end date',
+    }))
 
 
 class RoomCreateForm(forms.ModelForm):

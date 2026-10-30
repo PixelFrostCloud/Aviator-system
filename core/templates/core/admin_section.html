@@ -1,0 +1,413 @@
+{% extends 'core/base.html' %}
+{% load static %}
+{% block title %}{{ section_title }} | {{ platform_name }} Admin{% endblock %}
+{% block body_class %}admin-body{% endblock %}
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'core/css/admin_dashboard.css' %}?v=admin-mobile-drawer-20261030-1">
+    <script src="{% static 'core/js/admin_nav.js' %}?v=admin-mobile-drawer-20261030-1" defer></script>
+    {% if section == 'live' %}<script src="{% static 'core/js/admin_live_monitor.js' %}?v=20261029-1" defer></script>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="admin-dashboard">
+    <button class="admin-nav-backdrop" type="button" aria-label="Close admin navigation" tabindex="-1" hidden></button>
+    <aside class="admin-rail" aria-label="Admin navigation">
+        <a class="admin-brand" href="{% url 'admin_dashboard' %}">
+            <img class="admin-brand-logo" src="{% static 'pakabet logo-02.png' %}" alt="Pakabet">
+            <span><small>ADMIN CONSOLE</small></span>
+        </a>
+        <p class="admin-nav-label">Workspace</p>
+        <nav class="admin-nav">
+            <a href="{% url 'admin_dashboard' %}"><svg><use href="#icon-overview"></use></svg><span>Overview</span></a>
+            <a href="{% url 'admin_console_section' 'users' %}"{% if section == 'users' or section == 'user_profile' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-users"></use></svg><span>Users</span></a>
+            <a href="{% url 'admin_console_section' 'payments' %}"{% if section == 'payments' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-wallet"></use></svg><span>Payments</span></a>
+            <a href="{% url 'admin_console_section' 'transactions' %}"{% if section == 'transactions' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-receipt"></use></svg><span>Transactions</span></a>
+            <a href="{% url 'admin_console_section' 'players' %}"{% if section == 'players' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-users"></use></svg><span>Round players</span></a>
+            <a href="{% url 'admin_console_section' 'live' %}"{% if section == 'live' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-flight"></use></svg><span>Live game</span></a>
+            <a href="{% url 'admin_console_section' 'rounds' %}"{% if section == 'rounds' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-flight"></use></svg><span>Game rounds</span></a>
+            <a href="{% url 'admin_dashboard' %}#chat-moderation"><svg><use href="#icon-shield"></use></svg><span>Chat moderation</span></a>
+            <a href="{% url 'admin_console_section' 'reports' %}"{% if section == 'reports' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-document"></use></svg><span>Reports</span></a>
+        </nav>
+        <p class="admin-nav-label admin-nav-label--lower">Governance</p>
+        <nav class="admin-nav">
+            <a href="{% url 'admin_console_section' 'risk' %}"{% if section == 'risk' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-shield"></use></svg><span>Risk review</span></a>
+            <a href="{% url 'admin_console_section' 'safeguards' %}"{% if section == 'safeguards' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-help"></use></svg><span>Player safeguards</span></a>
+            <a href="{% url 'admin_console_section' 'security' %}"{% if section == 'security' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-security"></use></svg><span>Security</span></a>
+            <a href="{% url 'admin_console_section' 'settings' %}"{% if section == 'settings' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-settings"></use></svg><span>Platform settings</span></a>
+            <a href="{% url 'admin_console_section' 'admins' %}"{% if section == 'admins' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-users"></use></svg><span>Admin team</span></a>
+        </nav>
+        <div class="admin-rail-footer">
+            <span class="admin-avatar" aria-hidden="true">{{ request.user.username|first|upper }}</span>
+            <span class="admin-identity"><strong>{{ request.user.get_username }}</strong><small>Staff account</small></span>
+            <span class="admin-online-dot" title="Signed in"></span>
+        </div>
+    </aside>
+    <main class="admin-main">
+        <header class="admin-topbar">
+            <div class="admin-topbar-leading">
+                <button class="admin-menu-toggle" id="admin-menu-toggle" type="button" aria-label="Open admin menu" aria-controls="admin-navigation" aria-expanded="false">
+                    <svg aria-hidden="true"><use href="#icon-menu"></use></svg>
+                </button>
+                <div class="admin-breadcrumb"><a href="{% url 'admin_dashboard' %}">Workspace</a><span aria-hidden="true">/</span><strong>{{ section_title }}</strong></div>
+            </div>
+            <div class="admin-topbar-actions"><span class="admin-date">Staff workspace</span><a class="admin-user-menu" href="{% url 'admin_console_section' 'security' %}"><span class="admin-avatar admin-avatar--small">{{ request.user.username|first|upper }}</span><span>{{ request.user.get_username }}</span></a></div>
+        </header>
+        <div class="admin-content">
+            <section class="admin-page-heading">
+                <div><p class="admin-kicker"><span class="admin-live-dot"></span> Platform operations</p><h1>{{ section_title }}</h1><p class="admin-subtitle">{{ section_description }}</p></div>
+                {% if section == 'live' %}<span class="admin-monitor-state" id="admin-monitor-connection"><i></i><span>Connecting to live feed</span></span>{% endif %}
+            </section>
+
+            {% if metrics and section != 'security' %}
+                <section class="admin-metric-grid admin-section-metrics" aria-label="{{ section_title }} summary">
+                    {% for metric in metrics %}
+                        <article class="admin-metric">
+                            <div>
+                                <p>{{ metric.label }}</p>
+                                <strong>{{ metric.value }}</strong>
+                                <small>{{ metric.note }}</small>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </section>
+            {% endif %}
+
+            {% if section == 'live' %}
+                <section class="admin-live-monitor" data-live-monitor data-live-url="{{ live_state_url }}">
+                    <article class="admin-panel admin-live-flight">
+                        <div class="admin-panel-heading">
+                            <div><p class="admin-section-label">Shared game round</p><h2 id="admin-live-round-id">Waiting for round data</h2></div>
+                            <span class="admin-live-badge" id="admin-live-phase">Connecting</span>
+                        </div>
+                        <div class="admin-flight-visual" aria-label="Read-only live flight visualization">
+                            <div class="admin-flight-grid"></div>
+                            <svg viewBox="0 0 1000 260" role="img" aria-label="Live multiplier trajectory">
+                                <path class="admin-flight-path" d="M25 225 C190 220 260 195 380 175 S600 120 720 93 S880 48 975 18"></path>
+                                <path class="admin-flight-trail" id="admin-flight-trail" d="M25 225"></path>
+                                <g class="admin-flight-plane" id="admin-flight-plane" transform="translate(25 225)">
+                                    <circle r="19"></circle>
+                                    <use href="#icon-flight" x="-11" y="-11" width="22" height="22"></use>
+                                </g>
+                            </svg>
+                            <div class="admin-flight-multiplier"><span>Current multiplier</span><strong id="admin-live-multiplier">1.00x</strong></div>
+                        </div>
+                        <div class="admin-live-meta">
+                            <div><span>Round status</span><strong id="admin-live-status">Waiting</strong></div>
+                            <div><span>Round ID</span><strong id="admin-live-round-short">—</strong></div>
+                            <div><span>Last update</span><strong id="admin-live-updated">—</strong></div>
+                        </div>
+                    </article>
+                    <aside class="admin-live-side">
+                        <article class="admin-panel admin-live-stat">
+                            <span class="admin-section-label">Current round activity</span>
+                            <div><span>Total bets</span><strong id="admin-live-bets">0</strong></div>
+                            <div><span>Open bets</span><strong id="admin-live-open-bets">0</strong></div>
+                            <div><span>Cashed out</span><strong id="admin-live-cashed-out">0</strong></div>
+                            <div><span>Total stakes</span><strong id="admin-live-stakes">0.00</strong></div>
+                        </article>
+                        <article class="admin-panel admin-live-integrity">
+                            <span class="admin-section-label">Fairness commitment</span>
+                            <strong>Server seed hash</strong>
+                            <code id="admin-live-seed-hash">Available when a round starts</code>
+                            <p>Emergency voids preserve the original crash point and do not reveal or replace the fairness result.</p>
+                        </article>
+                    </aside>
+                </section>
+                <article class="admin-panel admin-emergency-panel">
+                    <div class="admin-panel-heading">
+                        <div><p class="admin-section-label">Emergency operations</p><h2>End a stuck flight</h2></div>
+                        <span class="admin-emergency-badge">Superuser only</span>
+                    </div>
+                    <p class="admin-panel-intro">Use only when a flight is genuinely stuck. The round will be voided, all unsettled stakes refunded to player wallets, and completed cashouts left unchanged. This does not force a losing crash.</p>
+                    {% if request.user.is_superuser %}
+                        <form method="post" class="admin-emergency-form" data-emergency-void-form>
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="emergency_void_round">
+                            <input type="hidden" name="round_id" data-emergency-round-id>
+                            <label for="admin-emergency-confirmation">Confirm current round</label>
+                            <input id="admin-emergency-confirmation" name="confirmation" type="text" placeholder="Type VOID followed by the current round ID" autocomplete="off" required data-emergency-confirmation>
+                            <label for="admin-emergency-reason">Reason for emergency void</label>
+                            <textarea id="admin-emergency-reason" name="reason" placeholder="Describe the flight issue and why it cannot continue" minlength="5" maxlength="255" required></textarea>
+                            <button class="admin-emergency-button" type="submit" disabled data-emergency-submit>Void flight and refund open bets</button>
+                        </form>
+                        <p class="admin-live-disclaimer">Enter <strong>VOID</strong> followed by the live round ID shown above. The server checks that the round is still active and below its scheduled crash point.</p>
+                    {% else %}
+                        <p class="admin-emergency-restricted">Emergency void controls are available to superusers only. Contact a superuser if a flight is stuck.</p>
+                    {% endif %}
+                </article>
+            {% endif %}
+
+            {% if section == 'security' %}
+                <section class="admin-metric-grid admin-console-metrics" aria-label="Security status">
+                    <article class="admin-metric"><div><p>Failed sign-ins</p><strong>{{ security_failure_count }}</strong><small>Recorded in the last 24 hours</small></div></article>
+                    <article class="admin-metric"><div><p>Open risk alerts</p><strong>{{ security_alert_count }}</strong><small>Require staff review</small></div></article>
+                    <article class="admin-metric"><div><p>HTTPS redirect</p><strong>{% if security_snapshot.https_redirect %}On{% else %}Off{% endif %}</strong><small>Deployment configuration</small></div></article>
+                    <article class="admin-metric"><div><p>Secure cookies</p><strong>{% if security_snapshot.secure_session_cookie and security_snapshot.secure_csrf_cookie %}On{% else %}Review{% endif %}</strong><small>Session and CSRF cookies</small></div></article>
+                    <article class="admin-metric"><div><p>Debug mode</p><strong>{% if security_snapshot.debug %}On{% else %}Off{% endif %}</strong><small>{% if security_snapshot.debug %}Disable for production{% else %}Production posture{% endif %}</small></div></article>
+                </section>
+                <article class="admin-panel admin-security-policy">
+                    <div class="admin-panel-heading"><div><p class="admin-section-label">Authentication controls</p><h2>Failed-login alert threshold</h2></div></div>
+                    <p>Security alerts are raised after <strong>{{ security_snapshot.login_failure_threshold }}</strong> failed attempts from one IP within <strong>{{ security_snapshot.login_failure_window }}</strong> seconds. This is deployment-managed and cannot be changed from the browser.</p>
+                </article>
+            {% endif %}
+
+            {% if section == 'settings' %}
+                <section class="admin-settings-grid">
+                    <article class="admin-panel">
+                        <div class="admin-panel-heading"><div><p class="admin-section-label">Visual identity</p><h2>Platform branding</h2></div></div>
+                        <p class="admin-panel-intro">Changes update the public site header, page title, and browser icon after save.</p>
+                        <form method="post" enctype="multipart/form-data" class="admin-settings-form">
+                            {% csrf_token %}<input type="hidden" name="action" value="save_branding">
+                            <label for="{{ branding_form.site_name.id_for_label }}">Platform name</label>{{ branding_form.site_name }}{{ branding_form.site_name.errors }}
+                            <label for="{{ branding_form.site_tagline.id_for_label }}">Tagline</label>{{ branding_form.site_tagline }}{{ branding_form.site_tagline.errors }}
+                            <div class="admin-upload-grid">
+                                <div><label for="{{ branding_form.logo.id_for_label }}">Logo image</label>{{ branding_form.logo }}<small>PNG, JPG, or WebP · 2 MB maximum</small>{{ branding_form.logo.errors }}</div>
+                                <div><label for="{{ branding_form.favicon.id_for_label }}">Favicon image</label>{{ branding_form.favicon }}<small>PNG, JPG, WebP, or ICO · 2 MB maximum</small>{{ branding_form.favicon.errors }}</div>
+                            </div>
+                            {% if platform_settings.logo %}<div class="admin-brand-preview"><img src="{{ platform_settings.logo.url }}" alt="Current platform logo"><span>Current logo</span></div>{% endif %}
+                            <button class="admin-primary-button" type="submit">Save branding</button>
+                        </form>
+                    </article>
+                    <article class="admin-panel">
+                        <div class="admin-panel-heading"><div><p class="admin-section-label">Round operations</p><h2>Game settings</h2></div></div>
+                        <p class="admin-panel-intro">Outcome bounds remain capped at 286x. Changes apply only to new shared rounds; active rounds are not altered.</p>
+                        <form method="post" class="admin-settings-form">
+                            {% csrf_token %}<input type="hidden" name="action" value="save_game_settings">
+                            <label for="{{ game_settings_form.maximum_crash_point.id_for_label }}">Maximum crash point</label>{{ game_settings_form.maximum_crash_point }}{{ game_settings_form.maximum_crash_point.errors }}<small>Allowed range: 250.00x to 286.00x.</small>
+                            <label for="{{ game_settings_form.betting_seconds.id_for_label }}">Betting window (seconds)</label>{{ game_settings_form.betting_seconds }}{{ game_settings_form.betting_seconds.errors }}<small>Allowed range: 2 to 15 seconds.</small>
+                            <button class="admin-primary-button" type="submit">Save game settings</button>
+                        </form>
+                        <div class="admin-settings-notice"><strong>Fairness protection</strong><span>House edge and outcomes are not operator-editable. Every generated round retains a public seed commitment.</span></div>
+                    </article>
+                </section>
+            {% endif %}
+
+            {% if section == 'admins' %}
+                <section class="admin-panel admin-create-admin-panel">
+                    <div class="admin-panel-heading"><div><p class="admin-section-label">Access management</p><h2>Create administrator account</h2></div></div>
+                    <p class="admin-panel-intro">Create an account with a username, phone number, and password. Super administrator access can only be granted by an existing superuser.</p>
+                    <form method="post" class="admin-admin-create-form">
+                        {% csrf_token %}<input type="hidden" name="action" value="create_admin">
+                        <div class="admin-form-field"><label for="{{ admin_account_form.username.id_for_label }}">Username</label>{{ admin_account_form.username }}{{ admin_account_form.username.errors }}</div>
+                        <div class="admin-form-field"><label for="{{ admin_account_form.phone_number.id_for_label }}">Phone number</label>{{ admin_account_form.phone_number }}{{ admin_account_form.phone_number.errors }}</div>
+                        <div class="admin-form-field"><label for="{{ admin_account_form.role.id_for_label }}">Role</label>{{ admin_account_form.role }}{{ admin_account_form.role.errors }}</div>
+                        <div class="admin-form-field"><label for="{{ admin_account_form.password1.id_for_label }}">Temporary password</label>{{ admin_account_form.password1 }}{{ admin_account_form.password1.errors }}</div>
+                        <div class="admin-form-field"><label for="{{ admin_account_form.password2.id_for_label }}">Confirm password</label>{{ admin_account_form.password2 }}{{ admin_account_form.password2.errors }}</div>
+                        <button class="admin-primary-button" type="submit">Create account</button>
+                    </form>
+                </section>
+            {% endif %}
+
+            {% if section == 'user_profile' %}
+                <div class="admin-profile-toolbar">
+                    <a class="admin-profile-back" href="{% url 'admin_console_section' 'users' %}"><svg aria-hidden="true"><use href="#icon-arrow-left"></use></svg> Back to players</a>
+                </div>
+                <section class="admin-profile-overview">
+                    <article class="admin-panel admin-profile-identity">
+                        <div class="admin-profile-avatar" aria-hidden="true">{{ profile.user.username|first|upper }}</div>
+                        <div class="admin-profile-identity-copy">
+                            <p class="admin-section-label">Player account · #{{ profile.user_id }}</p>
+                            <h2>{{ profile.user.username }}</h2>
+                            <p>{{ profile.phone_number|default:'Phone number not available' }}{% if profile.user.email %}<span> · </span>{{ profile.user.email }}{% endif %}</p>
+                            <div class="admin-profile-badges">
+                                <span class="admin-profile-badge{% if profile.account_status == 'active' and profile.user.is_active %} is-positive{% elif profile.account_status == 'locked' or profile.account_status == 'banned' or not profile.user.is_active %} is-warning{% endif %}">{{ profile.get_account_status_display }}</span>
+                                <span class="admin-profile-badge">{% if profile.user.is_active %}Sign-in enabled{% else %}Sign-in disabled{% endif %}</span>
+                            </div>
+                        </div>
+                        <div class="admin-profile-wallet"><span>Wallet balance</span><strong>{{ profile.balance|floatformat:2 }} <small>{{ profile.currency }}</small></strong></div>
+                    </article>
+                    <div class="admin-profile-stat-grid">
+                        <article class="admin-profile-stat"><span>Joined</span><strong>{{ profile.created_at|date:'d M Y' }}</strong><small>{{ profile.created_at|date:'H:i' }}</small></article>
+                        <article class="admin-profile-stat"><span>Last sign-in</span><strong>{% if profile.user.last_login %}{{ profile.user.last_login|date:'d M Y' }}{% else %}Never{% endif %}</strong><small>{% if profile.user.last_login %}{{ profile.user.last_login|date:'H:i' }}{% else %}No sign-in recorded{% endif %}</small></article>
+                        <article class="admin-profile-stat"><span>Recorded bets</span><strong>{{ player_bet_count }}</strong><small>All game rounds</small></article>
+                        <article class="admin-profile-stat"><span>Ledger entries</span><strong>{{ player_transaction_count }}</strong><small>Retained account history</small></article>
+                    </div>
+                </section>
+
+                <section class="admin-profile-management">
+                    <article class="admin-panel admin-profile-action-panel">
+                        <div class="admin-panel-heading"><div><p class="admin-section-label">Account access</p><h2>Manage player access</h2></div><svg class="admin-profile-heading-icon" aria-hidden="true"><use href="#icon-security"></use></svg></div>
+                        {% if can_manage_player %}
+                            <p class="admin-profile-help">Lock or ban access with a clear reason. Unlock restores the account state; revoked sign-ins must log in again.</p>
+                            <form method="post" class="admin-profile-access-form">
+                                {% csrf_token %}
+                                <label for="profile-access-reason">Reason for access change</label>
+                                <input id="profile-access-reason" name="reason" type="text" maxlength="255" placeholder="Add a short reason for locking or banning" autocomplete="off">
+                                <div class="admin-profile-button-row">
+                                    <button name="action" value="lock_user" type="submit" class="admin-profile-button is-neutral">Lock account</button>
+                                    <button name="action" value="ban_user" type="submit" class="admin-profile-button is-danger">Ban account</button>
+                                    <button name="action" value="unlock_user" type="submit" class="admin-profile-button is-positive">Unlock</button>
+                                    <button name="action" value="revoke_sessions" type="submit" class="admin-profile-button is-secondary">Revoke sessions</button>
+                                </div>
+                            </form>
+                        {% else %}
+                            <div class="admin-profile-protected"><svg aria-hidden="true"><use href="#icon-security"></use></svg><div><strong>{% if profile.account_status == 'anonymized' %}Identity anonymized{% else %}Protected account{% endif %}</strong><span>{% if profile.account_status == 'anonymized' %}Identity details and account actions have already been permanently removed.{% else %}Your administrator role cannot change access for this account.{% endif %}</span></div></div>
+                        {% endif %}
+                    </article>
+                    <article class="admin-panel admin-profile-action-panel admin-profile-anonymize">
+                        <div class="admin-panel-heading"><div><p class="admin-section-label">Permanent action</p><h2>Anonymize identity</h2></div><svg class="admin-profile-heading-icon is-danger" aria-hidden="true"><use href="#icon-user"></use></svg></div>
+                        <p class="admin-profile-help">Removes identity and sign-in details while retaining financial and gameplay records for audit history. This cannot be undone.</p>
+                        {% if can_manage_player %}
+                            <form method="post" class="admin-profile-anonymize-form" onsubmit="return confirm('Permanently anonymize this identity? Financial and gameplay records will remain.');">
+                                {% csrf_token %}
+                                <label for="profile-anonymize-confirmation">Confirm account anonymization</label>
+                                <div class="admin-profile-button-row">
+                                    <input id="profile-anonymize-confirmation" name="confirmation" type="text" placeholder="Type ANONYMIZE {{ profile.user_id }}" required autocomplete="off">
+                                    <button name="action" value="anonymize_user" type="submit" class="admin-profile-button is-danger">Anonymize identity</button>
+                                </div>
+                            </form>
+                        {% endif %}
+                    </article>
+                </section>
+
+                <section class="admin-profile-history-grid">
+                    <article class="admin-panel admin-profile-history">
+                        <div class="admin-panel-heading"><div><p class="admin-section-label">Gameplay</p><h2>Recent bets</h2></div></div>
+                        <div class="admin-profile-record-list">
+                            {% for bet in player_bets %}
+                                <div class="admin-profile-record">
+                                    <div class="admin-profile-record-main"><strong>{% if bet.round %}Round {{ bet.round.public_id }}{% else %}Unassigned round{% endif %}</strong><span>{{ bet.created_at|date:'d M Y · H:i' }} · Stake {{ bet.stake|floatformat:2 }} {{ profile.currency }}</span></div>
+                                    <div class="admin-profile-record-action">
+                                        {% if bet.admin_refunded_at %}<span class="admin-profile-badge is-positive">Refunded</span>
+                                        {% elif bet.round.status == 'crashed' and not bet.cashed_out_at and not bet.won_amount and can_manage_player %}
+                                            <details class="admin-refund-disclosure"><summary>Review refund</summary><form method="post">{% csrf_token %}<input type="hidden" name="session_id" value="{{ bet.pk }}"><label for="refund-reason-{{ bet.pk }}">Refund reason</label><input id="refund-reason-{{ bet.pk }}" name="reason" type="text" placeholder="Describe the correction" maxlength="255" required><button class="admin-profile-button is-secondary" name="action" value="refund_lost_bet" type="submit">Credit {{ bet.stake|floatformat:2 }}</button></form></details>
+                                        {% else %}<span class="admin-profile-record-value">{% if bet.cashed_out_at %}Cashed out at {{ bet.cashed_out_at|floatformat:2 }}x{% elif bet.round %}{{ bet.round.get_status_display }}{% else %}—{% endif %}</span>{% endif %}
+                                    </div>
+                                </div>
+                            {% empty %}<p class="admin-profile-empty">No bets recorded for this player.</p>{% endfor %}
+                        </div>
+                    </article>
+                    <article class="admin-panel admin-profile-history">
+                        <div class="admin-panel-heading"><div><p class="admin-section-label">Wallet ledger</p><h2>Recent transactions</h2></div></div>
+                        <div class="admin-profile-record-list">
+                            {% for transaction in player_transactions %}
+                                <div class="admin-profile-record">
+                                    <div class="admin-profile-record-main"><strong>{{ transaction.get_transaction_type_display }}</strong><span>{{ transaction.created_at|date:'d M Y · H:i' }} · {{ transaction.reference|default:'No reference' }}</span></div>
+                                    <span class="admin-profile-record-value">{{ transaction.amount|floatformat:2 }} {{ profile.currency }}</span>
+                                </div>
+                            {% empty %}<p class="admin-profile-empty">No wallet transactions recorded.</p>{% endfor %}
+                        </div>
+                    </article>
+                    <article class="admin-panel admin-profile-history">
+                        <div class="admin-panel-heading"><div><p class="admin-section-label">Payments</p><h2>Recent provider activity</h2></div></div>
+                        <div class="admin-profile-record-list">
+                            {% for payment in player_payments %}
+                                <div class="admin-profile-record">
+                                    <div class="admin-profile-record-main"><strong>{{ payment.get_payment_type_display }} · {{ payment.get_provider_display }}</strong><span>{{ payment.created_at|date:'d M Y · H:i' }} · {{ payment.external_reference }}</span></div>
+                                    <span class="admin-profile-record-value">{{ payment.get_status_display }} · {{ payment.amount|floatformat:2 }}</span>
+                                </div>
+                            {% empty %}<p class="admin-profile-empty">No provider payments recorded.</p>{% endfor %}
+                        </div>
+                    </article>
+                    <article class="admin-panel admin-profile-history">
+                        <div class="admin-panel-heading"><div><p class="admin-section-label">Player safety</p><h2>Risk review history</h2></div></div>
+                        <div class="admin-profile-record-list">
+                            {% for alert in player_risk_alerts %}
+                                <div class="admin-profile-record">
+                                    <div class="admin-profile-record-main"><strong>{{ alert.alert_type }} · {{ alert.get_severity_display }}</strong><span>{{ alert.created_at|date:'d M Y · H:i' }} · {{ alert.description|truncatechars:110 }}</span></div>
+                                    <span class="admin-profile-record-value">{{ alert.get_status_display }}</span>
+                                </div>
+                            {% empty %}<p class="admin-profile-empty">No risk alerts for this player.</p>{% endfor %}
+                        </div>
+                    </article>
+                </section>
+            {% endif %}
+
+            {% if section != 'reports' and section != 'live' and section != 'settings' and section != 'user_profile' and section != 'players' %}
+                <form class="admin-console-search" method="get" role="search">
+                    <label for="admin-search">Search {{ section_title|lower }}</label>
+                    <div>
+                        <input id="admin-search" type="search" name="q" value="{{ search }}" maxlength="100" placeholder="Search records">
+                        {% if section == 'users' %}
+                            <select name="account_status" aria-label="Filter by account status"><option value="">All account states</option><option value="active"{% if account_status_filter == 'active' %} selected{% endif %}>Active</option><option value="locked"{% if account_status_filter == 'locked' %} selected{% endif %}>Locked</option><option value="banned"{% if account_status_filter == 'banned' %} selected{% endif %}>Banned</option><option value="anonymized"{% if account_status_filter == 'anonymized' %} selected{% endif %}>Anonymized</option></select>
+                        {% elif section == 'payments' %}
+                            <select name="status" aria-label="Filter by payment status"><option value="">All statuses</option><option value="queued"{% if status_filter == 'queued' %} selected{% endif %}>Queued</option><option value="pending"{% if status_filter == 'pending' %} selected{% endif %}>Pending</option><option value="processing"{% if status_filter == 'processing' %} selected{% endif %}>Processing</option><option value="completed"{% if status_filter == 'completed' %} selected{% endif %}>Completed</option><option value="failed"{% if status_filter == 'failed' %} selected{% endif %}>Failed</option><option value="cancelled"{% if status_filter == 'cancelled' %} selected{% endif %}>Cancelled</option></select>
+                            <select name="type" aria-label="Filter by payment type"><option value="">All types</option><option value="deposit"{% if type_filter == 'deposit' %} selected{% endif %}>Deposit</option><option value="withdraw"{% if type_filter == 'withdraw' %} selected{% endif %}>Withdrawal</option></select>
+                        {% elif section == 'risk' %}
+                            <select name="status" aria-label="Filter by alert status"><option value="">All statuses</option><option value="open"{% if status_filter == 'open' %} selected{% endif %}>Open</option><option value="reviewing"{% if status_filter == 'reviewing' %} selected{% endif %}>Reviewing</option><option value="resolved"{% if status_filter == 'resolved' %} selected{% endif %}>Resolved</option><option value="dismissed"{% if status_filter == 'dismissed' %} selected{% endif %}>Dismissed</option></select>
+                        {% elif section == 'transactions' %}
+                            <select name="status" aria-label="Filter by transaction status"><option value="">All statuses</option><option value="completed"{% if status_filter == 'completed' %} selected{% endif %}>Completed</option><option value="pending"{% if status_filter == 'pending' %} selected{% endif %}>Pending</option><option value="failed"{% if status_filter == 'failed' %} selected{% endif %}>Failed</option></select>
+                            <select name="type" aria-label="Filter by transaction type"><option value="">All types</option><option value="deposit"{% if type_filter == 'deposit' %} selected{% endif %}>Deposit</option><option value="withdraw"{% if type_filter == 'withdraw' %} selected{% endif %}>Withdrawal</option><option value="bet"{% if type_filter == 'bet' %} selected{% endif %}>Bet</option><option value="win"{% if type_filter == 'win' %} selected{% endif %}>Win</option><option value="refund"{% if type_filter == 'refund' %} selected{% endif %}>Refund</option><option value="bonus"{% if type_filter == 'bonus' %} selected{% endif %}>Bonus</option></select>
+                        {% elif section == 'rounds' %}
+                            <select name="status" aria-label="Filter by round status"><option value="">All statuses</option><option value="betting"{% if status_filter == 'betting' %} selected{% endif %}>Betting</option><option value="flying"{% if status_filter == 'flying' %} selected{% endif %}>Flying</option><option value="crashed"{% if status_filter == 'crashed' %} selected{% endif %}>Crashed</option><option value="void"{% if status_filter == 'void' %} selected{% endif %}>Void</option></select>
+                        {% endif %}
+                        <button class="admin-primary-button" type="submit">Search</button>
+                    </div>
+                </form>
+            {% endif %}
+
+            {% if section == 'players' %}
+                <form method="get" class="admin-round-picker">
+                    <label for="admin-round-choice">Select game round</label>
+                    <select id="admin-round-choice" name="round_id">
+                        {% for round in round_choices %}<option value="{{ round.pk }}"{% if selected_round_id == round.pk|stringformat:'s' %} selected{% endif %}>{{ round.public_id }} · {{ round.get_status_display }} · {{ round.started_at|date:'d M Y H:i' }}</option>{% empty %}<option value="">No rounds available</option>{% endfor %}
+                    </select>
+                    <input type="search" name="q" value="{{ search }}" placeholder="Filter players by username" aria-label="Filter players by username">
+                    <button class="admin-primary-button" type="submit">View players</button>
+                </form>
+            {% endif %}
+
+            {% if section != 'settings' and section != 'user_profile' %}
+            <section class="admin-panel admin-console-table-panel">
+                <div class="admin-panel-heading"><div><p class="admin-section-label">Records</p><h2>{% if page_obj %}{{ page_obj.paginator.count }} total{% else %}No records{% endif %}</h2></div></div>
+                <div class="admin-table-toolbar">
+                    {% if section != 'reports' %}
+                        <span>Showing {{ page_obj.start_index|default:0 }}–{{ page_obj.end_index|default:0 }} of {{ page_obj.paginator.count|default:0 }}</span>
+                    {% else %}<span>Saved reporting periods</span>{% endif %}
+                    <a class="admin-export-button" href="?{% if export_query %}{{ export_query }}&amp;{% endif %}export=csv">Export CSV</a>
+                </div>
+                <div class="admin-console-table-wrap">
+                    <table class="admin-console-table">
+                        {% if section == 'users' %}
+                            <thead><tr><th>Player</th><th>Phone</th><th>Wallet</th><th>Created</th><th>Access</th><th>Profile</th></tr></thead>
+                            <tbody>{% for profile in page_obj %}<tr>
+                                <td><strong>{{ profile.user.username }}</strong><small class="admin-cell-subtitle">#{{ profile.user_id }} · {{ profile.user.get_full_name|default:'Player account' }}</small></td>
+                                <td>{{ profile.phone_number|default:'—' }}</td>
+                                <td>{{ profile.balance|floatformat:2 }} {{ profile.currency }}</td>
+                                <td>{{ profile.created_at|date:'d M Y H:i' }}</td>
+                                <td><span class="admin-status{% if profile.account_status == 'banned' or profile.account_status == 'locked' %} admin-status--danger{% endif %}">{{ profile.get_account_status_display }}</span>{% if profile.account_note %}<small class="admin-cell-subtitle">{{ profile.account_note }}</small>{% endif %}</td>
+                                <td><a class="admin-table-action" href="{% url 'admin_player_profile' profile.user_id %}">Open profile</a></td>
+                            </tr>{% empty %}<tr><td colspan="6" class="admin-table-empty">No player accounts found.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'payments' %}
+                            <thead><tr><th>Created</th><th>Player</th><th>Type</th><th>Provider</th><th>Amount</th><th>Status</th><th>Reference</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td>{{ item.created_at|date:'d M Y H:i' }}</td><td>{{ item.user.username }}</td><td>{{ item.get_payment_type_display }}</td><td>{{ item.get_provider_display }}</td><td>{{ item.amount|floatformat:2 }}</td><td><span class="admin-status">{{ item.get_status_display }}</span></td><td>{{ item.external_reference }}</td></tr>{% empty %}<tr><td colspan="7" class="admin-table-empty">No payment requests found.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'transactions' %}
+                            <thead><tr><th>Created</th><th>Player</th><th>Type</th><th>Amount</th><th>Status</th><th>Reference</th><th>Description</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td>{{ item.created_at|date:'d M Y H:i' }}</td><td>{{ item.user.username }}</td><td>{{ item.get_transaction_type_display }}</td><td>{{ item.amount|floatformat:2 }}</td><td>{{ item.get_status_display }}</td><td>{{ item.reference|default:'—' }}</td><td>{{ item.description|default:'—' }}</td></tr>{% empty %}<tr><td colspan="7" class="admin-table-empty">No transaction records found.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'rounds' or section == 'live' %}
+                            <thead><tr><th>Started</th><th>Round ID</th><th>Status</th><th>Crash point</th><th>Bets</th><th>Seed commitment</th><th>Players</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td>{{ item.started_at|date:'d M Y H:i:s' }}</td><td>{{ item.public_id }}</td><td>{{ item.get_status_display }}</td><td>{{ item.crash_point|floatformat:2 }}x</td><td>{{ item.bet_count }} ({{ item.winning_bet_count }} won)</td><td class="admin-monospace">{{ item.server_seed_hash }}</td><td><a class="admin-table-action" href="{% url 'admin_console_section' 'players' %}?round_id={{ item.pk }}">View players</a></td></tr>{% empty %}<tr><td colspan="7" class="admin-table-empty">No game rounds found.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'players' %}
+                            <thead><tr><th>Player</th><th>Presence</th><th>Stake</th><th>Auto cashout</th><th>Cashout</th><th>Winnings</th><th>Account</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td><strong>{{ item.user.username }}</strong><small class="admin-cell-subtitle">Bet #{{ item.pk }}</small></td><td>{% if item.player_online %}<span class="admin-status admin-status--success">Recently online</span>{% else %}<span class="admin-status">Not recently seen</span>{% endif %}</td><td>{{ item.stake|floatformat:2 }}</td><td>{% if item.auto_cashout_at %}{{ item.auto_cashout_at|floatformat:2 }}x{% else %}—{% endif %}</td><td>{% if item.cashed_out_at %}{{ item.cashed_out_at|floatformat:2 }}x{% else %}—{% endif %}</td><td>{{ item.won_amount|floatformat:2 }}</td><td><a class="admin-table-action" href="{% url 'admin_player_profile' item.user_id %}">Open profile</a></td></tr>{% empty %}<tr><td colspan="7" class="admin-table-empty">No bets are recorded for this round.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'reports' %}
+                            <thead><tr><th>Period</th><th>Dates</th><th>Deposits</th><th>Withdrawals</th><th>Bets</th><th>Wins</th><th>GGR</th><th>Generated by</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td>{{ item.get_report_type_display }}</td><td>{{ item.period_start|date:'d M Y' }} – {{ item.period_end|date:'d M Y' }}</td><td>{{ item.total_deposits|floatformat:2 }}</td><td>{{ item.total_withdrawals|floatformat:2 }}</td><td>{{ item.total_bets|floatformat:2 }}</td><td>{{ item.total_wins|floatformat:2 }}</td><td>{{ item.gross_gaming_revenue|floatformat:2 }}</td><td>{{ item.generated_by|default:'—' }}</td></tr>{% empty %}<tr><td colspan="8" class="admin-table-empty">No reports generated yet. Generate one from the overview.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'risk' %}
+                            <thead><tr><th>Created</th><th>Player</th><th>Alert</th><th>Severity</th><th>Status</th><th>Details</th><th>Review</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td>{{ item.created_at|date:'d M Y H:i' }}</td><td>{{ item.user.username }}</td><td>{{ item.alert_type }}</td><td>{{ item.get_severity_display }}</td><td>{{ item.get_status_display }}</td><td class="admin-wrap-cell">{{ item.description }}{% if item.data.message %}<br><small>Message: {{ item.data.message }}</small>{% endif %}</td><td>{% if item.status == 'open' or item.status == 'reviewing' %}<form method="post" class="admin-inline-action">{% csrf_token %}<input type="hidden" name="action" value="update_alert"><input type="hidden" name="alert_id" value="{{ item.pk }}"><select name="status" aria-label="Set alert status"><option value="reviewing"{% if item.status == 'reviewing' %} selected{% endif %}>Reviewing</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option></select><button type="submit" class="admin-moderation-action">Update</button></form>{% else %}—{% endif %}</td></tr>{% empty %}<tr><td colspan="7" class="admin-table-empty">No risk alerts found.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'safeguards' %}
+                            <thead><tr><th>Created</th><th>Player</th><th>Starts</th><th>Ends</th><th>Permanent</th><th>Active</th><th>Reason</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td>{{ item.created_at|date:'d M Y H:i' }}</td><td>{{ item.user.username }}</td><td>{{ item.starts_at|date:'d M Y H:i' }}</td><td>{% if item.ends_at %}{{ item.ends_at|date:'d M Y H:i' }}{% else %}—{% endif %}</td><td>{{ item.permanent|yesno:'Yes,No' }}</td><td>{{ item.is_active|yesno:'Active,Expired' }}</td><td>{{ item.reason|default:'—' }}</td></tr>{% empty %}<tr><td colspan="7" class="admin-table-empty">No self-exclusion records found.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'security' %}
+                            <thead><tr><th>Time</th><th>Event</th><th>Account</th><th>IP address</th><th>Details</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td>{{ item.created_at|date:'d M Y H:i:s' }}</td><td>{{ item.data.event|default:item.description }}</td><td>{% if item.data.account_key %}{{ item.data.account_key }}{% elif item.user %}{{ item.user.username }}{% else %}Unknown{% endif %}</td><td>{{ item.ip_address|default:'—' }}</td><td class="admin-wrap-cell">{{ item.description }}{% if item.data.failure_count %}<br>Failures: {{ item.data.failure_count }}{% endif %}</td></tr>{% empty %}<tr><td colspan="5" class="admin-table-empty">No security events recorded.</td></tr>{% endfor %}</tbody>
+                        {% elif section == 'admins' %}
+                            <thead><tr><th>Administrator</th><th>Phone</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Access actions</th></tr></thead>
+                            <tbody>{% for item in page_obj %}<tr><td><strong>{{ item.username }}</strong><small class="admin-cell-subtitle">Account #{{ item.pk }}</small></td><td>{% if item.profile %}{{ item.profile.phone_number|default:'—' }}{% else %}—{% endif %}</td><td>{% if item.is_superuser %}<span class="admin-status admin-status--danger">Super administrator</span>{% else %}<span class="admin-status">Operations staff</span>{% endif %}</td><td>{% if item.is_active %}Active{% else %}Disabled{% endif %}</td><td>{{ item.last_login|date:'d M Y H:i'|default:'Never' }}</td><td>{% if is_superuser and item.pk != request.user.pk %}<form method="post" class="admin-inline-action">{% csrf_token %}<input type="hidden" name="user_id" value="{{ item.pk }}">{% if not item.is_superuser %}<button class="admin-moderation-action" name="action" value="promote_superuser" type="submit">Promote</button>{% endif %}<button class="admin-moderation-action admin-action-danger" name="action" value="revoke_admin" type="submit">Revoke access</button></form>{% else %}<span class="admin-muted-note">Protected</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="6" class="admin-table-empty">No administrator accounts found.</td></tr>{% endfor %}</tbody>
+                        {% endif %}
+                    </table>
+                </div>
+                {% if page_obj and page_obj.paginator.num_pages > 1 %}
+                    <nav class="admin-pagination" aria-label="Records pages">
+                        {% if page_obj.has_previous %}<a href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+                        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                        {% if page_obj.has_next %}<a href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+                    </nav>
+                {% endif %}
+            </section>
+            {% endif %}
+            <footer class="admin-footer"><span>{{ platform_name }} operations</span><span>Authorized staff access only</span></footer>
+        </div>
+    </main>
+</div>
+{% endblock %}

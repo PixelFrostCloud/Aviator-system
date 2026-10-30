@@ -5,23 +5,37 @@
     <meta charset="UTF-8">
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/png" href="{% static 'pakabet logo-03.png' %}">
-    <link rel="apple-touch-icon" href="{% static 'pakabet logo-03.png' %}">
-    <title>{% block title %}Pakabet{% endblock %}</title>
+    {% if platform_tagline %}<meta name="description" content="{{ platform_tagline }}">{% endif %}
+    <title>{% block title %}{{ platform_name }}{% endblock %}</title>
+    {% if platform_branding and platform_branding.favicon %}
+        <link rel="icon" href="{{ platform_branding.favicon.url }}">
+    {% else %}
+        <link rel="icon" href="{% static 'pakabet logo-03.png' %}">
+    {% endif %}
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap">
-    <link rel="stylesheet" href="{% static 'core/css/styles.css' %}?v=pakabet-flight-logo-20261014-1">
-    <script src="{% static 'core/js/main.js' %}?v=odd-counter-fix-20261014-1" defer></script>
+    <link rel="stylesheet" href="{% static 'core/css/styles.css' %}?v=typing-banner-20261030-2">
+    {% block extra_head %}{% endblock %}
+    <script src="{% static 'core/js/main.js' %}?v=typing-banner-20261030-2" defer></script>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
     <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <symbol id="icon-plane" viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l4.5-4.5a2.1 2.1 0 0 0-3-3L13 8l-8.2-1.8a1 1 0 0 0-.9 1.7l5.6 4-3.1 3.1-2.2-.4-1.3 1.3 3.4 1.4 1.4 3.4 1.3-1.3-.4-2.2 3.1-3.1 4 5.6a1 1 0 0 0 1.7-.9Z"/></symbol>
+        <symbol id="icon-falcon" viewBox="0 0 32 24"><path fill="currentColor" stroke="none" d="M1 14.6c5.1-.2 8.8-3.6 12.2-10.2 1 2.8 1.4 4.9 1.2 6.4 4.1-3.3 9.6-5.2 16.6-5.5-3.9 3-7.1 6.1-9.7 9.5-2.9 3.8-6.7 5-10.5 3.5l-3.6 4.1.2-5.1C4.2 17.3 2.2 16.4 1 14.6Z"/></symbol>
+        <symbol id="icon-flight" viewBox="0 0 24 24"><path d="m3 13 8-3 5-8 2-1 1 2-4 9-2 7-2 1-1-6-5 2-2-2Z"/><path d="m14 13 5 3"/></symbol>
+        <symbol id="icon-security" viewBox="0 0 24 24"><path d="M12 22s8-3.8 8-10V5l-8-3-8 3v7c0 6.2 8 10 8 10Z"/><rect x="9" y="10.5" width="6" height="5.5" rx="1"/><path d="M10.5 10.5V9a1.5 1.5 0 0 1 3 0v1.5"/></symbol>
+        <symbol id="icon-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></symbol>
+        <symbol id="icon-plane" viewBox="0 0 32 24"><path fill="currentColor" stroke="none" d="M1 14.6c5.1-.2 8.8-3.6 12.2-10.2 1 2.8 1.4 4.9 1.2 6.4 4.1-3.3 9.6-5.2 16.6-5.5-3.9 3-7.1 6.1-9.7 9.5-2.9 3.8-6.7 5-10.5 3.5l-3.6 4.1.2-5.1C4.2 17.3 2.2 16.4 1 14.6Z"/></symbol>
+        <symbol id="icon-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></symbol>
+        <symbol id="icon-game" viewBox="0 0 24 24"><path d="m3 13 8-3 5-8 2-1 1 2-4 9-2 7-2 1-1-6-5 2-2-2Z"/><path d="m14 13 5 3"/></symbol>
+        <symbol id="icon-document" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8m-8 4h8"/></symbol>
+        <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></symbol>
+        <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
         <symbol id="icon-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
         <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M3 3v18h18M8 16v-4M13 16V7M18 16v-7"/></symbol>
         <symbol id="icon-user" viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"/></symbol>
         <symbol id="icon-wallet" viewBox="0 0 24 24"><path d="M20 8V5a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v12H5a3 3 0 0 1-3-3V6"/><path d="M20 12h-4a2 2 0 0 0 0 4h4"/><path d="M16 14h.01"/></symbol>
         <symbol id="icon-receipt" viewBox="0 0 24 24"><path d="M4 2v20l4-2 4 2 4-2 4 2V2l-4 2-4-2-4 2-4-2Z"/><path d="M8 10h8M8 14h8"/></symbol>
         <symbol id="icon-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM20 8v6M23 11h-6"/></symbol>
-        <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.7 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.7-1l-1.7.6-1.4-2.4L7.3 15a8 8 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.7-1L11 7.3h2.8l.3 1.8a8 8 0 0 1 1.7 1l1.7-.6 1.4 2.4-1.4 1.1a8 8 0 0 1-.1 2Z"/></symbol>
+        <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></symbol>
         <symbol id="icon-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
         <symbol id="icon-logout" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/></symbol>
         <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
@@ -30,16 +44,21 @@
         <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
         <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 18 6.5L20 12M4 12l2 5.5A7 7 0 0 0 18.4 15"/></symbol>
         <symbol id="icon-close" viewBox="0 0 24 24"><path d="m18 6-12 12M6 6l12 12"/></symbol>
-        <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></symbol>
-        <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></symbol>
     </svg>
     <header class="site-header">
         <div class="container header-grid">
-            <a class="brand" href="{% url 'play' %}">PAKABET</a>
+            <a class="brand" href="{% url 'home' %}">
+                {% if platform_branding and platform_branding.logo %}
+                    <img src="{{ platform_branding.logo.url }}" alt="{{ platform_name }}" class="site-brand-logo">
+                {% else %}
+                    {{ platform_name|upper }}
+                {% endif %}
+            </a>
             <nav class="nav-links">
-                <a href="{% url 'play' %}">Play</a>
+                <a href="{% url 'home' %}">Home</a>
                 {% if user.is_authenticated %}
                     <a href="{% url 'dashboard' %}">Dashboard</a>
+                    <a href="{% url 'room_list' %}">Rooms</a>
                     <a href="{% url 'wallet' %}">Wallet</a>
                     <a href="{% url 'profile' %}">Profile</a>
                     {% if user.is_staff %}
@@ -68,7 +87,7 @@
     </main>
     <footer class="footer">
         <div class="container">
-            <p>© {{ now|date:'Y' }} Pakabet.</p>
+            <p>© {{ now|date:'Y' }} {{ platform_name }}.{% if platform_tagline %} {{ platform_tagline }}{% endif %}</p>
         </div>
     </footer>
 </body>

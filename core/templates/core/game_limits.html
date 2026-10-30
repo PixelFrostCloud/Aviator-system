@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}
-{% block title %}Settings | Pakabet{% endblock %}
+{% block title %}Settings | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="account-page account-settings-page">
     {% include 'core/partials/account_sidebar.html' %}
@@ -26,7 +26,8 @@
                         {% csrf_token %}
                         <input type="hidden" name="action" value="limits">
                         {% include 'core/partials/phone_number_field.html' with phone_form=form %}
-                        <label><span>Daily Deposit Limit <em>{{ profile.currency }}</em></span>{{ form.daily_deposit_limit }}<small>Choose a daily cap up to 300,000 UGX. Each deposit is capped at 300,000 UGX.</small></label>
+                        <small>Your registered number is fixed for withdrawals. Contact support if it needs to be corrected.</small>
+                        <label><span>Daily Deposit Limit <em>{{ profile.currency }}</em></span>{{ form.daily_deposit_limit }}<small>Choose a daily cap from 500 to 10,000,000 UGX. Each deposit is capped at 10,000,000 UGX.</small></label>
                         <label><span>Daily Loss Limit <em>{{ profile.currency }}</em></span>{{ form.daily_loss_limit }}<small>New bets are blocked once your net daily loss reaches this cap.</small></label>
                         {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}
                         <button class="account-action-button primary" type="submit"><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg> Save limits</button>

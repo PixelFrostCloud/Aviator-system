@@ -1,9 +1,9 @@
 {% extends 'core/base.html' %}
-{% block title %}Register | Pakabet{% endblock %}
+{% block title %}Register | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="auth-screen">
     <div class="auth-showcase">
-        <a class="auth-brand" href="{% url 'home' %}">PAKABET</a>
+        <a class="auth-brand" href="{% url 'home' %}">{% if platform_branding and platform_branding.logo %}<img src="{{ platform_branding.logo.url }}" alt="{{ platform_name }}">{% else %}{{ platform_name|upper }}{% endif %}</a>
         <div class="auth-showcase-copy">
             <span class="auth-kicker">Start playing</span>
             <h1>Your next round starts here.</h1>
@@ -18,7 +18,7 @@
 
     <div class="auth-card auth-card-register">
         <span class="auth-kicker">Create account</span>
-        <h2>Join Pakabet</h2>
+        <h2>Join {{ platform_name }}</h2>
         <p class="auth-intro">Your phone number is required for mobile-money wallet payments.</p>
         {% if referral_inviter %}
             <p class="referral-invite-notice">You were invited by <strong>{{ referral_inviter.user.username }}</strong>. Your account will be linked automatically.</p>
@@ -35,11 +35,6 @@
                     Username
                     {{ form.username }}
                     {% for error in form.username.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
-                </label>
-                <label>
-                    Email
-                    {{ form.email }}
-                    {% for error in form.email.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
                 </label>
             </div>
             {% include 'core/partials/phone_number_field.html' with phone_form=form %}

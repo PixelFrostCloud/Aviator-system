@@ -6,13 +6,19 @@ from decimal import Decimal, ROUND_DOWN
 from django.db import models, transaction as db_transaction
 from django.db.models import Sum
 from django.utils import timezone
-from .constants import MAXIMUM_DEPOSIT_AMOUNT, MINIMUM_MOBILE_MONEY_AMOUNT
+from .constants import (
+    MAXIMUM_DAILY_DEPOSIT_LIMIT,
+    MAXIMUM_DEPOSIT_AMOUNT,
+    MINIMUM_DAILY_DEPOSIT_LIMIT,
+    MINIMUM_MOBILE_MONEY_AMOUNT,
+)
 from .models import AuditLog, FinancialReport, GameRound, GameSession, PaymentRequest, Profile, RiskAlert, SelfExclusion
 
 
 HOUSE_EDGE = Decimal('0.0100')
 RTP_FACTOR = Decimal('1.0000') - HOUSE_EDGE
-MAX_CRASH_POINT = Decimal('100000.00')
+MAX_CRASH_POINT = Decimal('286.00')
+LEGACY_MAX_CRASH_POINT = Decimal('100000.00')
 URA_GGR_TAX_RATE = Decimal('0.15')
 
 
@@ -67,7 +73,12 @@ def build_client_seed(user, request=None):
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
 
-def calculate_crash_point(server_seed, client_seed, house_edge=HOUSE_EDGE):
+def calculate_crash_point(
+    server_seed,
+    client_seed,
+    house_edge=HOUSE_EDGE,
+    max_crash_point=MAX_CRASH_POINT,
+):
     digest = hmac.new(
         server_seed.encode('utf-8'),
         client_seed.encode('utf-8'),
@@ -81,14 +92,18 @@ def calculate_crash_point(server_seed, client_seed, house_edge=HOUSE_EDGE):
 
     rtp_factor = Decimal('1.0000') - Decimal(house_edge)
     crash = (rtp_factor / (Decimal('1.0000') - uniform)).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
-    return min(max(crash, Decimal('1.00')), MAX_CRASH_POINT)
+    return min(max(crash, Decimal('1.00')), max_crash_point)
 
 
-def create_game_round(user, request=None):
+def create_game_round(user, request=None, max_crash_point=MAX_CRASH_POINT):
     server_seed = generate_server_seed()
     client_seed = build_client_seed(user, request)
     seed_hash = hash_server_seed(server_seed)
-    crash_point = calculate_crash_point(server_seed, client_seed)
+    crash_point = calculate_crash_point(
+        server_seed,
+        client_seed,
+        max_crash_point=max_crash_point,
+    )
     public_id = secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:18].upper()
 
     while GameRound.objects.filter(public_id=public_id).exists():
@@ -119,11 +134,17 @@ def reveal_game_round(round_obj, server_seed=None):
 def verify_game_round(server_seed, client_seed, expected_hash, expected_crash_point, house_edge=HOUSE_EDGE):
     if hash_server_seed(server_seed) != expected_hash:
         return False
+    expected_crash_point = Decimal(str(expected_crash_point)).quantize(Decimal('0.01'))
     return calculate_crash_point(
         server_seed,
         client_seed,
         house_edge,
-    ) == Decimal(str(expected_crash_point)).quantize(Decimal('0.01'))
+    ) == expected_crash_point or calculate_crash_point(
+        server_seed,
+        client_seed,
+        house_edge,
+        LEGACY_MAX_CRASH_POINT,
+    ) == expected_crash_point
 
 
 def generate_payment_reference(prefix):
@@ -147,12 +168,15 @@ def can_deposit(profile, amount):
     if amount < MINIMUM_MOBILE_MONEY_AMOUNT:
         return False, 'Deposits must be at least 500 UGX.'
     if amount > MAXIMUM_DEPOSIT_AMOUNT:
-        return False, 'Deposits cannot exceed 300,000 UGX per transaction.'
+        return False, 'Deposits cannot exceed 10,000,000 UGX per transaction.'
     if is_self_excluded(profile.user):
         return False, 'Your account is currently self-excluded.'
 
     daily_total = get_daily_deposit_total(profile.user)
-    daily_limit = min(profile.daily_deposit_limit, MAXIMUM_DEPOSIT_AMOUNT)
+    daily_limit = min(
+        max(profile.daily_deposit_limit, MINIMUM_DAILY_DEPOSIT_LIMIT),
+        MAXIMUM_DAILY_DEPOSIT_LIMIT,
+    )
     if daily_total + amount > daily_limit:
         return False, f'Daily deposit limit exceeded. Remaining today: {daily_limit - daily_total:.2f} {profile.currency}.'
 
@@ -241,7 +265,10 @@ def run_player_risk_checks(user):
         return alerts
 
     daily_total = get_daily_deposit_total(user)
-    daily_deposit_limit = min(profile.daily_deposit_limit, MAXIMUM_DEPOSIT_AMOUNT)
+    daily_deposit_limit = min(
+        max(profile.daily_deposit_limit, MINIMUM_DAILY_DEPOSIT_LIMIT),
+        MAXIMUM_DAILY_DEPOSIT_LIMIT,
+    )
     if daily_deposit_limit and daily_total >= daily_deposit_limit * Decimal('0.80'):
         alerts.append(create_risk_alert(
             user,

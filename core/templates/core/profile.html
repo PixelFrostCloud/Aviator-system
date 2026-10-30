@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}
-{% block title %}Profile | Pakabet{% endblock %}
+{% block title %}Profile | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="account-page account-profile-page">
     {% include 'core/partials/account_sidebar.html' %}
@@ -87,6 +87,7 @@
                             <input type="hidden" name="action" value="compliance">
                             <h3>Compliance settings</h3>
                             {% include 'core/partials/phone_number_field.html' with phone_form=form %}
+                            <small>Your registered number is fixed for withdrawals. Contact support if it needs to be corrected.</small>
                             {{ form.daily_deposit_limit }}
                             {{ form.daily_loss_limit }}
                             {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}

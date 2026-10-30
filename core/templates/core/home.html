@@ -6,9 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="refresh" content="5;url={% url 'play' %}">
     <meta name="theme-color" content="#171819">
-    <link rel="icon" type="image/png" href="{% static 'pakabet logo-03.png' %}">
-    <link rel="apple-touch-icon" href="{% static 'pakabet logo-03.png' %}">
-    <title>Pakabet</title>
+    {% if platform_branding and platform_branding.favicon %}
+        <link rel="icon" href="{{ platform_branding.favicon.url }}">
+        <link rel="apple-touch-icon" href="{{ platform_branding.favicon.url }}">
+    {% elif platform_branding and platform_branding.logo %}
+        <link rel="icon" href="{{ platform_branding.logo.url }}">
+        <link rel="apple-touch-icon" href="{{ platform_branding.logo.url }}">
+    {% else %}
+        <link rel="icon" type="image/png" href="{% static 'pakabet logo-03.png' %}">
+    {% endif %}
+    <title>{{ platform_name }}</title>
     <style>
         * { box-sizing: border-box; }
         html, body { min-height: 100%; margin: 0; }
@@ -32,15 +39,23 @@
             animation: reveal 700ms ease-out both;
         }
         .splash img {
-            width: clamp(12rem, 45vw, 24rem);
+            width: clamp(10rem, 38vw, 21rem);
             height: auto;
             object-fit: contain;
-            margin-bottom: 1.15rem;
+            margin-bottom: 0.85rem;
         }
         .splash h1 {
             margin: 0;
+            color: #ee3661;
             font-size: clamp(2rem, 6vw, 3.25rem);
             font-weight: 700;
+            letter-spacing: 0.16em;
+        }
+        .splash-tagline {
+            margin: 0.5rem 0 0;
+            color: #c7ccd5;
+            font-size: clamp(0.85rem, 2.2vw, 1rem);
+            font-weight: 500;
             letter-spacing: 0.16em;
         }
         .splash-footer {
@@ -64,8 +79,10 @@
     </style>
 </head>
 <body>
-    <main class="splash" aria-label="Pakabet loading">
-        <img src="{% static 'pakabet logo-03.png' %}" alt="Pakabet logo">
+    <main class="splash" aria-label="{{ platform_name }} loading">
+        {% if platform_branding and platform_branding.logo %}<img src="{{ platform_branding.logo.url }}" alt="{{ platform_name }} logo">{% else %}<img src="{% static 'pakabet logo-03.png' %}" alt="{{ platform_name }} logo">{% endif %}
+        <h1>{{ platform_name|upper }}</h1>
+        <p class="splash-tagline">{{ platform_tagline|default:'Play, Fly, Win' }}</p>
     </main>
     <footer class="splash-footer">
         <p>Powered by Pixelfrost Cloud Co.</p>

@@ -261,6 +261,9 @@ function attachPlayWidget() {
       empty.textContent = 'No chat messages yet.';
       chatList.append(empty);
     }
+    requestAnimationFrame(() => {
+      chatList.scrollTop = chatList.scrollHeight;
+    });
 
     function isChatNearBottom() {
       return chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 32;
@@ -743,6 +746,9 @@ function attachPlayWidget() {
     const cashoutButtons = [...playForm.querySelectorAll('.cashout-bet')];
     const fairnessStrip = document.getElementById('fairness-strip');
     const flightStage = document.querySelector('.flight-stage');
+    const cashoutWinPopup = document.getElementById('cashout-win-popup');
+    const cashoutWinMultiplier = document.getElementById('cashout-win-multiplier');
+    const cashoutWinAmount = document.getElementById('cashout-win-amount');
     const countdown = document.getElementById('round-countdown');
     const roundStrip = document.querySelector('.round-strip');
     const roundHistoryList = document.getElementById('round-history-list');
@@ -756,9 +762,13 @@ function attachPlayWidget() {
     const ledgerPanel = document.getElementById('ledger-list');
     const currency = window.aviatorConfig.currency || 'UGX';
     let currentMultiplier = 1.0;
+    let roundMultiplierRate = FLIGHT_INCREMENT * 1000 / FLIGHT_TICK_MS;
+    let maximumRoundMultiplier = 286;
     let queuedSlips = new Set();
     let activeSlipSessions = new Map();
     let betPlacementPending = new Set();
+    let pendingBetStakes = new Map();
+    let placedBetStakes = new Map();
     let placedBetRounds = new Map();
     let betRequestKeys = new Map();
     let settledBets = new Map();
@@ -784,11 +794,53 @@ function attachPlayWidget() {
     let ledgerLoading = false;
     let ledgerRefreshQueued = false;
     let flightAnimationFrame = null;
+    let flightTrailAnimationFrame = null;
+    let cashoutPopupTimeout = null;
+    let cashoutPopupHideTimeout = null;
     let flightStartedAt = 0;
     let finishCurrentFlight = null;
     let lastHandledCrashRoundId = null;
     let bettingDeadlineMonotonic = 0;
     let bettingOpen = false;
+
+    function showCashoutWinPopup(multiplier, amount) {
+      if (
+        !cashoutWinPopup
+        || !cashoutWinMultiplier
+        || !cashoutWinAmount
+        || !Number.isFinite(multiplier)
+        || !Number.isFinite(amount)
+        || amount <= 0
+      ) {
+        return;
+      }
+
+      window.clearTimeout(cashoutPopupTimeout);
+      window.clearTimeout(cashoutPopupHideTimeout);
+      cashoutWinMultiplier.textContent = formatMultiplier(multiplier);
+      cashoutWinAmount.textContent = amount.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      cashoutWinPopup.hidden = false;
+      cashoutWinPopup.classList.remove('is-visible');
+      requestAnimationFrame(() => cashoutWinPopup.classList.add('is-visible'));
+      cashoutPopupTimeout = window.setTimeout(() => {
+        hideCashoutWinPopup();
+      }, 3600);
+    }
+
+    function hideCashoutWinPopup() {
+      if (!cashoutWinPopup) {
+        return;
+      }
+      window.clearTimeout(cashoutPopupTimeout);
+      cashoutWinPopup.classList.remove('is-visible');
+      cashoutPopupHideTimeout = window.setTimeout(() => {
+        cashoutWinPopup.hidden = true;
+        cashoutPopupHideTimeout = null;
+      }, 220);
+    }
 
     if (roundStrip && roundHistoryToggle) {
       const setRoundHistoryExpanded = (expanded) => {
@@ -815,10 +867,65 @@ function attachPlayWidget() {
       }
       const x = Math.min(Math.max(motion.x, 0), 94);
       const y = Math.min(Math.max(motion.y, 0), 78);
-      const endY = 100 - y;
+      drawFlightTrailToPoint(x, 100 - y);
+      flightCurve.style.setProperty('--plane-angle', `${(-motion.angle).toFixed(3)}deg`);
+    }
+
+    function drawFlightTrailToPoint(x, endY) {
+      if (!flightCurve || !flightFill) {
+        return;
+      }
+      const y = 100 - endY;
       const curve = `M 0 100 C ${(x * 0.28).toFixed(3)} 100, ${(x * 0.7).toFixed(3)} ${(100 - (y * 0.38)).toFixed(3)}, ${x.toFixed(3)} ${endY.toFixed(3)}`;
       flightFill.setAttribute('d', `${curve} L ${x.toFixed(3)} 100 Z`);
       flightCurve.querySelector('#flight-line')?.setAttribute('d', curve);
+    }
+
+    function stretchTrailWithDepartingPlane() {
+      if (!flightCurve || !flightStage || !plane) {
+        return;
+      }
+
+      const followDuration = 640;
+      const dropDuration = 520;
+      const startedAt = performance.now();
+      const followPlane = (now) => {
+        const stageBounds = flightStage.getBoundingClientRect();
+        const planeBounds = plane.getBoundingClientRect();
+        const trailEndX = ((planeBounds.left + planeBounds.width * 0.2 - stageBounds.left) / stageBounds.width) * 100;
+        const trailEndY = ((planeBounds.top + planeBounds.height * 0.58 - stageBounds.top) / stageBounds.height) * 100;
+        drawFlightTrailToPoint(trailEndX, trailEndY);
+
+        if (now - startedAt < followDuration) {
+          flightTrailAnimationFrame = requestAnimationFrame(followPlane);
+          return;
+        }
+
+        const dropStartedAt = now;
+        const dropEndX = 100;
+        const dropTail = (frameTime) => {
+          const progress = Math.min((frameTime - dropStartedAt) / dropDuration, 1);
+          const easedProgress = 1 - ((1 - progress) ** 3);
+          drawFlightTrailToPoint(
+            trailEndX + ((dropEndX - trailEndX) * easedProgress),
+            trailEndY + ((100 - trailEndY) * easedProgress),
+          );
+          if (progress < 1) {
+            flightTrailAnimationFrame = requestAnimationFrame(dropTail);
+          } else {
+            flightTrailAnimationFrame = null;
+          }
+        };
+        flightTrailAnimationFrame = requestAnimationFrame(dropTail);
+      };
+      flightTrailAnimationFrame = requestAnimationFrame(followPlane);
+    }
+
+    function stopFlightTrailAnimation() {
+      if (flightTrailAnimationFrame) {
+        cancelAnimationFrame(flightTrailAnimationFrame);
+        flightTrailAnimationFrame = null;
+      }
     }
 
     function setFlightProgress(progress, elapsedMs = 0, isFinal = false) {
@@ -859,30 +966,42 @@ function attachPlayWidget() {
         const input = slip.querySelector('.stake-input');
         const startLabel = slip.querySelector('.start-bet span');
         const start = slip.querySelector('.start-bet strong');
+        const startButton = slip.querySelector('.start-bet');
+        const validationMessage = slip.querySelector('.bet-validation-message');
         const cashout = slip.querySelector('.cashout-bet strong');
         const stake = Math.max(parseFloat(input.value) || 0, 0);
+        const forNextRound = phase === 'flying'
+          || queuedSlips.has(slip)
+          || (activeSlipSessions.has(slip) && autoSlips.has(slip));
+        const stakeIssue = getBetStakeIssue(slip, forNextRound);
         const placedThisRound = placedBetRounds.get(slip) === currentSession?.round_id;
         const settled = settledBets.get(slip);
         const settledWon = Boolean(settled && settled.won_amount > 0);
         if (start) {
           start.textContent = betPlacementPending.has(slip)
             ? 'PLACING BET...'
-            : settled
-              ? `${settled.won_amount.toFixed(2)} ${currency}`
-              : queuedSlips.has(slip)
-                ? 'NEXT ROUND'
+            : queuedSlips.has(slip)
+              ? 'NEXT ROUND'
+              : settled
+                ? `${settled.won_amount.toFixed(2)} ${currency}`
               : placedThisRound
                 ? 'BET PLACED'
                 : `${stake.toFixed(2)} ${currency}`;
         }
         if (startLabel) {
-          startLabel.textContent = insufficientBets.has(slip)
-            ? 'AMOUNT NOT ENOUGH'
+          startLabel.textContent = queuedSlips.has(slip)
+            ? 'CANCEL'
             : settled
               ? settledWon ? 'CASHED OUT' : 'LOST'
-            : queuedSlips.has(slip)
-              ? 'CANCEL'
               : 'BET';
+        }
+        const showValidation = Boolean(stakeIssue && !activeSlipSessions.has(slip));
+        if (startButton) {
+          startButton.hidden = showValidation;
+        }
+        if (validationMessage) {
+          validationMessage.textContent = stakeIssue || '';
+          validationMessage.hidden = !showValidation;
         }
         if (cashout) {
           cashout.textContent = settled
@@ -901,6 +1020,51 @@ function attachPlayWidget() {
         slip.classList.toggle('is-settled-lost', Boolean(settled && !settledWon));
         slip.classList.toggle('has-insufficient-balance', insufficientBets.has(slip));
       });
+    }
+
+    function getBetStakeIssue(slip, forNextRound = false) {
+      const amount = Number(slip.querySelector('.stake-input').value);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return '';
+      }
+
+      const futureBet = forNextRound || phase === 'flying';
+      let otherBalanceReservation = 0;
+      let otherRoundStake = 0;
+      if (futureBet) {
+        otherBalanceReservation = [...queuedSlips]
+          .filter((queuedSlip) => queuedSlip !== slip)
+          .reduce((total, queuedSlip) => (
+            total + (Number(queuedSlip.querySelector('.stake-input').value) || 0)
+          ), 0);
+      } else {
+        const roundId = currentSession?.round_id;
+        otherRoundStake = [...placedBetStakes.entries()]
+          .reduce((total, [placedSlip, stake]) => (
+            placedSlip !== slip && placedBetRounds.get(placedSlip) === roundId
+              ? total + stake
+              : total
+          ), 0);
+        otherBalanceReservation = [...pendingBetStakes.entries()]
+          .reduce((total, [pendingSlip, stake]) => (
+            pendingSlip !== slip ? total + stake : total
+          ), 0);
+        otherRoundStake += otherBalanceReservation;
+      }
+
+      const proposedBalance = amount + otherBalanceReservation;
+      if (proposedBalance > walletBalance()) {
+        return `Bet exceeds your available balance of ${formatMoney(walletBalance())}.`;
+      }
+
+      const maximumBet = Number(window.aviatorConfig.maximumBet);
+      if (Number.isFinite(maximumBet) && amount + otherRoundStake > maximumBet) {
+        return `Combined bets cannot exceed ${formatMoney(maximumBet)} per round.`;
+      }
+      if (futureBet && Number.isFinite(maximumBet) && proposedBalance > maximumBet) {
+        return `Combined bets cannot exceed ${formatMoney(maximumBet)} per round.`;
+      }
+      return '';
     }
 
     function setWalletBalance(balance) {
@@ -930,16 +1094,31 @@ function attachPlayWidget() {
     }
 
     function syncSlipStates() {
+      queuedSlips.forEach((slip) => {
+        const forNextRound = phase === 'flying'
+          || (activeSlipSessions.has(slip) && autoSlips.has(slip));
+        const stakeIssue = getBetStakeIssue(slip, forNextRound);
+        if (stakeIssue) {
+          queuedSlips.delete(slip);
+          autoRepeatSlips.delete(slip);
+          autoRepeatStoppedSlips.add(slip);
+          gameMessage.textContent = stakeIssue;
+        }
+      });
       cashoutButtons.forEach((button) => {
         const slip = button.closest('.aviator-bet-slip');
         button.disabled = !activeSlipSessions.has(slip) || cashedOutSlips.has(slip) || pendingCashoutSlips.has(slip) || phase !== 'flying';
       });
       startButtons.forEach((button) => {
         const slip = button.closest('.aviator-bet-slip');
+        const forNextRound = phase === 'flying'
+          || (activeSlipSessions.has(slip) && autoSlips.has(slip) && queuedSlips.has(slip));
+        const stakeIssue = getBetStakeIssue(slip, forNextRound);
         button.disabled = (
           (phase !== 'betting' && phase !== 'flying')
           || (phase === 'betting' && !bettingOpen)
           || betPlacementPending.has(slip)
+          || Boolean(stakeIssue)
           || insufficientBets.has(slip)
           || (
             phase === 'betting'
@@ -952,9 +1131,14 @@ function attachPlayWidget() {
     }
 
     function resetRound() {
+      if (flightTimer) {
+        clearInterval(flightTimer);
+        flightTimer = null;
+      }
       currentSession = null;
       currentMultiplier = 1.0;
       activeSlipSessions.clear();
+      placedBetStakes.clear();
       settledBets.clear();
       cashedOutSlips.clear();
       pendingCashoutSlips.clear();
@@ -962,6 +1146,10 @@ function attachPlayWidget() {
       stopFlightMotion();
       plane?.classList.remove('is-flew-away');
       flightStage?.classList.remove('is-crashed');
+      if (countdown) {
+        countdown.hidden = true;
+        countdown.style.display = 'none';
+      }
       setFlightProgress(0);
       syncSlipStates();
     }
@@ -973,15 +1161,48 @@ function attachPlayWidget() {
       fairnessStrip.innerHTML = `<span>${label}: ${value}</span><strong>Provably fair</strong>`;
     }
 
-    function addHistoryPill(crashPoint) {
+    function addHistoryPill(crashPoint, roundId = null) {
       if (!roundHistoryList) {
         return;
       }
+      if (roundId && [...roundHistoryList.querySelectorAll('.round-pill')]
+        .some((pill) => pill.dataset.roundId === String(roundId))) {
+        return;
+      }
+      roundHistoryList.querySelector('.round-history-empty')?.remove();
       const pill = document.createElement('span');
       pill.className = `round-pill ${crashPoint >= 10 ? 'hot' : crashPoint >= 2 ? 'mid' : ''}`;
       pill.textContent = formatMultiplier(crashPoint);
+      if (roundId) {
+        pill.dataset.roundId = String(roundId);
+      }
       roundHistoryList.prepend(pill);
       [...roundHistoryList.querySelectorAll('.round-pill')].slice(50).forEach((item) => item.remove());
+    }
+
+    function renderRoundHistory(rounds) {
+      if (!roundHistoryList || !Array.isArray(rounds)) {
+        return;
+      }
+      roundHistoryList.replaceChildren();
+      [...rounds].reverse().forEach((round) => {
+        if (Number.isFinite(round.crash_point)) {
+          addHistoryPill(round.crash_point, round.round_id);
+        }
+      });
+      if (!roundHistoryList.childElementCount) {
+        const emptyMessage = document.createElement('span');
+        emptyMessage.className = 'round-history-empty';
+        emptyMessage.textContent = 'No completed rounds yet.';
+        roundHistoryList.append(emptyMessage);
+      }
+    }
+
+    function multiplierAtElapsed(elapsedMs) {
+      return Math.min(
+        Math.round((1 + Math.max(elapsedMs, 0) * roundMultiplierRate / 1000) * 100) / 100,
+        maximumRoundMultiplier,
+      );
     }
 
     const ledgerMoneyFormatter = new Intl.NumberFormat(undefined, {
@@ -1007,7 +1228,7 @@ function attachPlayWidget() {
       const emptyMessage = currentLedgerTab === 'top'
         ? 'No winners in this round yet.'
         : currentLedgerTab === 'mine' && window.aviatorConfig?.isAuthenticated
-          ? 'You have not placed a bet in this round.'
+          ? 'You have not placed any bets yet.'
           : currentLedgerTab === 'mine'
             ? 'Log in to view your bets.'
             : 'No players have placed bets in this round yet.';
@@ -1184,6 +1405,7 @@ function attachPlayWidget() {
       modeButtons.forEach((button) => {
         button.addEventListener('click', () => {
           const autoMode = button.dataset.mode === 'auto';
+          let startAutoBet = false;
           if (autoMode) {
             autoSlips.add(slip);
             autoRepeatStoppedSlips.delete(slip);
@@ -1193,6 +1415,14 @@ function attachPlayWidget() {
                 queuedSlips.delete(slip);
                 gameMessage.textContent = 'Auto bet enabled for the next round. Current bet remains active.';
               } else {
+                queuedSlips.add(slip);
+                gameMessage.textContent = 'Auto bet queued for the next round.';
+              }
+            } else if (phase === 'betting' && currentSession?.round_id) {
+              if (bettingOpen) {
+                startAutoBet = true;
+              } else {
+                autoRepeatSlips.add(slip);
                 queuedSlips.add(slip);
                 gameMessage.textContent = 'Auto bet queued for the next round.';
               }
@@ -1208,6 +1438,9 @@ function attachPlayWidget() {
           }
           modeButtons.forEach((item) => item.classList.toggle('active', item === button));
           syncSlipStates();
+          if (startAutoBet) {
+            placeBetForSlip(slip, currentSession.round_id);
+          }
         });
       });
       slip.querySelectorAll('[data-stake]').forEach((button) => {
@@ -1256,6 +1489,11 @@ function attachPlayWidget() {
         gameMessage.textContent = 'Enter a valid bet amount.';
         return;
       }
+      const stakeIssue = getBetStakeIssue(slip);
+      if (stakeIssue) {
+        gameMessage.textContent = stakeIssue;
+        return;
+      }
 
       let request = betRequestKeys.get(slip);
       if (!request || request.roundId !== roundId) {
@@ -1272,6 +1510,7 @@ function attachPlayWidget() {
       }
 
       betPlacementPending.add(slip);
+      pendingBetStakes.set(slip, amount);
       syncSlipStates();
       const formData = new FormData();
       formData.append('action', 'start');
@@ -1288,6 +1527,7 @@ function attachPlayWidget() {
         });
         const payload = await response.json();
         if (!response.ok || !payload.success) {
+          placedBetStakes.delete(slip);
           if (response.status === 409 && payload.code === 'betting_closed') {
             queuedSlips.add(slip);
             if (autoSlips.has(slip)) {
@@ -1303,7 +1543,14 @@ function attachPlayWidget() {
               setWalletBalance(payload.balance);
             }
             gameMessage.textContent = 'Insufficient balance for this bet. Lower the stake or add funds.';
+          } else if (payload.code === 'bet_limit_exceeded') {
+            placedBetStakes.delete(slip);
+            queuedSlips.delete(slip);
+            autoRepeatSlips.delete(slip);
+            autoRepeatStoppedSlips.add(slip);
+            gameMessage.textContent = payload.message || 'The maximum combined bet per round is 360,000 UGX.';
           } else {
+            placedBetStakes.delete(slip);
             gameMessage.textContent = payload.message || 'Bet was not accepted. Your balance was not changed.';
             queuedSlips.delete(slip);
             autoRepeatSlips.delete(slip);
@@ -1311,6 +1558,7 @@ function attachPlayWidget() {
           return;
         }
         if (payload.round_id !== roundId || payload.status !== 'betting') {
+          placedBetStakes.delete(slip);
           queuedSlips.add(slip);
           gameMessage.textContent = 'Round changed before the bet was confirmed. Bet queued for the next round.';
           return;
@@ -1320,6 +1568,7 @@ function attachPlayWidget() {
           throw new Error('The server accepted the bet but did not return its bet record.');
         }
         activeSlipSessions.set(slip, placedSession.id);
+        placedBetStakes.set(slip, placedSession.stake);
         placedBetRounds.set(slip, roundId);
         betRequestKeys.delete(slip);
         if (autoSlips.has(slip)) {
@@ -1336,10 +1585,12 @@ function attachPlayWidget() {
         loadLedger();
       } catch (error) {
         console.error('Unable to confirm bet placement.', error);
+        placedBetStakes.delete(slip);
         queuedSlips.add(slip);
         gameMessage.textContent = 'Bet confirmation is delayed. The same request will be retried safely.';
       } finally {
         betPlacementPending.delete(slip);
+        pendingBetStakes.delete(slip);
         syncSlipStates();
       }
     }
@@ -1358,6 +1609,12 @@ function attachPlayWidget() {
               autoRepeatStoppedSlips.add(slip);
               gameMessage.textContent = 'Next-round auto bet cancelled.';
             } else {
+              const stakeIssue = getBetStakeIssue(slip, true);
+              if (stakeIssue) {
+                gameMessage.textContent = stakeIssue;
+                syncSlipStates();
+                return;
+              }
               queuedSlips.add(slip);
               autoRepeatSlips.add(slip);
               autoRepeatStoppedSlips.delete(slip);
@@ -1383,6 +1640,12 @@ function attachPlayWidget() {
       if (activeSlipSessions.has(slip) && !autoSlips.has(slip)) {
         return;
       }
+      const stakeIssue = getBetStakeIssue(slip, true);
+      if (stakeIssue) {
+        gameMessage.textContent = stakeIssue;
+        syncSlipStates();
+        return;
+      }
       queuedSlips.add(slip);
       if (autoSlips.has(slip)) {
         autoRepeatSlips.add(slip);
@@ -1397,6 +1660,12 @@ function attachPlayWidget() {
     }
 
     function activateFlight(payload, enteredSlips = [], consumeQueued = false, elapsedOffset = null) {
+      if (Number.isFinite(payload.multiplier_rate) && payload.multiplier_rate > 0) {
+        roundMultiplierRate = payload.multiplier_rate;
+      }
+      if (Number.isFinite(payload.max_crash_point) && payload.max_crash_point >= 1) {
+        maximumRoundMultiplier = payload.max_crash_point;
+      }
       if (flightTimer) {
         clearInterval(flightTimer);
       }
@@ -1406,6 +1675,7 @@ function attachPlayWidget() {
       }
       flightStage?.classList.remove('is-betting');
       if (countdown) {
+        countdown.hidden = true;
         countdown.style.display = 'none';
       }
       stopFlightMotion();
@@ -1447,6 +1717,9 @@ function attachPlayWidget() {
           activeSlipSessions.set(slip, session.id);
           placedBetRounds.set(slip, payload.round_id);
           if (Number.isFinite(session.stake)) {
+            placedBetStakes.set(slip, session.stake);
+          }
+          if (Number.isFinite(session.stake)) {
             slip.querySelector('.stake-input').value = session.stake.toFixed(2);
           }
         });
@@ -1473,11 +1746,12 @@ function attachPlayWidget() {
       const initialElapsed = Number.isFinite(elapsedOffset)
         ? elapsedOffset
         : Number.isFinite(payload.current_multiplier)
-          ? ((payload.current_multiplier - 1) / FLIGHT_INCREMENT) * FLIGHT_TICK_MS
+          ? ((payload.current_multiplier - 1) / roundMultiplierRate) * 1000
           : 0;
-      currentMultiplier = 1 + Math.round(initialElapsed / FLIGHT_TICK_MS) * FLIGHT_INCREMENT;
+      currentMultiplier = multiplierAtElapsed(initialElapsed);
       cashedOutSlips.clear();
       multiplierValue.textContent = formatMultiplier(currentMultiplier);
+      stopFlightTrailAnimation();
       plane?.classList.remove('is-flew-away');
       flightStage?.classList.remove('is-crashed');
       let tick = Math.max(0, Math.round(initialElapsed / FLIGHT_TICK_MS));
@@ -1489,7 +1763,7 @@ function attachPlayWidget() {
       gameMessage.textContent = activeSlipSessions.size ? 'Cash out before the flight crashes.' : 'Watching live round. Place a bet next round.';
       let crashCheckInFlight = false;
       let crashFinished = false;
-      function finishCrashedRound(crashPoint, revealPromise) {
+      function finishCrashedRound(crashPoint, revealPromise, roundId = currentSession?.round_id) {
         if (crashFinished) {
           return;
         }
@@ -1499,9 +1773,12 @@ function attachPlayWidget() {
         multiplierValue.textContent = formatMultiplier(crashPoint);
         setFlightProgress(calculateMaskedFlightProgress(tick), performance.now() - flightStartedAt, true);
         flightStage?.classList.add('is-crashed');
-        requestAnimationFrame(() => plane?.classList.add('is-flew-away'));
+        requestAnimationFrame(() => {
+          plane?.classList.add('is-flew-away');
+          stretchTrailWithDepartingPlane();
+        });
         gameMessage.textContent = `Flew away at ${formatMultiplier(crashPoint)}. Round over.`;
-        addHistoryPill(crashPoint);
+        addHistoryPill(crashPoint, roundId);
         revealPromise.finally(() => {
           loadLedger();
           phase = 'crashed';
@@ -1517,7 +1794,7 @@ function attachPlayWidget() {
 
       flightTimer = setInterval(() => {
         tick = Math.max(0, Math.round((performance.now() - flightStartedAt) / FLIGHT_TICK_MS));
-        currentMultiplier = 1 + tick * FLIGHT_INCREMENT;
+        currentMultiplier = multiplierAtElapsed(performance.now() - flightStartedAt);
         const progress = calculateMaskedFlightProgress(tick);
         multiplierValue.textContent = formatMultiplier(currentMultiplier);
         if (!flightAnimationFrame) {
@@ -1586,6 +1863,7 @@ function attachPlayWidget() {
         flightStage.classList.add('is-betting');
       }
       if (countdown) {
+        countdown.hidden = false;
         countdown.style.display = 'grid';
         countdown.querySelector('strong').textContent = Math.ceil(remainingMs / 1000);
       }
@@ -1626,6 +1904,13 @@ function attachPlayWidget() {
           throw new Error(`Unable to load shared round state (${response.status}).`);
         }
         const payload = await response.json();
+        if (Number.isFinite(payload.multiplier_rate) && payload.multiplier_rate > 0) {
+          roundMultiplierRate = payload.multiplier_rate;
+        }
+        if (Number.isFinite(payload.max_crash_point) && payload.max_crash_point >= 1) {
+          maximumRoundMultiplier = payload.max_crash_point;
+        }
+        renderRoundHistory(payload.recent_crashes);
         const responseReceivedAt = performance.now();
         const roundTripMs = responseReceivedAt - requestStartedAt;
         const serverTimeMs = Date.parse(payload.server_time);
@@ -1641,7 +1926,7 @@ function attachPlayWidget() {
         )
           ? serverTimeMs - flyingSinceMs
           : Number.isFinite(payload.current_multiplier)
-            ? ((payload.current_multiplier - 1) / FLIGHT_INCREMENT) * FLIGHT_TICK_MS
+            ? ((payload.current_multiplier - 1) / roundMultiplierRate) * 1000
             : null;
         const estimatedFlightElapsed = Number.isFinite(elapsedAtServerSnapshot)
           ? Math.max(0, elapsedAtServerSnapshot + (roundTripMs / 2))
@@ -1673,6 +1958,7 @@ function attachPlayWidget() {
             placedBetRounds.set(slip, payload.round_id);
             activeSlipSessions.set(slip, session.id);
             if (Number.isFinite(session.stake)) {
+              placedBetStakes.set(slip, session.stake);
               slip.querySelector('.stake-input').value = session.stake.toFixed(2);
             }
             if (Number.isFinite(session.auto_cashout_at)) {
@@ -1700,7 +1986,7 @@ function attachPlayWidget() {
               flightStartedAt = responseReceivedAt - estimatedFlightElapsed;
             }
             currentMultiplier = Number.isFinite(estimatedFlightElapsed)
-              ? 1 + Math.round(estimatedFlightElapsed / FLIGHT_TICK_MS) * FLIGHT_INCREMENT
+              ? multiplierAtElapsed(estimatedFlightElapsed)
               : payload.current_multiplier;
             multiplierValue.textContent = formatMultiplier(currentMultiplier);
             const activeSessionIds = new Set(payload.session_ids || []);
@@ -1712,6 +1998,10 @@ function attachPlayWidget() {
                       cashed_out_at: settledSession.cashed_out_at,
                       won_amount: settledSession.won_amount || 0,
                     });
+                    showCashoutWinPopup(
+                      settledSession.cashed_out_at,
+                      settledSession.won_amount || 0,
+                    );
                   }
                   activeSlipSessions.delete(slip);
                   cashedOutSlips.add(slip);
@@ -1721,10 +2011,7 @@ function attachPlayWidget() {
           }
         } else if (payload.status === 'crashed') {
           if (phase === 'flying' && currentSession?.round_id === payload.round_id) {
-            const reveal = await settleCrashedRound();
-            if (reveal?.success) {
-              finishCurrentFlight?.(payload.crash_point, Promise.resolve(reveal));
-            }
+            finishCurrentFlight?.(payload.crash_point, Promise.resolve(payload), payload.round_id);
           } else if (
             phase !== 'flying'
             && phase !== 'starting'
@@ -1734,6 +2021,7 @@ function attachPlayWidget() {
             phase = 'crashed';
             multiplierValue.textContent = formatMultiplier(payload.crash_point);
             setFairnessText('Seed', payload.server_seed);
+            addHistoryPill(payload.crash_point, payload.round_id);
             gameMessage.textContent = 'Waiting for the next shared betting window.';
           }
         } else if (phase !== 'flying' && phase !== 'starting') {
@@ -1792,6 +2080,7 @@ function attachPlayWidget() {
       gameMessage.textContent = payload.message;
       const balanceDisplay = document.querySelector('#play-balance strong');
       setWalletBalance(payload.balance);
+      showCashoutWinPopup(payload.cashout_multiplier, payload.won_amount);
       cashedOutSlips.add(slip);
       settledBets.set(slip, {
         cashed_out_at: payload.cashout_multiplier,
@@ -2430,6 +2719,47 @@ function attachClientSeedSettings() {
   });
 }
 
+function attachFunModeBanner() {
+  document.querySelectorAll('.fun-mode').forEach((banner) => {
+    const text = banner.querySelector('.fun-mode__text');
+    if (!text || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const phrase = text.textContent.trim();
+    const characters = Array.from(phrase);
+    let index = 0;
+    let deleting = false;
+    text.textContent = '';
+    banner.classList.add('fun-mode--typing');
+
+    const typeNextCharacter = () => {
+      if (!deleting && index < characters.length) {
+        index += 1;
+        text.textContent = characters.slice(0, index).join('');
+        window.setTimeout(typeNextCharacter, 75);
+        return;
+      }
+
+      if (!deleting) {
+        deleting = true;
+        window.setTimeout(typeNextCharacter, 1500);
+        return;
+      }
+
+      if (index > 0) {
+        index -= 1;
+        text.textContent = characters.slice(0, index).join('');
+        window.setTimeout(typeNextCharacter, 35);
+        return;
+      }
+
+      deleting = false;
+      window.setTimeout(typeNextCharacter, 450);
+    };
+
+    typeNextCharacter();
+  });
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   attachAccountNavigation();
   attachPaymentForms();
@@ -2441,4 +2771,5 @@ window.addEventListener('DOMContentLoaded', () => {
   attachAviatorModals();
   attachReferralLinkCopy();
   attachClientSeedSettings();
+  attachFunModeBanner();
 });

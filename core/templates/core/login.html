@@ -1,9 +1,9 @@
 {% extends 'core/base.html' %}
-{% block title %}Login | Pakabet{% endblock %}
+{% block title %}Login | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="auth-screen">
     <div class="auth-showcase">
-        <a class="auth-brand" href="{% url 'home' %}">PAKABET</a>
+        <a class="auth-brand" href="{% url 'home' %}">{% if platform_branding and platform_branding.logo %}<img src="{{ platform_branding.logo.url }}" alt="{{ platform_name }}">{% else %}{{ platform_name|upper }}{% endif %}</a>
         <div class="auth-showcase-copy">
             <span class="auth-kicker">Aviator gaming</span>
             <h1>Play with confidence.</h1>
@@ -19,7 +19,7 @@
     <div class="auth-card">
         <span class="auth-kicker">Secure access</span>
         <h2>Welcome back</h2>
-        <p class="auth-intro">Log in to continue to your Pakabet account.</p>
+        <p class="auth-intro">Log in to continue to your {{ platform_name }} account.</p>
         <form method="post" class="auth-form">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ next }}">
@@ -29,7 +29,7 @@
                 </div>
             {% endif %}
             <label>
-                Username or phone number
+                Phone number
                 {{ form.username }}
                 {% for error in form.username.errors %}<small class="auth-field-error">{{ error }}</small>{% endfor %}
             </label>
@@ -44,7 +44,7 @@
             </div>
             <button class="auth-submit" type="submit">Log in</button>
         </form>
-        <p class="auth-foot">New to Pakabet? <a href="{% url 'register' %}">Create an account</a></p>
+        <p class="auth-foot">New to {{ platform_name }}? <a href="{% url 'register' %}">Create an account</a></p>
     </div>
 </section>
 {% endblock %}

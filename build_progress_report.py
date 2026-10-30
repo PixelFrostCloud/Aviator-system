@@ -23,17 +23,17 @@ SCREENSHOTS = [
     ("04", "Free Bets Management", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 000926.png",
      "Free bets modal showing the active free bet area, archive access, and cash/free-bet play mode selection."),
     ("05", "Wallet Overview", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 000939.png",
-     "Wallet dashboard with user identity, verification tier, balance cards, XP progress, deposit limit, KYC status, and recent activity."),
+        "Wallet dashboard with user identity, balance cards, XP progress, deposit limit, and recent activity."),
     ("06", "Deposit And Withdrawal Forms", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 000953.png",
      "Wallet action area for deposits and withdrawals using payment providers such as MTN Mobile Money, plus VIP and preference summaries."),
     ("07", "Transaction History", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 001008.png",
      "Transaction ledger listing deposits, withdrawals, bet debits, win credits, status, date, amount, and total record count."),
     ("08", "Profile Overview", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 001028.png",
-     "Profile dashboard with player ID, VIP level, verification status, betting totals, winnings, biggest win, and highest multiplier."),
+        "Profile dashboard with player ID, VIP level, account status, betting totals, winnings, biggest win, and highest multiplier."),
     ("09", "Profile Wallet And Recent Activity", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 001040.png",
      "Profile continuation showing balance breakdown, daily limits, deposit/withdraw actions, and recent account activity."),
     ("10", "Statistics And Compliance Controls", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 001053.png",
-     "Statistics cards plus compliance settings, KYC submission fields, and self-exclusion protection controls."),
+        "Statistics cards plus deposit and loss limits, and self-exclusion protection controls."),
     ("11", "Top Dashboard", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 001125.png",
      "Top area summarizing balance, recent bets, open rooms, readiness state, and XP progress."),
     ("12", "Recent Sessions And Open Rooms", "C:/Users/Aureon/Pictures/Screenshots/Screenshot 2026-07-10 001138.png",
@@ -58,11 +58,11 @@ FEATURES = [
     ("Payments", "Implemented", "MTN Mobile Money, Airtel Money, card, bank transfer, and Pesapal provider options in form logic."),
     ("Transactions", "Implemented", "Bet debit, win credit, deposit, withdrawal, refund, and bonus transaction types with status tracking."),
     ("Profile and statistics", "Implemented", "Player ID, VIP level display, XP progress, win rate, games played, winnings, and activity panels."),
-    ("Compliance", "Implemented", "Phone verification, KYC submission, deposit/loss limits, risk alerts, and self-exclusion controls."),
+    ("Responsible gaming", "Implemented", "Phone contact details, deposit/loss limits, risk alerts, and self-exclusion controls."),
     ("Free bets and rewards", "Implemented", "Free-bet management UI, reward events, reward wallet, claims, reward transactions, and chat rain."),
     ("Chat", "Implemented", "Live chat UI, emoji picker, reactions, flagged-message checks, and online player display."),
     ("Multiplayer rooms", "Implemented", "Room creation, room joining, room status, host start flow, participants, and room cash-out logic."),
-    ("Admin analytics", "Implemented", "Staff analytics route, financial report generation, payment review data, KYC/risk counts, and admin model controls."),
+    ("Admin analytics", "Implemented", "Staff analytics route, financial report generation, payment review data, risk-alert counts, and admin model controls."),
     ("Audit logging", "Implemented", "System activity logging for registration, deposits, withdrawals, game starts, cash-outs, rooms, rewards, and admin actions."),
     ("Responsive UI", "Implemented", "Dark themed dashboard layout with side navigation, modals, mobile chat panels, and compact game controls."),
 ]
@@ -74,7 +74,7 @@ PAGES = [
         "The current build demonstrates both the player-facing experience and the supporting backend workflows needed for deposits, withdrawals, game verification, responsible gaming, and reporting.",
     ]),
     ("Technical Foundation", [
-        "Backend: Django application with models for Profile, GameRound, GameSession, Transaction, PaymentRequest, KYCSubmission, SelfExclusion, RiskAlert, RewardEvent, RewardWallet, ChatRain, Room, and AuditLog.",
+        "Backend: Django application with models for Profile, GameRound, GameSession, Transaction, PaymentRequest, SelfExclusion, RiskAlert, RewardEvent, RewardWallet, ChatRain, Room, and AuditLog.",
         "Frontend: HTML templates, CSS, and JavaScript power the live game interface, drawers, modal views, wallet forms, chat tools, and responsive layouts.",
         "Data: SQLite is used locally during development, with Django migrations defining persistent tables for users, payments, gameplay, rewards, rooms, and audits.",
     ]),
@@ -238,7 +238,7 @@ def build_docx(copied):
             ]
         elif "Profile" in title or "Compliance" in title:
             bullets = [
-                "Shows account identity, VIP progress, performance statistics, responsible-gaming limits, KYC submission, and self-exclusion controls.",
+                "Shows account identity, VIP progress, performance statistics, responsible-gaming limits, and self-exclusion controls.",
                 "These features improve trust, safety, and traceability for a betting-style application.",
             ]
         elif "Chat" in title or "Emoji" in title:
@@ -371,7 +371,7 @@ td span {{ color: #16a34a; font-weight: bold; }}
   <div class="grid">
     <div class="card"><h3>Current State</h3><p class="lead">The project is a working Django Aviator platform with the core player journey implemented: account access, game play, wallet, cash-out, history, chat, and user guidance.</p></div>
     <div class="card"><h3>Evidence Used</h3><p class="lead">The submitted screenshots were ordered by the visible page flow and cross-checked against project routes, views, forms, and models.</p></div>
-    <div class="card"><h3>Major Strength</h3><p class="lead">The system now includes both player-facing screens and backend records for transactions, game rounds, KYC, self-exclusion, rewards, rooms, and audit logs.</p></div>
+    <div class="card"><h3>Major Strength</h3><p class="lead">The system now includes both player-facing screens and backend records for transactions, game rounds, self-exclusion, rewards, rooms, and audit logs.</p></div>
     <div class="card"><h3>Next Step</h3><p class="lead">Focus on final QA, production payment integration, deployment hardening, and complete admin/operator testing.</p></div>
   </div>
 </section>
@@ -386,7 +386,7 @@ td span {{ color: #16a34a; font-weight: bold; }}
     <li>Game landing/play screen: live multiplier, dual betting, cash-out, history, and chat.</li>
     <li>Account navigation: settings, free bets, bet history, game limits, rules, and provably fair access.</li>
     <li>Wallet and transactions: balance, deposits, withdrawals, providers, payment requests, and ledger view.</li>
-    <li>Profile and compliance: player metrics, VIP progress, KYC, limits, and self-exclusion.</li>
+    <li>Profile and responsible gaming: player metrics, VIP progress, limits, and self-exclusion.</li>
     <li>Social and reward features: chat, emoji picker, reactions, online count, and chat rain distribution.</li>
     <li>Support pages: how-to-play guidance and game rules access.</li>
   </ul>

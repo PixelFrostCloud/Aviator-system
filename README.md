@@ -6,6 +6,7 @@ Professional Django web application built with Django, HTML, CSS, JavaScript, an
 
 - **User Authentication**: Registration and login plus one-time, expiring email password-reset links
 - **Pakabet Crash Game**: Interactive betting interface with real-time multiplier animation and cash-out functionality
+- **Custom chat moderation**: Admin-managed abusive-word and phrase filters block messages before saving and create review alerts in the custom operations dashboard
 - **Wallet Management**: ioTec Pay collections, disbursements, callback settlement, and transaction history
 - **Referral Programme**: Personal invite links automatically attribute new registrations; inviters receive a platform-funded, withdrawable 5% of each referred player's first successful deposit
 - **Admin Analytics Dashboard**: Comprehensive platform monitoring and user statistics
@@ -41,7 +42,7 @@ $env:DEFAULT_FROM_EMAIL='Pakabet <no-reply@yourdomain.com>'
 
 ## Provably Fair rounds
 
-Players can set or securely generate their client seed in the in-game Provably Fair settings. The saved seed is used for future rounds only; every round stores its own client seed and server-seed hash before play. The server seed is revealed after the round ends, and the Provably Fair page independently checks the commitment hash and crash-point calculation for each of the player's rounds.
+Players can set or securely generate their client seed in the in-game Provably Fair settings. The saved seed is used for future rounds only; every round stores its own client seed and server-seed hash before play. Newly generated shared-game rounds are capped at 286.00x. The server seed is revealed after the round ends, and the Provably Fair page independently checks the commitment hash and crash-point calculation for each of the player's rounds; older rounds retain compatibility with the previous uncapped calculation.
 
 Local development defaults to `IOTEC_PAY_MODE=sandbox`, so the app runs without live credentials. For live payments set:
 
@@ -96,7 +97,7 @@ IP attribution uses the direct connection peer address to avoid trusting spoofab
 - **Payment callback token:** Generate a new high-entropy `IOTEC_PAY_CALLBACK_TOKEN`, update the app and the provider callback configuration together, and confirm callbacks with the new token succeed. Until both ends match, callbacks are rejected; use the authenticated payment status-sync flow to reconcile pending requests.
 - **Email credentials:** Revoke the SMTP credential at the email provider, replace `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD`, and verify a test alert reaches the configured `DJANGO_ADMINS`.
 - **Database credentials:** Rotate the database user credential with the database provider, update `DATABASE_URL`, restart all instances, and review database access logs.
-- **Compromised user or operator account:** Set the account inactive or reset its password from Django Admin. To invalidate every active web session after an operator compromise, run `python manage.py shell -c "from django.contrib.sessions.models import Session; Session.objects.all().delete()"`.
+- **Compromised user or operator account:** Use the custom staff console to lock or revoke access, then reset credentials through account recovery when a verified email is available or through a trusted server-side operation. To invalidate every active web session after a wider compromise, run `python manage.py shell -c "from django.contrib.sessions.models import Session; Session.objects.all().delete()"`.
 
 ### Incident response checklist
 
@@ -131,11 +132,30 @@ pip install -r requirements.txt
 python manage.py migrate
 ```
 
-5. Create admin user:
+5. Bootstrap the initial superuser from a trusted development or deployment environment:
 
 ```powershell
 python manage.py createsuperuser
 ```
+
+The custom staff console uses phone-number sign-in. Associate a normalized phone number with this initial account's `Profile` before using `/admin-analytics/`:
+
+```powershell
+python manage.py shell
+```
+
+```python
+from django.contrib.auth.models import User
+from core.models import Profile
+
+admin_user = User.objects.get(username="<username-created-in-step-5>")
+Profile.objects.update_or_create(
+    user=admin_user,
+    defaults={"phone_number": "2567XXXXXXXX"},
+)
+```
+
+Replace the example phone with the account's normalized country-code number. Subsequent administrators can be provisioned from the Admin team page.
 
 6. Start the development server:
 
@@ -152,8 +172,12 @@ python manage.py runserver
 - **Login**: `http://127.0.0.1:8000/login/`
 - **Play Game**: `http://127.0.0.1:8000/play/` (after login)
 - **Payment Callback**: `http://127.0.0.1:8000/api/payments/callback/`
-- **Admin Panel**: `http://127.0.0.1:8000/admin/`
-- **Audit Logs**: `http://127.0.0.1:8000/audit-logs/` (admin only)
+- **Staff Operations Console**: `http://127.0.0.1:8000/admin-analytics/` (custom staff-only console; sign in with the phone number on the staff account's profile)
+- **Account management**: `/admin-analytics/users/` (lock, ban, revoke sessions, or anonymize player identity while retaining financial/game records)
+- **Round players and wallet refunds**: `/admin-analytics/players/` (view bet activity for a selected round; eligible lost-bet refunds credit the internal wallet only)
+- **Platform settings**: `/admin-analytics/settings/` (edit branding and set the shared-round maximum between 250x and 286x; changes apply to new rounds)
+- **Administrator access**: `/admin-analytics/admins/` (staff may create operations accounts; only an existing superuser may grant or revoke superuser access)
+- **Security events**: `/admin-analytics/security/`
 
 ## Production
 
@@ -180,4 +204,4 @@ python manage.py collectstatic
 
 In live mode, withdrawal requests are recorded with a unique provider reference and the player's funds are held before payout submission. A scheduled worker checks ioTec Pay's `availableBalance` and submits queued payouts only when sufficient funds are confirmed; it reuses the original external reference for idempotent provider processing. Unavailable or invalid balance data leaves the withdrawal queued and held.
 
-Schedule `python manage.py process_queued_withdrawals --batch-size 20` to run every minute (or at your chosen operational cadence). Configure the scheduler to prevent overlapping invocations on a host; the database lock also serializes workers across hosts. Monitor command failures and the queued-withdrawal count in Django admin. Do not manually resubmit queued requests or clear their holds; use the admin failure action only when an operator has confirmed that no payout was submitted.
+Schedule `python manage.py process_queued_withdrawals --batch-size 20` to run every minute (or at your chosen operational cadence). Configure the scheduler to prevent overlapping invocations on a host; the database lock also serializes workers across hosts. Monitor command failures and queued requests in the staff operations console. Do not manually resubmit queued requests or clear their holds; use the documented provider-reconciliation procedure for any payment exception.

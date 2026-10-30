@@ -56,31 +56,44 @@ _LEET_TRANSLATION = str.maketrans({
     '4': 'a',
     '5': 's',
     '7': 't',
+})
+_LEET_PUNCTUATION_TRANSLATION = str.maketrans({
     '!': 'i',
     '@': 'a',
     '$': 's',
 })
 
-# Curated English profanity and insult terms informed by LDNOOBW (CC BY 4.0):
-# https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words
-_ABUSIVE_WORDS = (
-    'arse', 'arsehole', 'ass', 'asshole', 'asshat', 'bastard', 'bitch',
-    'bollocks', 'bullshit', 'cock', 'crap', 'cunt', 'damn', 'dick',
-    'dickhead', 'douche', 'douchebag', 'dumb', 'dumbass', 'fuck', 'fucker',
-    'fuckface', 'fucking', 'fuckoff', 'fuckyou', 'idiot', 'jackass', 'jerk',
-    'loser', 'motherfucker', 'moron', 'piss', 'prick', 'scumbag', 'shit',
-    'shithead', 'shitty', 'silly', 'slut', 'stupid', 'twat', 'wanker',
-    'whore',
-)
-_ABUSIVE_WORD_PATTERN = re.compile(
-    r'(?<!\w)(?:'
-    + '|'.join(
-        r'[\W_]*'.join(re.escape(character) for character in word)
-        for word in sorted(_ABUSIVE_WORDS, key=len, reverse=True)
+def find_abusive_chat_term(message):
+    from .models import ChatModerationTerm
+
+    normalized = unicodedata.normalize('NFKC', str(message)).casefold()
+    normalized = re.sub(
+        r'(?<=[a-z0-9])[!@$](?=[a-z0-9])',
+        lambda match: match.group().translate(_LEET_PUNCTUATION_TRANSLATION),
+        normalized,
+    ).translate(_LEET_TRANSLATION)
+    active_terms = sorted(
+        ChatModerationTerm.objects.filter(is_active=True).values_list('term', flat=True),
+        key=len,
+        reverse=True,
     )
-    + r')(?!\w)',
-    re.IGNORECASE,
-)
+    patterns = []
+    terms_by_pattern = []
+    for term in active_terms:
+        tokens = re.findall(r'[a-z0-9]+', term.casefold().translate(_LEET_TRANSLATION))
+        if not tokens:
+            continue
+        token_patterns = [
+            r'[\W_]*'.join(re.escape(character) for character in token)
+            for token in tokens
+        ]
+        patterns.append(r'[\W_]+'.join(token_patterns))
+        terms_by_pattern.append(term)
+
+    for term, pattern in zip(terms_by_pattern, patterns):
+        if re.search(r'(?<!\w)' + pattern + r'(?!\w)', normalized, re.IGNORECASE):
+            return term
+    return None
 
 
 def _contains_phone_number_in_words(message):
@@ -113,7 +126,7 @@ def get_chat_rule_violation(message):
     if _LINK.search(normalized):
         return 'Links and website addresses are not allowed in chat.'
 
-    if _ABUSIVE_WORD_PATTERN.search(normalized.translate(_LEET_TRANSLATION)):
+    if find_abusive_chat_term(normalized):
         return 'Abusive language and profanity are not allowed in chat.'
 
     letters = [character for character in message if character.isalpha()]

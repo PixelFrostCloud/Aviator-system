@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}
-{% block title %}Referrals | Pakabet{% endblock %}
+{% block title %}Referrals | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="account-page account-referrals-page">
     {% include 'core/partials/account_sidebar.html' %}
@@ -29,7 +29,7 @@
                         <button type="button" data-copy-referral>Copy link</button>
                     </div>
                     <p class="referral-copy-status" data-referral-copy-status role="status" aria-live="polite"></p>
-                    <p class="referral-funding-note">Your friend’s deposit is never reduced. The 5% reward is funded by Pakabet and added to your withdrawable wallet balance after their first deposit is confirmed.</p>
+                    <p class="referral-funding-note">Your friend’s deposit is never reduced. The 5% reward is funded by {{ platform_name }} and added to your withdrawable wallet balance after their first deposit is confirmed.</p>
                 </section>
 
                 <div class="referral-summary-grid">

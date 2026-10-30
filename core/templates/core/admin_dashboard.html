@@ -1,65 +1,255 @@
 {% extends 'core/base.html' %}
-{% block title %}Analytics | Pakabet{% endblock %}
+{% load static %}
+{% block title %}Admin dashboard | {{ platform_name }}{% endblock %}
+{% block body_class %}admin-body{% endblock %}
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'core/css/admin_dashboard.css' %}?v=admin-mobile-drawer-20261030-1">
+    <script src="{% static 'core/js/admin_dashboard.js' %}?v=20261021-1" defer></script>
+    <script src="{% static 'core/js/admin_nav.js' %}?v=admin-mobile-drawer-20261030-1" defer></script>
+{% endblock %}
 {% block content %}
-<section class="hero">
-    <div>
-        <p class="eyebrow">Admin analytics</p>
-        <h1>Platform performance overview</h1>
-        <p class="lead">Monitor deposits, withdrawals, user growth, and multiplayer activity all from a single dashboard.</p>
-    </div>
-</section>
-<section class="dashboard-grid">
-    <div class="dashboard-panel">
-        <div class="stats-card">
-            <h2>Core metrics</h2>
-            <ul class="session-list">
-                <li><span>Total users</span><strong>{{ total_users }}</strong></li>
-                <li><span>Total balance</span><strong>{{ total_balance|floatformat:2 }} UGX</strong></li>
-                <li><span>Total deposits</span><strong>{{ total_deposits|floatformat:2 }} UGX</strong></li>
-                <li><span>Total withdrawals</span><strong>{{ total_withdrawals|floatformat:2 }} UGX</strong></li>
-                <li><span>Total bets</span><strong>{{ total_bets|floatformat:2 }} UGX</strong></li>
-                <li><span>Total games</span><strong>{{ total_games }}</strong></li>
-                <li><span>Pending deposits</span><strong>{{ pending_deposits }}</strong></li>
-                <li><span>Pending withdrawals</span><strong>{{ pending_withdrawals }}</strong></li>
-                <li><span>Active self-exclusions</span><strong>{{ active_self_exclusions }}</strong></li>
-                <li><span>Open risk alerts</span><strong>{{ open_risk_alerts }}</strong></li>
-            </ul>
-        </div>
-        <div class="stats-card">
-            <h2>URA / GGR report</h2>
-            <form class="form-card" method="post">
-                {% csrf_token %}
-                {{ report_form.report_type }}
-                {{ report_form.period_start }}
-                {{ report_form.period_end }}
-                {% if report_form.errors %}
-                    <div class="field-errors">{{ report_form.errors }}</div>
-                {% endif %}
-                <button class="button button-primary" type="submit">Generate report</button>
-            </form>
-        </div>
-    </div>
-    <aside class="dashboard-sidebar">
-        <div class="stats-card">
-            <h2>Room health</h2>
-            <p>Open rooms: <strong>{{ active_rooms }}</strong></p>
-            <p>Running rooms: <strong>{{ running_rooms }}</strong></p>
-            <p>Total rooms: <strong>{{ room_count }}</strong></p>
-        </div>
-        <div class="stats-card">
-            <h2>Latest reports</h2>
-            <ul class="session-list">
-                {% for report in latest_reports %}
-                    <li>
-                        <span>{{ report.period_start|date:'M d' }} - {{ report.period_end|date:'M d' }}</span>
-                        <strong>{{ report.gross_gaming_revenue|floatformat:2 }} UGX</strong>
-                        <span>URA {{ report.ura_ggr_tax|floatformat:2 }}</span>
-                    </li>
-                {% empty %}
-                    <li class="empty-state">No reports generated yet.</li>
-                {% endfor %}
-            </ul>
+<div class="admin-dashboard">
+    <button class="admin-nav-backdrop" type="button" aria-label="Close admin navigation" tabindex="-1" hidden></button>
+    <aside class="admin-rail" aria-label="Admin navigation">
+        <a class="admin-brand" href="{% url 'admin_dashboard' %}">
+            <img class="admin-brand-logo" src="{% static 'pakabet logo-02.png' %}" alt="Pakabet">
+            <span><small>ADMIN CONSOLE</small></span>
+        </a>
+
+        <p class="admin-nav-label">Workspace</p>
+        <nav class="admin-nav">
+            <a class="is-active" href="{% url 'admin_dashboard' %}" aria-current="page"><svg><use href="#icon-overview"></use></svg><span>Overview</span></a>
+            <a href="{% url 'admin_console_section' 'users' %}"><svg><use href="#icon-users"></use></svg><span>Users</span><small>{{ total_users }}</small></a>
+            <a href="{% url 'admin_console_section' 'payments' %}"><svg><use href="#icon-wallet"></use></svg><span>Payments</span>{% if pending_deposits or pending_withdrawals %}<small class="nav-alert">{{ pending_deposits|add:pending_withdrawals }}</small>{% endif %}</a>
+            <a href="{% url 'admin_console_section' 'transactions' %}"><svg><use href="#icon-receipt"></use></svg><span>Transactions</span></a>
+            <a href="{% url 'admin_console_section' 'players' %}"><svg><use href="#icon-users"></use></svg><span>Round players</span></a>
+            <a href="{% url 'admin_console_section' 'live' %}"><svg><use href="#icon-flight"></use></svg><span>Live game</span></a>
+            <a href="{% url 'admin_console_section' 'rounds' %}"><svg><use href="#icon-flight"></use></svg><span>Game rounds</span></a>
+            <a href="#chat-moderation"><svg><use href="#icon-shield"></use></svg><span>Chat moderation</span>{% if open_chat_abuse_alerts %}<small class="nav-alert">{{ open_chat_abuse_alerts }}</small>{% endif %}</a>
+            <a href="{% url 'admin_console_section' 'reports' %}"><svg><use href="#icon-document"></use></svg><span>Reports</span></a>
+        </nav>
+
+        <p class="admin-nav-label admin-nav-label--lower">Governance</p>
+        <nav class="admin-nav">
+            <a href="{% url 'admin_console_section' 'risk' %}"><svg><use href="#icon-shield"></use></svg><span>Risk review</span>{% if open_risk_alerts %}<small class="nav-alert">{{ open_risk_alerts }}</small>{% endif %}</a>
+            <a href="{% url 'admin_console_section' 'safeguards' %}"><svg><use href="#icon-help"></use></svg><span>Player safeguards</span></a>
+            <a href="{% url 'admin_console_section' 'security' %}"><svg><use href="#icon-security"></use></svg><span>Security</span></a>
+            <a href="{% url 'admin_console_section' 'settings' %}"><svg><use href="#icon-settings"></use></svg><span>Platform settings</span></a>
+            <a href="{% url 'admin_console_section' 'admins' %}"><svg><use href="#icon-users"></use></svg><span>Admin team</span></a>
+        </nav>
+
+        <div class="admin-rail-footer">
+            <span class="admin-avatar" aria-hidden="true">{{ request.user.username|first|upper }}</span>
+            <span class="admin-identity"><strong>{{ request.user.get_username }}</strong><small>Staff account</small></span>
+            <span class="admin-online-dot" title="Signed in"></span>
         </div>
     </aside>
-</section>
+
+    <main class="admin-main">
+        <header class="admin-topbar">
+            <div class="admin-topbar-leading">
+                <button class="admin-menu-toggle" id="admin-menu-toggle" type="button" aria-label="Open admin menu" aria-controls="admin-navigation" aria-expanded="false">
+                    <svg aria-hidden="true"><use href="#icon-menu"></use></svg>
+                </button>
+                <div class="admin-breadcrumb"><span>Workspace</span><span aria-hidden="true">/</span><strong>Overview</strong></div>
+            </div>
+            <div class="admin-topbar-actions">
+                <span class="admin-date" id="admin-local-date">Platform snapshot</span>
+                <a class="admin-icon-link" href="{% url 'admin_console_section' 'security' %}" aria-label="Open security operations" title="Security"><svg><use href="#icon-security"></use></svg></a>
+                <a class="admin-user-menu" href="{% url 'admin_console_section' 'security' %}"><span class="admin-avatar admin-avatar--small">{{ request.user.username|first|upper }}</span><span>{{ request.user.get_username }}</span><svg><use href="#icon-arrow"></use></svg></a>
+            </div>
+        </header>
+
+        <div class="admin-content">
+            <section class="admin-page-heading">
+                <div>
+                    <p class="admin-kicker"><span class="admin-live-dot"></span> Platform operations</p>
+                    <h1>Dashboard</h1>
+                    <p class="admin-subtitle">A clear view of platform activity, financial movement, and items that need review.</p>
+                </div>
+                <a class="admin-primary-button" href="{% url 'admin_console_section' 'payments' %}?status=pending">
+                    <svg><use href="#icon-wallet"></use></svg> Review payments
+                </a>
+            </section>
+
+            <section class="admin-metric-grid" aria-label="Platform metrics">
+                <article class="admin-metric admin-metric--blue">
+                    <span class="admin-metric-icon"><svg><use href="#icon-users"></use></svg></span>
+                    <div><p>Active accounts</p><strong>{{ total_users }}</strong><small>Registered active users</small></div>
+                </article>
+                <article class="admin-metric admin-metric--green">
+                    <span class="admin-metric-icon"><svg><use href="#icon-wallet"></use></svg></span>
+                    <div><p>Completed deposits</p><strong>{{ total_deposits|floatformat:2 }} <em>UGX</em></strong><small>Settled platform deposits</small></div>
+                </article>
+                <article class="admin-metric admin-metric--red">
+                    <span class="admin-metric-icon"><svg><use href="#icon-receipt"></use></svg></span>
+                    <div><p>Completed withdrawals</p><strong>{{ total_withdrawals|floatformat:2 }} <em>UGX</em></strong><small>Settled player withdrawals</small></div>
+                </article>
+                <article class="admin-metric admin-metric--amber">
+                    <span class="admin-metric-icon"><svg><use href="#icon-game"></use></svg></span>
+                    <div><p>Total wagered</p><strong>{{ total_bets|floatformat:2 }} <em>UGX</em></strong><small>{{ total_games }} game sessions</small></div>
+                </article>
+                <article class="admin-metric admin-metric--cyan">
+                    <span class="admin-metric-icon"><svg><use href="#icon-flight"></use></svg></span>
+                    <div><p>Room activity</p><strong>{{ running_rooms }} <em>/ {{ room_count }}</em></strong><small>{{ active_rooms }} waiting for players</small></div>
+                </article>
+            </section>
+
+            <section class="admin-overview-grid">
+                <article class="admin-panel admin-finance-panel">
+                    <div class="admin-panel-heading">
+                        <div><p class="admin-section-label">Financial overview</p><h2>Platform movement</h2></div>
+                        <span class="admin-period-chip">All time</span>
+                    </div>
+                    <div class="admin-finance-summary">
+                        <div><span class="finance-key finance-key--balance"></span><span>Player balance</span><strong>{{ total_balance|floatformat:2 }} <small>UGX</small></strong></div>
+                        <div><span class="finance-key finance-key--deposit"></span><span>Deposits</span><strong>{{ total_deposits|floatformat:2 }} <small>UGX</small></strong></div>
+                        <div><span class="finance-key finance-key--withdraw"></span><span>Withdrawals</span><strong>{{ total_withdrawals|floatformat:2 }} <small>UGX</small></strong></div>
+                    </div>
+                    <div class="admin-flow-chart" role="img" aria-label="Relative totals for deposits, withdrawals, and wagers">
+                        <div class="admin-flow-row" data-flow-row data-value="{{ total_deposits }}"><span>Deposits</span><div class="admin-flow-track"><i class="admin-flow-fill admin-flow-fill--green"></i></div><strong>{{ total_deposits|floatformat:2 }}</strong></div>
+                        <div class="admin-flow-row" data-flow-row data-value="{{ total_withdrawals }}"><span>Withdrawals</span><div class="admin-flow-track"><i class="admin-flow-fill admin-flow-fill--red"></i></div><strong>{{ total_withdrawals|floatformat:2 }}</strong></div>
+                        <div class="admin-flow-row" data-flow-row data-value="{{ total_bets }}"><span>Wagered</span><div class="admin-flow-track"><i class="admin-flow-fill admin-flow-fill--amber"></i></div><strong>{{ total_bets|floatformat:2 }}</strong></div>
+                    </div>
+                    <p class="admin-chart-note">Relative totals across all recorded activity. Values shown in UGX.</p>
+                </article>
+
+                <article class="admin-panel admin-queue-panel">
+                    <div class="admin-panel-heading">
+                        <div><p class="admin-section-label">Needs attention</p><h2>Review queue</h2></div>
+                        <svg class="admin-heading-icon"><use href="#icon-shield"></use></svg>
+                    </div>
+                    <a class="admin-queue-item" href="{% url 'admin_console_section' 'payments' %}?status=pending&amp;type=deposit">
+                        <span class="queue-symbol queue-symbol--amber"><svg><use href="#icon-wallet"></use></svg></span>
+                        <span><strong>Pending deposits</strong><small>Awaiting provider confirmation</small></span>
+                        <b>{{ pending_deposits }}</b><svg class="queue-arrow"><use href="#icon-arrow"></use></svg>
+                    </a>
+                    <a class="admin-queue-item" href="{% url 'admin_console_section' 'payments' %}?status=pending&amp;type=withdraw">
+                        <span class="queue-symbol queue-symbol--red"><svg><use href="#icon-receipt"></use></svg></span>
+                        <span><strong>Pending withdrawals</strong><small>Queued or processing requests</small></span>
+                        <b>{{ pending_withdrawals }}</b><svg class="queue-arrow"><use href="#icon-arrow"></use></svg>
+                    </a>
+                    <a class="admin-queue-item" href="{% url 'admin_console_section' 'risk' %}?status=open">
+                        <span class="queue-symbol queue-symbol--blue"><svg><use href="#icon-shield"></use></svg></span>
+                        <span><strong>Open risk alerts</strong><small>Signals awaiting operator review</small></span>
+                        <b>{{ open_risk_alerts }}</b><svg class="queue-arrow"><use href="#icon-arrow"></use></svg>
+                    </a>
+                </article>
+            </section>
+
+            <section class="admin-moderation-grid" id="chat-moderation" aria-label="Chat moderation">
+                <article class="admin-panel">
+                    <div class="admin-panel-heading">
+                        <div><p class="admin-section-label">Chat safety</p><h2>Blocked-message alerts</h2></div>
+                        <span class="admin-moderation-count">{{ open_chat_abuse_alerts }} open</span>
+                    </div>
+                    <div class="admin-moderation-alerts">
+                        {% for alert in recent_chat_abuse_alerts %}
+                            <article class="admin-moderation-alert{% if alert.status != 'open' %} is-resolved{% endif %}">
+                                <div class="admin-moderation-alert-heading">
+                                    <strong>{{ alert.user.get_username }}</strong>
+                                    <time>{{ alert.created_at|date:'d M Y H:i' }}</time>
+                                    <span>{{ alert.get_status_display }}</span>
+                                </div>
+                                <p>{{ alert.data.message }}</p>
+                                <small>Matched term: {{ alert.data.matched_term }}</small>
+                                {% if alert.status == 'open' %}
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="resolve_chat_alert">
+                                        <input type="hidden" name="alert_id" value="{{ alert.pk }}">
+                                        <button class="admin-moderation-action" type="submit">Mark reviewed</button>
+                                    </form>
+                                {% endif %}
+                            </article>
+                        {% empty %}
+                            <div class="admin-empty-state"><div><strong>No blocked chat messages</strong><p>New abuse attempts will appear here for staff review.</p></div></div>
+                        {% endfor %}
+                    </div>
+                </article>
+
+                <article class="admin-panel">
+                    <div class="admin-panel-heading">
+                        <div><p class="admin-section-label">Moderation controls</p><h2>Abusive words and phrases</h2></div>
+                        <span class="admin-moderation-count">{{ chat_moderation_terms|length }} configured</span>
+                    </div>
+                    <form class="admin-moderation-add" method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="add_chat_term">
+                        <label for="chat-moderation-term">Add a word or phrase</label>
+                        <div>
+                            <input id="chat-moderation-term" name="term" type="text" maxlength="120" placeholder="Enter a blocked word or phrase" required>
+                            <button class="admin-primary-button" type="submit">Add term</button>
+                        </div>
+                    </form>
+                    <div class="admin-moderation-term-list" aria-label="Configured moderation terms">
+                        {% for term in chat_moderation_terms %}
+                            <div class="admin-moderation-term{% if not term.is_active %} is-disabled{% endif %}">
+                                <span>{{ term.term }}</span>
+                                <span>{{ term.is_active|yesno:'Active,Disabled' }}</span>
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="toggle_chat_term">
+                                    <input type="hidden" name="term_id" value="{{ term.pk }}">
+                                    <button class="admin-moderation-action" type="submit">{% if term.is_active %}Disable{% else %}Enable{% endif %}</button>
+                                </form>
+                            </div>
+                        {% empty %}
+                            <div class="admin-empty-state"><div><strong>No moderation terms configured</strong><p>Add terms above to block them in chat.</p></div></div>
+                        {% endfor %}
+                    </div>
+                </article>
+            </section>
+
+            <section class="admin-lower-grid">
+                <article class="admin-panel admin-reports-panel">
+                    <div class="admin-panel-heading">
+                        <div><p class="admin-section-label">Reporting</p><h2>Latest financial reports</h2></div>
+                        <a class="admin-text-link" href="{% url 'admin_console_section' 'reports' %}">View all <svg><use href="#icon-arrow"></use></svg></a>
+                    </div>
+                    <div class="admin-report-list">
+                        {% for report in latest_reports %}
+                            <a class="admin-report-row" href="{% url 'admin_console_section' 'reports' %}">
+                                <span class="report-icon"><svg><use href="#icon-document"></use></svg></span>
+                                <span class="report-name"><strong>{{ report.get_report_type_display }}</strong><small>{{ report.period_start|date:'d M Y' }} – {{ report.period_end|date:'d M Y' }}</small></span>
+                                <span class="report-ggr"><small>Gross gaming revenue</small><strong>{{ report.gross_gaming_revenue|floatformat:2 }} UGX</strong></span>
+                                <span class="report-tax"><small>URA tax</small><strong>{{ report.ura_ggr_tax|floatformat:2 }} UGX</strong></span>
+                                <svg class="report-arrow"><use href="#icon-arrow"></use></svg>
+                            </a>
+                        {% empty %}
+                            <div class="admin-empty-state"><span class="report-icon"><svg><use href="#icon-document"></use></svg></span><div><strong>No reports generated</strong><p>Choose a reporting period below to create the first report.</p></div></div>
+                        {% endfor %}
+                    </div>
+                </article>
+
+                <article class="admin-panel admin-report-create">
+                    <div class="admin-panel-heading">
+                        <div><p class="admin-section-label">Financial controls</p><h2>Generate a report</h2></div>
+                        <span class="report-create-mark"><svg><use href="#icon-document"></use></svg></span>
+                    </div>
+                    <p class="admin-panel-copy">Create a period-based GGR and URA tax report from recorded game activity.</p>
+                    <form class="admin-report-form" method="post">
+                        {% csrf_token %}
+                        <label>Report type{{ report_form.report_type }}</label>
+                        <div class="admin-date-fields">
+                            <label>Start date{{ report_form.period_start }}</label>
+                            <label>End date{{ report_form.period_end }}</label>
+                        </div>
+                        {% if report_form.errors %}<div class="admin-form-errors" role="alert">{{ report_form.errors }}</div>{% endif %}
+                        <button class="admin-primary-button" type="submit"><svg><use href="#icon-document"></use></svg> Generate report</button>
+                    </form>
+                </article>
+            </section>
+
+            <section class="admin-shortcuts" aria-label="Admin shortcuts">
+                <div class="admin-shortcut-heading"><div><p class="admin-section-label">Direct access</p><h2>Management tools</h2></div></div>
+                <a href="{% url 'admin_console_section' 'users' %}"><svg><use href="#icon-users"></use></svg><span><strong>Player accounts</strong><small>Search and manage users</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
+                <a href="{% url 'admin_console_section' 'payments' %}"><svg><use href="#icon-wallet"></use></svg><span><strong>Payment requests</strong><small>Review provider status</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
+                <a href="{% url 'admin_console_section' 'rounds' %}"><svg><use href="#icon-game"></use></svg><span><strong>Game integrity</strong><small>Inspect rounds and fairness records</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
+                <a href="{% url 'admin_console_section' 'risk' %}"><svg><use href="#icon-shield"></use></svg><span><strong>Risk and safeguards</strong><small>Review alerts and player limits</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
+            </section>
+            <footer class="admin-footer"><span>{{ platform_name }} operations</span><span>Authorized staff access only</span></footer>
+        </div>
+    </main>
+</div>
 {% endblock %}

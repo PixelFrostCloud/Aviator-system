@@ -1,12 +1,12 @@
 {% extends 'core/base.html' %}
 {% load static %}
-{% block title %}Pakabet | Live Crash Betting{% endblock %}
+{% block title %}Live Crash Betting | {{ platform_name }}{% endblock %}
 {% block content %}
 <div class="aviator-play-page">
     {% csrf_token %}
     <header class="aviator-topbar">
-        <a class="game-brand" href="{% url 'play' %}" aria-label="Pakabet home">
-            <img src="{% static 'pakabet logo-02.png' %}" alt="Pakabet">
+        <a class="game-brand" href="{% url 'play' %}" aria-label="{{ platform_name }} home">
+            {% if platform_branding and platform_branding.logo %}<img src="{{ platform_branding.logo.url }}" alt="{{ platform_name }}">{% else %}<img src="{% static 'pakabet logo-02.png' %}" alt="{{ platform_name }}">{% endif %}
         </a>
         <div class="topbar-right">
             <div class="balance-pill" id="play-balance">
@@ -76,7 +76,7 @@
                 </div>
                 <div class="round-history-list" id="round-history-list" aria-label="Recent odds">
                     {% for session in recent_crashes %}
-                        <span class="round-pill {% if session.crash_point >= 10 %}hot{% elif session.crash_point >= 2 %}mid{% endif %}">
+                        <span class="round-pill {% if session.crash_point >= 10 %}hot{% elif session.crash_point >= 2 %}mid{% endif %}" data-round-id="{{ session.public_id }}">
                             {{ session.crash_point|floatformat:2 }}x
                         </span>
                     {% empty %}
@@ -86,7 +86,9 @@
             </div>
 
             <section class="flight-stage" aria-live="polite">
-                <div class="fun-mode">WIN BEFORE I CRASHOUT</div>
+                <div class="fun-mode" aria-label="WIN BEFORE I CRASHOUT">
+                    <span class="fun-mode__text" aria-hidden="true">WIN BEFORE I CRASHOUT</span>
+                </div>
                 <div class="stage-grid"></div>
                 <div class="height-markers">
                     <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
@@ -100,6 +102,16 @@
                 </svg>
                 <div class="plane-silhouette" id="plane-silhouette">
                     <img class="plane-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true">
+                </div>
+                <div class="cashout-win-popup" id="cashout-win-popup" role="status" aria-live="polite" hidden>
+                    <div class="cashout-win-copy">
+                        <span>You have cashed out!</span>
+                        <strong id="cashout-win-multiplier">1.00x</strong>
+                    </div>
+                    <div class="cashout-win-payout">
+                        <span>Win, {{ currency }}</span>
+                        <strong id="cashout-win-amount">0.00</strong>
+                    </div>
                 </div>
                 <strong class="stage-multiplier" id="multiplier">1.00x</strong>
                 <div class="round-countdown" id="round-countdown">
@@ -124,14 +136,14 @@
                         <div class="amount-column">
                             <div class="amount-stepper">
                                 <button class="amount-minus" type="button" aria-label="Decrease bet">-</button>
-                                <input class="stake-input" type="number" min="1" step="0.01" value="1.00" aria-label="Bet amount">
+                                <input class="stake-input" type="number" min="1" step="0.01" value="1000.00" aria-label="Bet amount">
                                 <button class="amount-plus" type="button" aria-label="Increase bet">+</button>
                             </div>
                             <div class="quick-stakes">
-                                <button type="button" data-stake="1">1</button>
-                                <button type="button" data-stake="2">2</button>
-                                <button type="button" data-stake="5">5</button>
-                                <button type="button" data-stake="10">10</button>
+                                <button type="button" data-stake="1000">1,000</button>
+                                <button type="button" data-stake="2000">2,000</button>
+                                <button type="button" data-stake="5000">5,000</button>
+                                <button type="button" data-stake="10000">10,000</button>
                             </div>
                             <div class="auto-controls">
                                 <label>
@@ -142,8 +154,9 @@
                         </div>
                         <button class="bet-action start-bet" type="button">
                             <span>BET</span>
-                            <strong>1.00 {{ profile.currency }}</strong>
+                            <strong>1,000.00 {{ profile.currency }}</strong>
                         </button>
+                        <div class="bet-action bet-validation-message" role="status" aria-live="polite" hidden></div>
                         <button class="bet-action cashout-bet" type="button" disabled>
                             <span>CASH OUT</span>
                             <strong>0.00 {{ profile.currency }}</strong>
@@ -160,14 +173,14 @@
                         <div class="amount-column">
                             <div class="amount-stepper">
                                 <button class="amount-minus" type="button" aria-label="Decrease bet">-</button>
-                                <input class="stake-input" type="number" min="1" step="0.01" value="1.00" aria-label="Bet amount">
+                                <input class="stake-input" type="number" min="1" step="0.01" value="1000.00" aria-label="Bet amount">
                                 <button class="amount-plus" type="button" aria-label="Increase bet">+</button>
                             </div>
                             <div class="quick-stakes">
-                                <button type="button" data-stake="1">1</button>
-                                <button type="button" data-stake="2">2</button>
-                                <button type="button" data-stake="5">5</button>
-                                <button type="button" data-stake="10">10</button>
+                                <button type="button" data-stake="1000">1,000</button>
+                                <button type="button" data-stake="2000">2,000</button>
+                                <button type="button" data-stake="5000">5,000</button>
+                                <button type="button" data-stake="10000">10,000</button>
                             </div>
                             <div class="auto-controls">
                                 <label>
@@ -178,8 +191,9 @@
                         </div>
                         <button class="bet-action start-bet" type="button">
                             <span>BET</span>
-                            <strong>1.00 {{ profile.currency }}</strong>
+                            <strong>1,000.00 {{ profile.currency }}</strong>
                         </button>
+                        <div class="bet-action bet-validation-message" role="status" aria-live="polite" hidden></div>
                         <button class="bet-action cashout-bet" type="button" disabled>
                             <span>CASH OUT</span>
                             <strong>0.00 {{ profile.currency }}</strong>
@@ -332,7 +346,7 @@
             {% endif %}
             <button class="menu-close" id="aviator-menu-close" type="button" aria-label="Close menu"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></button>
         </div>
-        <nav class="menu-links" aria-label="Pakabet menu">
+        <nav class="menu-links" aria-label="{{ platform_name }} menu">
             {% if user.is_authenticated %}
             <a href="{% url 'bet_history' %}" data-aviator-modal-open="bet-history"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg>My Bet History</a>
             <a href="{% url 'game_limits' %}" data-aviator-modal-open="game-limits"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg>Game Limits</a>
@@ -382,7 +396,7 @@
         <header><h2>GAME LIMITS</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
         <div class="modal-body compact">
             <div class="limit-line"><span>Minimum bet {{ currency }}:</span><strong>1.00</strong></div>
-            <div class="limit-line"><span>Maximum bet {{ currency }}:</span><strong>{% if profile %}{{ profile.daily_loss_limit|floatformat:2 }}{% else %}200,000.00{% endif %}</strong></div>
+            <div class="limit-line"><span>Maximum combined bet per round {{ currency }}:</span><strong>{{ maximum_bet|floatformat:2 }}</strong></div>
             <div class="limit-line"><span>Maximum win for one bet {{ currency }}:</span><strong>450,000,000.00</strong></div>
         </div>
     </section>
@@ -407,7 +421,7 @@
     <section class="aviator-game-modal wide" data-aviator-modal="game-rules" aria-hidden="true">
         <header><h2>GAME RULES</h2><button type="button" data-aviator-modal-close aria-label="Close">×</button></header>
         <div class="modal-body rules">
-            <p>Pakabet is built on a provably fair system. The multiplier rises from 1x and stops when the plane flies away.</p>
+            <p>{{ platform_name }} is built on a provably fair system. The multiplier rises from 1x and stops when the plane flies away.</p>
             <h3>HOW TO PLAY</h3>
             <div class="rules-grid">
                 <div><strong>01</strong><div class="rule-preview bet-preview">Bet<br>1.00 {{ currency }}</div><p><b>BET</b> before take-off.</p></div>
@@ -457,7 +471,8 @@ window.aviatorConfig = {
     playUrl: "{% url 'play' %}",
     currency: "{{ currency }}",
     isAuthenticated: {% if user.is_authenticated %}true{% else %}false{% endif %},
-    walletBalance: {% if profile %}{{ profile.balance|floatformat:2 }}{% else %}0{% endif %}
+    walletBalance: {% if profile %}{{ profile.balance|floatformat:2 }}{% else %}0{% endif %},
+    maximumBet: {{ maximum_bet|floatformat:0 }}
 };
 </script>
 {% endblock %}

@@ -41,7 +41,7 @@
         'em',
         'Return',
         session.payout === null ? '--' : `${formatMoney(session.payout)} ${currency}`,
-        session.status === 'won' ? 'positive' : '',
+        session.status === 'won' || session.status === 'refunded' ? 'positive' : '',
       ),
     );
 
@@ -54,6 +54,7 @@
       lost: 'Lost',
       live: 'Live',
       void: 'Voided',
+      refunded: 'Refunded',
       unavailable: 'Unavailable',
     };
     status.textContent = labels[session.status] || 'Unavailable';

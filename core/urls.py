@@ -1,5 +1,6 @@
 from django.urls import path
 from django.contrib.auth import views as auth_views
+from .admin_profiles import admin_player_profile
 from . import forms, views
 
 urlpatterns = [
@@ -9,7 +10,7 @@ urlpatterns = [
     path(
         'login/',
         auth_views.LoginView.as_view(
-            authentication_form=forms.PhoneOrUsernameAuthenticationForm,
+            authentication_form=forms.PhoneNumberAuthenticationForm,
             template_name='core/login.html',
         ),
         name='login',
@@ -20,6 +21,9 @@ urlpatterns = [
     path('wallet/payments/<str:reference>/sync/', views.payment_sync, name='payment_sync'),
     path('api/payments/callback/', views.payment_callback, name='payment_callback'),
     path('admin-analytics/', views.admin_dashboard, name='admin_dashboard'),
+    path('admin-analytics/users/<int:user_id>/', admin_player_profile, name='admin_player_profile'),
+    path('admin-analytics/<str:section>/', views.admin_console_section, name='admin_console_section'),
+    path('admin-analytics/api/live-round/', views.admin_live_round_state, name='admin_live_round_state'),
     path('rooms/', views.room_list, name='room_list'),
     path('rooms/create/', views.create_room, name='create_room'),
     path('rooms/<int:room_id>/', views.room_detail, name='room_detail'),

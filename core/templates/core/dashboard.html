@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}
-{% block title %}Top | Pakabet{% endblock %}
+{% block title %}Top | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="account-page account-top-page">
     {% include 'core/partials/account_sidebar.html' %}
@@ -27,8 +27,8 @@
                     <div class="account-stat-row">
                         <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg></span><small>Total Bets</small><strong>{{ total_bets }}</strong></article>
                         <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg></span><small>Win Rate</small><strong>{{ win_rate|floatformat:1 }}%</strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Settled Stake</small><strong><span class="account-stat-amount">{{ total_staked|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
-                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Net Result</small><strong class="{% if net_result >= 0 %}positive{% else %}negative{% endif %}"><span class="account-stat-amount">{{ net_result|floatformat:2 }}</span><em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-cash"></use></svg></span><small>Settled Stake</small><strong>{{ total_staked|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
+                        <article><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg></span><small>Net Result</small><strong class="{% if net_result >= 0 %}positive{% else %}negative{% endif %}">{{ net_result|floatformat:2 }} <em>{{ profile.currency }}</em></strong></article>
                     </div>
                 </section>
 
@@ -41,9 +41,9 @@
                         <ul class="account-activity-list">
                             {% for session in sessions %}
                                 <li>
-                                    <span class="activity-icon {% if session.is_winner %}positive{% elif session.round.status == 'crashed' %}negative{% else %}neutral{% endif %}"><svg class="ui-icon" aria-hidden="true"><use href="{% if session.is_winner %}#icon-check{% elif session.round.status == 'crashed' %}#icon-plane{% else %}#icon-refresh{% endif %}"></use></svg></span>
-                                    <div><strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong><small>{% if session.is_winner %}Won at {{ session.cashed_out_at|floatformat:2 }}x{% elif session.round.status == 'crashed' %}Lost · crashed at {{ session.round.crash_point|floatformat:2 }}x{% elif session.round.status == 'void' %}Round voided{% else %}Round in progress{% endif %} · {{ session.created_at|date:'M d, H:i' }}</small></div>
-                                    <em class="{% if session.is_winner %}positive{% elif session.round.status == 'crashed' %}negative{% endif %}">{% if session.is_winner %}+{{ session.won_amount|floatformat:2 }} {{ profile.currency }}{% elif session.round.status == 'crashed' %}-{{ session.stake|floatformat:2 }} {{ profile.currency }}{% else %}Open{% endif %}</em>
+                                    <span class="activity-icon {% if session.is_winner or session.admin_refunded_at %}positive{% elif session.round.status == 'crashed' %}negative{% else %}neutral{% endif %}"><svg class="ui-icon" aria-hidden="true"><use href="{% if session.is_winner or session.admin_refunded_at %}#icon-check{% elif session.round.status == 'crashed' %}#icon-plane{% else %}#icon-refresh{% endif %}"></use></svg></span>
+                                    <div><strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong><small>{% if session.is_winner %}Won at {{ session.cashed_out_at|floatformat:2 }}x{% elif session.admin_refunded_at %}Round voided · stake refunded{% elif session.round.status == 'crashed' %}Lost · crashed at {{ session.round.crash_point|floatformat:2 }}x{% elif session.round.status == 'void' %}Round voided{% else %}Round in progress{% endif %} · {{ session.created_at|date:'M d, H:i' }}</small></div>
+                                    <em class="{% if session.is_winner or session.admin_refunded_at %}positive{% elif session.round.status == 'crashed' %}negative{% endif %}">{% if session.is_winner %}+{{ session.won_amount|floatformat:2 }} {{ profile.currency }}{% elif session.admin_refunded_at %}+{{ session.stake|floatformat:2 }} {{ profile.currency }}{% elif session.round.status == 'crashed' %}-{{ session.stake|floatformat:2 }} {{ profile.currency }}{% else %}Open{% endif %}</em>
                                 </li>
                             {% empty %}
                                 <li class="account-empty-state account-activity-empty">No bets recorded yet. Place a bet to see your results here.</li>
@@ -54,7 +54,7 @@
                     <section class="account-card account-activity-card">
                         <div class="section-heading">
                             <h2>Open Rooms</h2>
-                            <a href="{% url 'play' %}">Play</a>
+                            <a href="{% url 'room_list' %}">Browse</a>
                         </div>
                         <ul class="account-activity-list">
                             {% for room in rooms %}
