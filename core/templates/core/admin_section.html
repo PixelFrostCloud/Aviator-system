@@ -3,7 +3,7 @@
 {% block title %}{{ section_title }} | {{ platform_name }} Admin{% endblock %}
 {% block body_class %}admin-body{% endblock %}
 {% block extra_head %}
-    <link rel="stylesheet" href="{% static 'core/css/admin_dashboard.css' %}?v=admin-mobile-drawer-20261030-1">
+    <link rel="stylesheet" href="{% static 'core/css/admin_dashboard.css' %}?v=admin-brand-stack-20261031-1">
     <script src="{% static 'core/js/admin_nav.js' %}?v=admin-mobile-drawer-20261030-1" defer></script>
     {% if section == 'live' %}<script src="{% static 'core/js/admin_live_monitor.js' %}?v=20261029-1" defer></script>{% endif %}
 {% endblock %}
@@ -22,8 +22,8 @@
             <a href="{% url 'admin_console_section' 'payments' %}"{% if section == 'payments' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-wallet"></use></svg><span>Payments</span></a>
             <a href="{% url 'admin_console_section' 'transactions' %}"{% if section == 'transactions' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-receipt"></use></svg><span>Transactions</span></a>
             <a href="{% url 'admin_console_section' 'players' %}"{% if section == 'players' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-users"></use></svg><span>Round players</span></a>
-            <a href="{% url 'admin_console_section' 'live' %}"{% if section == 'live' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-flight"></use></svg><span>Live game</span></a>
-            <a href="{% url 'admin_console_section' 'rounds' %}"{% if section == 'rounds' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-flight"></use></svg><span>Game rounds</span></a>
+            <a href="{% url 'admin_console_section' 'live' %}"{% if section == 'live' %} class="is-active" aria-current="page"{% endif %}><img class="admin-nav-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true"><span>Live game</span></a>
+            <a href="{% url 'admin_console_section' 'rounds' %}"{% if section == 'rounds' %} class="is-active" aria-current="page"{% endif %}><img class="admin-nav-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true"><span>Game rounds</span></a>
             <a href="{% url 'admin_dashboard' %}#chat-moderation"><svg><use href="#icon-shield"></use></svg><span>Chat moderation</span></a>
             <a href="{% url 'admin_console_section' 'reports' %}"{% if section == 'reports' %} class="is-active" aria-current="page"{% endif %}><svg><use href="#icon-document"></use></svg><span>Reports</span></a>
         </nav>
@@ -85,7 +85,7 @@
                                 <path class="admin-flight-trail" id="admin-flight-trail" d="M25 225"></path>
                                 <g class="admin-flight-plane" id="admin-flight-plane" transform="translate(25 225)">
                                     <circle r="19"></circle>
-                                    <use href="#icon-flight" x="-11" y="-11" width="22" height="22"></use>
+                                    <image href="{% static 'pakabet logo-03.png' %}" x="-11" y="-11" width="22" height="22" preserveAspectRatio="xMidYMid meet"></image>
                                 </g>
                             </svg>
                             <div class="admin-flight-multiplier"><span>Current multiplier</span><strong id="admin-live-multiplier">1.00x</strong></div>

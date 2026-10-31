@@ -3,7 +3,7 @@
 {% block title %}Admin dashboard | {{ platform_name }}{% endblock %}
 {% block body_class %}admin-body{% endblock %}
 {% block extra_head %}
-    <link rel="stylesheet" href="{% static 'core/css/admin_dashboard.css' %}?v=admin-mobile-drawer-20261030-1">
+    <link rel="stylesheet" href="{% static 'core/css/admin_dashboard.css' %}?v=bird-logo-shortcut-20261031-1">
     <script src="{% static 'core/js/admin_dashboard.js' %}?v=20261021-1" defer></script>
     <script src="{% static 'core/js/admin_nav.js' %}?v=admin-mobile-drawer-20261030-1" defer></script>
 {% endblock %}
@@ -23,8 +23,8 @@
             <a href="{% url 'admin_console_section' 'payments' %}"><svg><use href="#icon-wallet"></use></svg><span>Payments</span>{% if pending_deposits or pending_withdrawals %}<small class="nav-alert">{{ pending_deposits|add:pending_withdrawals }}</small>{% endif %}</a>
             <a href="{% url 'admin_console_section' 'transactions' %}"><svg><use href="#icon-receipt"></use></svg><span>Transactions</span></a>
             <a href="{% url 'admin_console_section' 'players' %}"><svg><use href="#icon-users"></use></svg><span>Round players</span></a>
-            <a href="{% url 'admin_console_section' 'live' %}"><svg><use href="#icon-flight"></use></svg><span>Live game</span></a>
-            <a href="{% url 'admin_console_section' 'rounds' %}"><svg><use href="#icon-flight"></use></svg><span>Game rounds</span></a>
+            <a href="{% url 'admin_console_section' 'live' %}"><img class="admin-nav-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true"><span>Live game</span></a>
+            <a href="{% url 'admin_console_section' 'rounds' %}"><img class="admin-nav-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true"><span>Game rounds</span></a>
             <a href="#chat-moderation"><svg><use href="#icon-shield"></use></svg><span>Chat moderation</span>{% if open_chat_abuse_alerts %}<small class="nav-alert">{{ open_chat_abuse_alerts }}</small>{% endif %}</a>
             <a href="{% url 'admin_console_section' 'reports' %}"><svg><use href="#icon-document"></use></svg><span>Reports</span></a>
         </nav>
@@ -86,11 +86,11 @@
                     <div><p>Completed withdrawals</p><strong>{{ total_withdrawals|floatformat:2 }} <em>UGX</em></strong><small>Settled player withdrawals</small></div>
                 </article>
                 <article class="admin-metric admin-metric--amber">
-                    <span class="admin-metric-icon"><svg><use href="#icon-game"></use></svg></span>
+                    <span class="admin-metric-icon"><img src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true"></span>
                     <div><p>Total wagered</p><strong>{{ total_bets|floatformat:2 }} <em>UGX</em></strong><small>{{ total_games }} game sessions</small></div>
                 </article>
                 <article class="admin-metric admin-metric--cyan">
-                    <span class="admin-metric-icon"><svg><use href="#icon-flight"></use></svg></span>
+                    <span class="admin-metric-icon"><img src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true"></span>
                     <div><p>Room activity</p><strong>{{ running_rooms }} <em>/ {{ room_count }}</em></strong><small>{{ active_rooms }} waiting for players</small></div>
                 </article>
             </section>
@@ -245,7 +245,7 @@
                 <div class="admin-shortcut-heading"><div><p class="admin-section-label">Direct access</p><h2>Management tools</h2></div></div>
                 <a href="{% url 'admin_console_section' 'users' %}"><svg><use href="#icon-users"></use></svg><span><strong>Player accounts</strong><small>Search and manage users</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
                 <a href="{% url 'admin_console_section' 'payments' %}"><svg><use href="#icon-wallet"></use></svg><span><strong>Payment requests</strong><small>Review provider status</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
-                <a href="{% url 'admin_console_section' 'rounds' %}"><svg><use href="#icon-game"></use></svg><span><strong>Game integrity</strong><small>Inspect rounds and fairness records</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
+                <a href="{% url 'admin_console_section' 'rounds' %}"><img class="admin-shortcut-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true"><span><strong>Game integrity</strong><small>Inspect rounds and fairness records</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
                 <a href="{% url 'admin_console_section' 'risk' %}"><svg><use href="#icon-shield"></use></svg><span><strong>Risk and safeguards</strong><small>Review alerts and player limits</small></span><svg class="shortcut-arrow"><use href="#icon-arrow"></use></svg></a>
             </section>
             <footer class="admin-footer"><span>{{ platform_name }} operations</span><span>Authorized staff access only</span></footer>

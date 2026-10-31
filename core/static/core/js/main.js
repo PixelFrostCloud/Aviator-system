@@ -161,9 +161,17 @@ function attachPlayWidget() {
         method: 'POST',
         headers: { 'X-CSRFToken': getCsrfToken() },
         body: formData,
-      }).then((response) => {
-        if (!response.ok) {
+      }).then(async (response) => {
+        if (!response.ok || response.redirected) {
           throw new Error(`Game presence update failed (${response.status}).`);
+        }
+        const payload = await response.json();
+        if (!payload.success) {
+          throw new Error(payload.message || 'Game presence update was rejected.');
+        }
+        const onlineCount = document.getElementById('chat-online-count');
+        if (onlineCount && Number.isInteger(payload.online_count) && payload.online_count >= 0) {
+          onlineCount.textContent = String(payload.online_count);
         }
       }).catch((error) => {
         console.error('Unable to update game presence.', error);
@@ -178,6 +186,10 @@ function attachPlayWidget() {
         headers: { 'X-CSRFToken': getCsrfToken() },
         body: formData,
         keepalive: true,
+      }).then((response) => {
+        if (!response.ok || response.redirected) {
+          throw new Error(`Game presence release failed (${response.status}).`);
+        }
       }).catch((error) => {
         console.error('Unable to release game presence.', error);
       });
@@ -764,6 +776,9 @@ function attachPlayWidget() {
     let currentMultiplier = 1.0;
     let roundMultiplierRate = FLIGHT_INCREMENT * 1000 / FLIGHT_TICK_MS;
     let maximumRoundMultiplier = 286;
+    let walletBalanceRevision = 0;
+    let walletMutationCount = 0;
+    let sharedStateRefreshQueued = false;
     let queuedSlips = new Set();
     let activeSlipSessions = new Map();
     let betPlacementPending = new Set();
@@ -1084,6 +1099,23 @@ function attachPlayWidget() {
       });
     }
 
+    function beginWalletMutation() {
+      walletMutationCount += 1;
+      walletBalanceRevision += 1;
+    }
+
+    function finishWalletMutation() {
+      walletMutationCount = Math.max(0, walletMutationCount - 1);
+      walletBalanceRevision += 1;
+      if (walletMutationCount === 0) {
+        if (syncingSharedState) {
+          sharedStateRefreshQueued = true;
+        } else {
+          syncSharedRound();
+        }
+      }
+    }
+
     function clearInsufficientIfAffordable(slip) {
       if (
         insufficientBets.has(slip)
@@ -1399,36 +1431,51 @@ function attachPlayWidget() {
       return null;
     }
 
+    function queueAutoBet(slip, allowCancel = true) {
+      if (queuedSlips.has(slip)) {
+        if (!allowCancel) {
+          autoRepeatSlips.add(slip);
+          gameMessage.textContent = 'Auto bet queued for the next round.';
+          syncSlipStates();
+          return;
+        }
+        queuedSlips.delete(slip);
+        autoRepeatSlips.delete(slip);
+        autoRepeatStoppedSlips.add(slip);
+        gameMessage.textContent = 'Next-round auto bet cancelled.';
+        syncSlipStates();
+        return;
+      }
+
+      const isActive = activeSlipSessions.has(slip);
+      const canPlaceNow = phase === 'betting' && bettingOpen && currentSession?.round_id;
+      if (isActive || !canPlaceNow) {
+        const stakeIssue = getBetStakeIssue(slip, true);
+        if (stakeIssue) {
+          gameMessage.textContent = stakeIssue;
+          syncSlipStates();
+          return;
+        }
+        queuedSlips.add(slip);
+        autoRepeatSlips.add(slip);
+        autoRepeatStoppedSlips.delete(slip);
+        gameMessage.textContent = 'Auto bet queued for the next round.';
+        syncSlipStates();
+        return;
+      }
+
+      placeBetForSlip(slip, currentSession.round_id);
+    }
+
     slips.forEach((slip) => {
       const input = slip.querySelector('.stake-input');
       const modeButtons = [...slip.querySelectorAll('.bet-mode-toggle')];
       modeButtons.forEach((button) => {
         button.addEventListener('click', () => {
           const autoMode = button.dataset.mode === 'auto';
-          let startAutoBet = false;
           if (autoMode) {
             autoSlips.add(slip);
             autoRepeatStoppedSlips.delete(slip);
-            if (phase === 'flying' || activeSlipSessions.has(slip)) {
-              autoRepeatSlips.add(slip);
-              if (activeSlipSessions.has(slip)) {
-                queuedSlips.delete(slip);
-                gameMessage.textContent = 'Auto bet enabled for the next round. Current bet remains active.';
-              } else {
-                queuedSlips.add(slip);
-                gameMessage.textContent = 'Auto bet queued for the next round.';
-              }
-            } else if (phase === 'betting' && currentSession?.round_id) {
-              if (bettingOpen) {
-                startAutoBet = true;
-              } else {
-                autoRepeatSlips.add(slip);
-                queuedSlips.add(slip);
-                gameMessage.textContent = 'Auto bet queued for the next round.';
-              }
-            } else {
-              gameMessage.textContent = 'Auto bet enabled for this panel.';
-            }
           } else {
             autoSlips.delete(slip);
             autoRepeatSlips.delete(slip);
@@ -1438,8 +1485,8 @@ function attachPlayWidget() {
           }
           modeButtons.forEach((item) => item.classList.toggle('active', item === button));
           syncSlipStates();
-          if (startAutoBet) {
-            placeBetForSlip(slip, currentSession.round_id);
+          if (autoMode) {
+            queueAutoBet(slip, false);
           }
         });
       });
@@ -1511,6 +1558,7 @@ function attachPlayWidget() {
 
       betPlacementPending.add(slip);
       pendingBetStakes.set(slip, amount);
+      beginWalletMutation();
       syncSlipStates();
       const formData = new FormData();
       formData.append('action', 'start');
@@ -1539,9 +1587,6 @@ function attachPlayWidget() {
             autoRepeatSlips.delete(slip);
             autoRepeatStoppedSlips.add(slip);
             queuedSlips.delete(slip);
-            if (Number.isFinite(payload.balance)) {
-              setWalletBalance(payload.balance);
-            }
             gameMessage.textContent = 'Insufficient balance for this bet. Lower the stake or add funds.';
           } else if (payload.code === 'bet_limit_exceeded') {
             placedBetStakes.delete(slip);
@@ -1560,6 +1605,9 @@ function attachPlayWidget() {
         if (payload.round_id !== roundId || payload.status !== 'betting') {
           placedBetStakes.delete(slip);
           queuedSlips.add(slip);
+          if (autoSlips.has(slip)) {
+            autoRepeatSlips.add(slip);
+          }
           gameMessage.textContent = 'Round changed before the bet was confirmed. Bet queued for the next round.';
           return;
         }
@@ -1578,24 +1626,29 @@ function attachPlayWidget() {
         } else {
           queuedSlips.delete(slip);
         }
-        if (Number.isFinite(payload.balance)) {
-          setWalletBalance(payload.balance);
-        }
         gameMessage.textContent = `Bet accepted for round ${roundId}.`;
         loadLedger();
       } catch (error) {
         console.error('Unable to confirm bet placement.', error);
         placedBetStakes.delete(slip);
         queuedSlips.add(slip);
+        if (autoSlips.has(slip)) {
+          autoRepeatSlips.add(slip);
+        }
         gameMessage.textContent = 'Bet confirmation is delayed. The same request will be retried safely.';
       } finally {
         betPlacementPending.delete(slip);
         pendingBetStakes.delete(slip);
+        finishWalletMutation();
         syncSlipStates();
       }
     }
 
     function queueBet(slip) {
+      if (autoSlips.has(slip)) {
+        queueAutoBet(slip);
+        return;
+      }
       if (phase !== 'betting' && phase !== 'flying') {
         gameMessage.textContent = 'Wait for the next betting window.';
         return;
@@ -1734,10 +1787,6 @@ function attachPlayWidget() {
       const seedStatus = document.querySelector('[data-server-seed-status]');
       if (seedStatus && payload.server_seed_hash) {
         seedStatus.textContent = 'Commitment published before this round began.';
-      }
-      const balanceDisplay = document.querySelector('#play-balance strong');
-      if (balanceDisplay && Number.isFinite(payload.balance)) {
-        balanceDisplay.textContent = payload.balance.toFixed(2);
       }
 
       if (consumeQueued) {
@@ -1891,6 +1940,7 @@ function attachPlayWidget() {
         return;
       }
       syncingSharedState = true;
+      const balanceRevisionAtRequest = walletBalanceRevision;
       const requestStartedAt = performance.now();
       try {
         const formData = new FormData();
@@ -1904,6 +1954,13 @@ function attachPlayWidget() {
           throw new Error(`Unable to load shared round state (${response.status}).`);
         }
         const payload = await response.json();
+        if (
+          Number.isFinite(payload.balance)
+          && walletMutationCount === 0
+          && balanceRevisionAtRequest === walletBalanceRevision
+        ) {
+          setWalletBalance(payload.balance);
+        }
         if (Number.isFinite(payload.multiplier_rate) && payload.multiplier_rate > 0) {
           roundMultiplierRate = payload.multiplier_rate;
         }
@@ -2031,6 +2088,10 @@ function attachPlayWidget() {
         console.error('Unable to synchronize the shared game round.', error);
       } finally {
         syncingSharedState = false;
+        if (sharedStateRefreshQueued) {
+          sharedStateRefreshQueued = false;
+          syncSharedRound();
+        }
       }
     }
 
@@ -2041,6 +2102,7 @@ function attachPlayWidget() {
         return;
       }
       pendingCashoutSlips.add(slip);
+      beginWalletMutation();
       syncSlipStates();
 
       const formData = new FormData();
@@ -2060,13 +2122,14 @@ function attachPlayWidget() {
       } catch (error) {
         console.error('Unable to confirm cashout.', error);
         pendingCashoutSlips.delete(slip);
+        finishWalletMutation();
         syncSlipStates();
         gameMessage.textContent = 'Cashout confirmation is delayed. Checking the server for the settled result.';
-        syncSharedRound();
         return;
       }
       if (!payload.success) {
         pendingCashoutSlips.delete(slip);
+        finishWalletMutation();
         syncSlipStates();
         if (payload.message?.includes('already been cashed out')) {
           syncSharedRound();
@@ -2078,8 +2141,6 @@ function attachPlayWidget() {
 
       pendingCashoutSlips.delete(slip);
       gameMessage.textContent = payload.message;
-      const balanceDisplay = document.querySelector('#play-balance strong');
-      setWalletBalance(payload.balance);
       showCashoutWinPopup(payload.cashout_multiplier, payload.won_amount);
       cashedOutSlips.add(slip);
       settledBets.set(slip, {
@@ -2090,6 +2151,7 @@ function attachPlayWidget() {
       slip.classList.remove('is-running');
       syncSlipStates();
       loadLedger();
+      finishWalletMutation();
     }
 
     startButtons.forEach((button) => {

@@ -1,4 +1,5 @@
 {% extends 'core/base.html' %}
+{% load static %}
 {% block title %}Game Rules | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="account-page account-rules-page">
@@ -16,7 +17,7 @@
                 </div>
 
                 <section class="account-card rules-overview">
-                    <span class="rules-overview-icon" aria-hidden="true"><svg class="ui-icon"><use href="#icon-plane"></use></svg></span>
+                    <span class="rules-overview-icon" aria-hidden="true"><img class="bird-logo-icon" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true"></span>
                     <div>
                         <h2>Know how each round works</h2>
                         <p>Place your bet before the countdown ends. Once the plane takes off, cash out before it flies away to secure your result.</p>

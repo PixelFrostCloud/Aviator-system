@@ -182,10 +182,19 @@ body.admin-body {
 }
 
 .admin-body .alerts {
-  position: relative;
-  z-index: 5;
-  width: min(100% - 2rem, 1600px);
-  margin: 1rem auto 0;
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  right: auto;
+  z-index: 120;
+  width: min(560px, calc(100vw - 32px));
+  margin: 0;
+  transform: translateX(-50%);
+}
+
+.admin-body .alerts .alert {
+  padding-left: 14px;
+  border-left: 0;
 }
 
 .admin-dashboard {
@@ -322,11 +331,26 @@ body.admin-body {
   stroke-linejoin: round;
 }
 
-.admin-nav a > svg:first-child {
+.admin-nav-logo {
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px !important;
+  min-height: 17px !important;
+  max-width: 17px !important;
+  max-height: 17px !important;
+  flex: 0 0 auto;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 0 3px rgba(255,255,255,0.08));
+}
+
+.admin-nav a > svg:first-child,
+.admin-nav a > img:first-child {
   color: #91a0ad;
 }
 
-.admin-nav a.is-active > svg:first-child {
+.admin-nav a.is-active > svg:first-child,
+.admin-nav a.is-active > img:first-child {
   color: #ff687d;
 }
 
@@ -616,6 +640,13 @@ body.admin-body {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.admin-metric-icon img {
+  width: 20px;
+  height: 20px;
+  display: block;
+  object-fit: contain;
 }
 
 .admin-metric--blue { --metric-color: #65aaff; --metric-wash: rgba(58, 133, 227, 0.14); }
@@ -1090,6 +1121,13 @@ body.admin-body {
   color: #66aaff;
 }
 
+.admin-shortcuts > a > .admin-shortcut-logo {
+  width: 19px;
+  height: 19px;
+  display: block;
+  object-fit: contain;
+}
+
 .admin-shortcuts > a:nth-of-type(2) > svg:first-child { color: #50d493; }
 .admin-shortcuts > a:nth-of-type(3) > svg:first-child { color: #f3bd52; }
 .admin-shortcuts > a:nth-of-type(4) > svg:first-child { color: #ff6b80; }
@@ -1179,7 +1217,8 @@ body.admin-body {
   .admin-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .admin-metric { min-height: 94px; gap: 9px; padding: 12px 10px; }
   .admin-metric-icon { width: 31px; height: 31px; }
-  .admin-metric-icon svg { width: 17px; height: 17px; }
+  .admin-metric-icon svg,
+  .admin-metric-icon img { width: 17px; height: 17px; }
   .admin-metric p { font-size: 9px; }
   .admin-metric strong { font-size: 19px; }
   .admin-metric strong em { font-size: 8px; }
@@ -2019,12 +2058,14 @@ body.admin-body {
 }
 
 .admin-brand {
-  gap: 9px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
 }
 
 .admin-brand > span {
-  align-self: flex-end;
-  padding-bottom: 4px;
+  align-self: flex-start;
+  padding-bottom: 0;
 }
 
 .admin-brand small {

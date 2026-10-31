@@ -1,4 +1,5 @@
 {% extends 'core/base.html' %}
+{% load static %}
 {% block title %}Top | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="account-page account-top-page">
@@ -41,7 +42,7 @@
                         <ul class="account-activity-list">
                             {% for session in sessions %}
                                 <li>
-                                    <span class="activity-icon {% if session.is_winner or session.admin_refunded_at %}positive{% elif session.round.status == 'crashed' %}negative{% else %}neutral{% endif %}"><svg class="ui-icon" aria-hidden="true"><use href="{% if session.is_winner or session.admin_refunded_at %}#icon-check{% elif session.round.status == 'crashed' %}#icon-plane{% else %}#icon-refresh{% endif %}"></use></svg></span>
+                                    <span class="activity-icon {% if session.is_winner or session.admin_refunded_at %}positive{% elif session.round.status == 'crashed' %}negative{% else %}neutral{% endif %}">{% if session.round.status == 'crashed' %}<img class="activity-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true">{% else %}<svg class="ui-icon" aria-hidden="true"><use href="{% if session.is_winner or session.admin_refunded_at %}#icon-check{% else %}#icon-refresh{% endif %}"></use></svg>{% endif %}</span>
                                     <div><strong>{{ session.stake|floatformat:2 }} {{ profile.currency }}</strong><small>{% if session.is_winner %}Won at {{ session.cashed_out_at|floatformat:2 }}x{% elif session.admin_refunded_at %}Round voided · stake refunded{% elif session.round.status == 'crashed' %}Lost · crashed at {{ session.round.crash_point|floatformat:2 }}x{% elif session.round.status == 'void' %}Round voided{% else %}Round in progress{% endif %} · {{ session.created_at|date:'M d, H:i' }}</small></div>
                                     <em class="{% if session.is_winner or session.admin_refunded_at %}positive{% elif session.round.status == 'crashed' %}negative{% endif %}">{% if session.is_winner %}+{{ session.won_amount|floatformat:2 }} {{ profile.currency }}{% elif session.admin_refunded_at %}+{{ session.stake|floatformat:2 }} {{ profile.currency }}{% elif session.round.status == 'crashed' %}-{{ session.stake|floatformat:2 }} {{ profile.currency }}{% else %}Open{% endif %}</em>
                                 </li>

@@ -1,4 +1,5 @@
 {% extends 'core/base.html' %}
+{% load static %}
 {% block title %}Profile | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="account-page account-profile-page">
@@ -68,7 +69,7 @@
                         </div>
                         <ul class="account-activity-list">
                             {% for txn in transactions %}
-                                <li><span class="activity-icon {% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}positive{% else %}negative{% endif %}"><svg class="ui-icon" aria-hidden="true"><use href="{% if txn.transaction_type == 'deposit' %}#icon-wallet{% elif txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}#icon-check{% else %}#icon-plane{% endif %}"></use></svg></span><div><strong>{{ txn.transaction_type|title }}</strong><small>{{ txn.description|default:'Main Balance' }}</small></div><b class="{% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}positive{% else %}negative{% endif %}">{% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}+{% else %}-{% endif %}{{ txn.amount|floatformat:2 }} {{ profile.currency }}</b><time>{{ txn.created_at|date:'M d, H:i' }}</time></li>
+                                <li><span class="activity-icon {% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}positive{% else %}negative{% endif %}">{% if txn.transaction_type == 'deposit' %}<svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg>{% elif txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}<svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg>{% else %}<img class="activity-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true">{% endif %}</span><div><strong>{{ txn.transaction_type|title }}</strong><small>{{ txn.description|default:'Main Balance' }}</small></div><b class="{% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}positive{% else %}negative{% endif %}">{% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}+{% else %}-{% endif %}{{ txn.amount|floatformat:2 }} {{ profile.currency }}</b><time>{{ txn.created_at|date:'M d, H:i' }}</time></li>
                             {% empty %}
                                 <li class="empty-state">No account activity yet.</li>
                             {% endfor %}

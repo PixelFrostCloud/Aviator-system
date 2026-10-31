@@ -6033,6 +6033,189 @@ body:has(.account-settings-page) .password-settings-form input::placeholder {
   font-weight: 850 !important;
 }
 
+.account-transactions-page .account-title-row {
+  margin-bottom: 22px !important;
+}
+
+.account-transactions-page .account-title-row h1 {
+  font-size: clamp(26px, 3vw, 34px) !important;
+}
+
+.account-transactions-page .account-title-row p {
+  margin-top: 5px !important;
+}
+
+.account-transactions-page .account-close-link {
+  width: 36px !important;
+  height: 36px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1px solid #343a35 !important;
+  border-radius: 6px !important;
+  color: #b6c0b9 !important;
+  text-decoration: none !important;
+}
+
+.account-transactions-page .account-close-link:hover {
+  border-color: #52705b !important;
+  background: #1d2720 !important;
+  color: #ffffff !important;
+}
+
+.account-transactions-page .account-close-link .ui-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.account-transactions-page .account-table-card .section-heading {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px !important;
+  background: #1b1e20;
+}
+
+.account-transactions-page .account-table-card .section-heading h2 {
+  margin: 0;
+  color: #f2f5f7;
+  font-size: 17px !important;
+}
+
+.account-transactions-page .account-table-card .section-heading p {
+  margin: 4px 0 0;
+  color: #98a39c !important;
+  font-size: 12px;
+}
+
+.transaction-record-count {
+  padding: 6px 10px;
+  border: 1px solid #304537;
+  border-radius: 999px;
+  background: #18251c;
+  color: #8de4a7 !important;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.account-transactions-page .account-table-head,
+.account-transactions-page .transaction-row {
+  grid-template-columns: minmax(140px, 1.15fr) minmax(150px, 1.2fr) minmax(100px, 0.8fr) minmax(150px, 1fr) !important;
+  padding-inline: 22px !important;
+}
+
+.account-transactions-page .account-table-head {
+  min-height: 42px !important;
+  background: #17191b;
+  color: #9aa59f !important;
+  font-size: 10px !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.account-transactions-page .transaction-row {
+  min-height: 56px !important;
+  transition: background-color 140ms ease;
+}
+
+.account-transactions-page .transaction-row:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.account-transactions-page .transaction-type {
+  color: #edf1f4;
+  font-weight: 650;
+}
+
+.account-transactions-page .transaction-amount {
+  font-size: 12px !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.account-transactions-page .transaction-status {
+  width: fit-content;
+  padding: 4px 8px;
+  border: 1px solid #3c4540;
+  border-radius: 999px;
+  background: #242a26;
+  color: #c4cdc7;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.account-transactions-page .transaction-status--completed {
+  border-color: #28533a;
+  background: #193123;
+  color: #8ce3a5;
+}
+
+.account-transactions-page .transaction-status--pending {
+  border-color: #66512a;
+  background: #302819;
+  color: #e7c779;
+}
+
+.account-transactions-page .transaction-status--failed {
+  border-color: #633b3e;
+  background: #321f21;
+  color: #eca0a3;
+}
+
+.account-transactions-page .transaction-date {
+  color: #abb4ae;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.account-transactions-page .account-right-rail > .account-card {
+  padding: 22px !important;
+  border-color: #303833 !important;
+  background: linear-gradient(145deg, #1d211f, #171a18) !important;
+}
+
+.account-transactions-page .wallet-balance-large {
+  margin: 13px 0 18px !important;
+  font-size: clamp(22px, 2vw, 28px) !important;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.account-transactions-page .wallet-action-tabs a {
+  min-height: 38px !important;
+}
+
+@media (max-width: 720px) {
+  .account-transactions-page .account-table-head {
+    display: none !important;
+  }
+
+  .account-transactions-page .transaction-row {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    min-height: 66px !important;
+    padding: 12px 16px !important;
+    gap: 8px 14px !important;
+  }
+
+  .account-transactions-page .transaction-status {
+    grid-column: 1;
+  }
+
+  .account-transactions-page .transaction-date {
+    grid-column: 2;
+    grid-row: 2;
+    text-align: right;
+  }
+
+  .account-transactions-page .account-table-card .section-heading {
+    padding: 15px 16px !important;
+  }
+}
+
 .positive {
   color: #22e35a !important;
 }
@@ -7174,6 +7357,20 @@ body:has(.account-page) main.container {
   font-size: 22px;
 }
 
+.activity-icon .activity-logo {
+  width: 20px;
+  height: 20px;
+  display: block;
+  object-fit: contain;
+}
+
+.bird-logo-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  object-fit: contain;
+}
+
 .account-stat-row small,
 .stats-strip small {
   color: #cfd6df;
@@ -8077,6 +8274,14 @@ body:has(.account-page) main.container {
   overflow: hidden !important;
 }
 
+.account-side-logo {
+  width: 18px !important;
+  height: 18px !important;
+  display: block !important;
+  object-fit: contain !important;
+  margin: 0 auto !important;
+}
+
 .account-side-link span {
   width: 22px !important;
   height: 22px !important;
@@ -8655,8 +8860,8 @@ body:has(.aviator-play-page) .flight-stage.is-betting::after {
   z-index: 4;
   pointer-events: none;
   background:
-    radial-gradient(circle at 50% 50%, rgba(2, 5, 7, 0.28) 0%, rgba(2, 5, 7, 0.46) 64%, rgba(2, 5, 7, 0.56) 100%);
-  backdrop-filter: blur(1.5px) saturate(0.7);
+    radial-gradient(ellipse at 50% 48%, rgba(3, 7, 9, 0.48) 0%, rgba(3, 7, 9, 0.64) 42%, rgba(2, 4, 5, 0.78) 100%);
+  backdrop-filter: blur(2px) saturate(0.62);
 }
 
 body:has(.aviator-play-page) .flight-stage.is-betting .stage-multiplier {
@@ -8665,6 +8870,53 @@ body:has(.aviator-play-page) .flight-stage.is-betting .stage-multiplier {
 
 body:has(.aviator-play-page) .flight-stage.is-betting .round-countdown {
   z-index: 5;
+}
+
+body:has(.aviator-play-page) .flight-stage.is-betting .round-countdown {
+  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+body:has(.aviator-play-page) .flight-stage.is-betting .round-countdown span {
+  padding: 7px 12px;
+  border: 1px solid rgba(200, 213, 218, 0.16);
+  border-radius: 999px;
+  background: rgba(8, 12, 14, 0.72);
+  color: #e2e8eb;
+  font-size: clamp(11px, 1.7dvh, 14px);
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  line-height: 1;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+body:has(.aviator-play-page) .flight-stage.is-betting .round-countdown strong {
+  position: relative;
+  width: clamp(68px, 13dvh, 96px);
+  height: clamp(68px, 13dvh, 96px);
+  border: 2px solid #e6a51a;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(23, 33, 36, 0.98), rgba(4, 8, 10, 0.98) 72%);
+  color: #f7fafb;
+  font-size: clamp(34px, 7.5dvh, 52px);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+  box-shadow:
+    0 0 0 5px rgba(230, 165, 26, 0.09),
+    0 0 30px rgba(230, 165, 26, 0.2),
+    inset 0 0 22px rgba(0, 0, 0, 0.55);
+}
+
+body:has(.aviator-play-page) .flight-stage.is-betting .round-countdown strong::before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border: 1px solid rgba(230, 165, 26, 0.22);
+  border-radius: 50%;
 }
 
 /* Flight scene: the line, fill and aircraft all use one animated end point. */
@@ -8796,6 +9048,37 @@ body:has(.account-page) .wallet-metrics dt,
 body:has(.account-page) .rail-list span,
 body:has(.account-page) .rail-list small {
   color: var(--account-muted) !important;
+}
+
+body:has(.account-support-page) .account-right-rail .rail-list a,
+body:has(.account-rules-page) .account-right-rail .rail-list a {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid #347145;
+  border-radius: 4px;
+  background: #1d3525;
+  color: #b7f5c8 !important;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+body:has(.account-support-page) .account-right-rail .rail-list a:hover,
+body:has(.account-rules-page) .account-right-rail .rail-list a:hover {
+  border-color: #20c957;
+  background: #20c957;
+  color: #07130b !important;
+}
+
+body:has(.account-support-page) .account-right-rail .rail-list a:focus-visible,
+body:has(.account-rules-page) .account-right-rail .rail-list a:focus-visible {
+  outline: 2px solid #b7f5c8;
+  outline-offset: 2px;
 }
 
 body:has(.account-page) .account-topbar .help-chip {
@@ -11726,6 +12009,12 @@ body:has(.aviator-play-page) .how-step__icon .ui-icon {
   stroke-linejoin: round !important;
 }
 
+body:has(.aviator-play-page) .how-step__icon .bird-logo-icon {
+  width: 20px !important;
+  height: 20px !important;
+  object-fit: contain !important;
+}
+
 body:has(.aviator-play-page) .how-step--bet .how-step__icon,
 body:has(.aviator-play-page) .how-step--fly .how-step__icon,
 body:has(.aviator-play-page) .how-step--cashout .how-step__icon {
@@ -12165,6 +12454,13 @@ body:has(.account-rules-page) .account-right-rail {
 .rules-server-icon .ui-icon {
   width: 23px;
   height: 23px;
+}
+
+.rules-overview-icon .bird-logo-icon {
+  width: 23px;
+  height: 23px;
+  display: block;
+  object-fit: contain;
 }
 
 .rules-overview h2,

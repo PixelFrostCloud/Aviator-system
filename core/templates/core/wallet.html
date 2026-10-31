@@ -1,4 +1,5 @@
 {% extends 'core/base.html' %}
+{% load static %}
 {% block title %}Wallet | {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="account-page account-wallet-page">
@@ -61,7 +62,13 @@
                             {% for txn in transactions|slice:":5" %}
                                 <li>
                                     <span class="activity-icon {% if txn.transaction_type == 'deposit' or txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}positive{% else %}negative{% endif %}">
-                                        <svg class="ui-icon" aria-hidden="true"><use href="{% if txn.transaction_type == 'deposit' %}#icon-wallet{% elif txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}#icon-check{% else %}#icon-plane{% endif %}"></use></svg>
+                                        {% if txn.transaction_type == 'deposit' %}
+                                            <svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg>
+                                        {% elif txn.transaction_type == 'win' or txn.transaction_type == 'bonus' or txn.transaction_type == 'refund' %}
+                                            <svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg>
+                                        {% else %}
+                                            <img class="activity-logo" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true">
+                                        {% endif %}
                                     </span>
                                     <div>
                                         <strong>{{ txn.transaction_type|title }}</strong>

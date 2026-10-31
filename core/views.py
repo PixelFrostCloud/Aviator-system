@@ -784,6 +784,7 @@ def play(request):
         return render(request, 'core/play.html', {
             'profile': profile,
             'maximum_bet': MAXIMUM_BET_AMOUNT,
+            'maximum_win': f'{MAXIMUM_WIN_AMOUNT:,.2f}',
             'recent_sessions': recent_sessions,
             'highest_stakers': highest_stakers,
             'recent_crashes': recent_crashes,
@@ -793,7 +794,10 @@ def play(request):
 
     action = request.POST.get('action')
     if action == 'state':
-        return JsonResponse(_shared_round_payload(request.user, request))
+        payload = _shared_round_payload(request.user, request)
+        if request.user.is_authenticated:
+            payload['balance'] = float(Profile.objects.only('balance').get(user=request.user).balance)
+        return JsonResponse(payload)
 
     if action == 'ledger':
         tab = request.POST.get('tab', 'all')
@@ -806,11 +810,17 @@ def play(request):
         if not presence_key:
             return JsonResponse({'success': False, 'message': 'Presence key is required.'}, status=400)
         record_game_presence(request.user, presence_key)
-        return JsonResponse({'success': True})
+        return JsonResponse({
+            'success': True,
+            'online_count': active_participant_count(),
+        })
 
     if action == 'presence_leave':
         remove_game_presence(request.user, request.POST.get('presence_key', '')[:32])
-        return JsonResponse({'success': True})
+        return JsonResponse({
+            'success': True,
+            'online_count': active_participant_count(),
+        })
 
     if action == 'chat':
         form = ChatMessageForm(request.POST)

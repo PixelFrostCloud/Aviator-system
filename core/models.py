@@ -37,7 +37,7 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     referral_code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     client_seed = models.CharField(max_length=128, default=generate_client_seed)
-    balance = models.DecimalField(max_digits=12, decimal_places=2, default=1000)
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default='UGX')
     phone_number = models.CharField(max_length=20, blank=True)
     daily_deposit_limit = models.DecimalField(

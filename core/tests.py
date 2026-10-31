@@ -52,6 +52,7 @@ class AuthenticationTests(TestCase):
         self.assertEqual(registration.url, '/play/')
         user = User.objects.get(username='phone-player')
         self.assertEqual(user.profile.phone_number, '256700000001')
+        self.assertEqual(user.profile.balance, Decimal('0.00'))
         self.assertEqual(user.email, '')
 
         self.client.logout()
@@ -240,6 +241,12 @@ class PlayEndpointTests(TestCase):
         self.profile = Profile.objects.create(user=self.user, balance=Decimal('1000.00'))
         self.client.login(username='player', password='strong-test-pass')
 
+    def test_game_limits_show_the_configured_maximum_win(self):
+        response = self.client.get('/play/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '1,000,000,000.00')
+
     def test_shared_state_opens_a_betting_window(self):
         response = self.client.post('/play/', {'action': 'state'})
 
@@ -248,6 +255,26 @@ class PlayEndpointTests(TestCase):
         self.assertEqual(payload['status'], 'betting')
         self.assertGreater(payload['seconds_remaining'], 0)
         self.assertTrue(payload['round_id'])
+
+    def test_online_counter_tracks_and_releases_authenticated_presence(self):
+        presence = self.client.post('/play/', {
+            'action': 'presence',
+            'presence_key': 'test-online-counter',
+        })
+
+        self.assertEqual(presence.status_code, 200)
+        self.assertEqual(presence.json()['online_count'], 1)
+
+        count = self.client.get('/api/online-count/')
+        self.assertEqual(count.status_code, 200)
+        self.assertEqual(count.json()['online_count'], 1)
+
+        release = self.client.post('/play/', {
+            'action': 'presence_leave',
+            'presence_key': 'test-online-counter',
+        })
+        self.assertEqual(release.status_code, 200)
+        self.assertEqual(release.json()['online_count'], 0)
 
     def test_shared_state_reports_live_multiplier_and_persisted_round_history(self):
         first_state = self.client.post('/play/', {'action': 'state'}).json()
@@ -401,10 +428,71 @@ class PlayEndpointTests(TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(first.json()['session_ids'], second.json()['session_ids'])
+        self.assertEqual(first.json()['balance'], 990.0)
+        self.assertEqual(second.json()['balance'], 990.0)
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.balance, Decimal('990.00'))
         session = GameSession.objects.get(bet_request_id='bet-request-1')
         self.assertEqual(session.auto_cashout_at, Decimal('2.00'))
+
+    def test_two_bet_options_debit_the_exact_combined_stake(self):
+        self.profile.balance = Decimal('5000.00')
+        self.profile.save(update_fields=['balance'])
+
+        first = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([{
+                'amount': 2000,
+                'request_id': 'two-slot-bet-1',
+            }]),
+        })
+        second = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([{
+                'amount': 2000,
+                'request_id': 'two-slot-bet-2',
+            }]),
+        })
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.json()['balance'], 3000.0)
+        self.assertEqual(second.json()['balance'], 1000.0)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        self.assertEqual(
+            Transaction.objects.filter(
+                reference=first.json()['round_id'],
+                transaction_type='bet',
+            ).aggregate(total=Sum('amount'))['total'],
+            Decimal('4000.00'),
+        )
+
+    def test_shared_state_returns_balance_after_automatic_cashout(self):
+        start = self.client.post('/play/', {
+            'action': 'start',
+            'bet_data': json.dumps([{
+                'amount': 10,
+                'auto_cashout_at': 2,
+                'request_id': 'auto-cashout-balance',
+            }]),
+        }).json()
+        game_round = GameRound.objects.get(public_id=start['round_id'])
+        game_round.status = 'flying'
+        game_round.crash_point = Decimal('5.00')
+        game_round.started_at = timezone.now()
+        game_round.save(update_fields=['status', 'crash_point', 'started_at'])
+
+        with patch('core.views.multiplier_at_elapsed_time', return_value=Decimal('2.00')):
+            response = self.client.post('/play/', {'action': 'state'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['balance'], 1010.0)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1010.00'))
+        session = GameSession.objects.get(bet_request_id='auto-cashout-balance')
+        self.assertEqual(session.cashed_out_at, Decimal('2.00'))
+        self.assertEqual(session.won_amount, Decimal('20.00'))
 
     def test_start_round_commits_seed_and_debits_wallet(self):
         response = self.client.post('/play/', {
@@ -526,6 +614,12 @@ class PlayEndpointTests(TestCase):
         payload = response.json()
         self.assertGreater(payload['cashout_multiplier'], 1.00)
         self.assertGreater(payload['won_amount'], 10.00)
+        self.assertEqual(
+            Decimal(str(payload['balance'])),
+            Decimal('990.00') + Decimal(str(payload['won_amount'])),
+        )
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal(str(payload['balance'])))
 
     def test_voided_round_rejects_cashout_and_shows_refunded_stake_in_history(self):
         game_round = GameRound.objects.create(

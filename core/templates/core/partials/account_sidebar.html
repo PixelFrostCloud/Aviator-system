@@ -1,8 +1,9 @@
+{% load static %}
 <aside class="account-sidebar" id="account-sidebar" aria-label="Account navigation">
     <button class="account-sidebar-close" id="account-sidebar-close" type="button" aria-label="Close account navigation">
         <span>Navigation</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg>
     </button>
-    <a class="account-side-link {% if request.resolver_match.url_name == 'play' %}active{% endif %}" href="{% url 'play' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plane"></use></svg> All Bets</a>
+    <a class="account-side-link {% if request.resolver_match.url_name == 'play' %}active{% endif %}" href="{% url 'play' %}"><img class="account-side-logo" src="{% if platform_branding and platform_branding.logo %}{{ platform_branding.logo.url }}{% else %}{% static 'pakabet logo-03.png' %}{% endif %}" alt="{{ platform_name }} logo" aria-hidden="true"> All Bets</a>
     <a class="account-side-link {% if request.resolver_match.url_name == 'bet_history' %}active{% endif %}" href="{% url 'bet_history' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg> My Bets</a>
     <a class="account-side-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-chart"></use></svg> Top</a>
     <hr>

@@ -115,8 +115,8 @@
                 </div>
                 <strong class="stage-multiplier" id="multiplier">1.00x</strong>
                 <div class="round-countdown" id="round-countdown">
-                    <span>PLACE YOUR BETS</span>
                     <strong>4</strong>
+                    <span>PLACE YOUR BETS</span>
                 </div>
                 <p class="stage-message" id="game-message">Place your bets before the next flight.</p>
                 <div class="fairness-strip" id="fairness-strip">
@@ -376,7 +376,7 @@
                 <li class="how-step how-step--fly">
                     <span class="how-step__number" aria-hidden="true">02</span>
                     <span class="how-step__icon" aria-hidden="true">
-                        <svg class="ui-icon" aria-hidden="true"><use href="#icon-plane"></use></svg>
+                        <img class="bird-logo-icon" src="{% static 'pakabet logo-03.png' %}" alt="" aria-hidden="true">
                     </span>
                     <div class="how-step__copy"><span class="how-step__label">Step 2</span><h3>Watch it climb</h3><p>Follow the plane as the multiplier grows. Your potential win rises with it.</p></div>
                 </li>
@@ -397,7 +397,7 @@
         <div class="modal-body compact">
             <div class="limit-line"><span>Minimum bet {{ currency }}:</span><strong>1.00</strong></div>
             <div class="limit-line"><span>Maximum combined bet per round {{ currency }}:</span><strong>{{ maximum_bet|floatformat:2 }}</strong></div>
-            <div class="limit-line"><span>Maximum win for one bet {{ currency }}:</span><strong>450,000,000.00</strong></div>
+            <div class="limit-line"><span>Maximum win for one bet {{ currency }}:</span><strong>{{ maximum_win }}</strong></div>
         </div>
     </section>
 
