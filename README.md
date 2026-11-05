@@ -23,7 +23,7 @@ The app reads the ioTec Pay OpenAPI files from `Payment APIs/` and integrates th
 - Status lookup by external ID
 - Provider callbacks at `/api/payments/callback/`
 
-The wallet accepts only MTN Mobile Money and Airtel Money in Uganda. Deposits must be between 500 and 300,000 UGX per transaction. Withdrawals start at 500 UGX and are limited by the player's available balance. Self-exclusion blocks deposits and new bets for the selected period.
+The wallet accepts only MTN Mobile Money and Airtel Money in Uganda. Deposits must be between 500 and 10,000,000 UGX per transaction. Withdrawals start at 500 UGX and are limited by the player's available balance. Self-exclusion blocks deposits and new bets for the selected period.
 
 In live mode, a deposit calls ioTec's mobile-money collection endpoint and the customer receives the network prompt on the submitted phone. The wallet is credited only after ioTec reports `Success` through the callback or a status sync. Withdrawals create a mobile-money disbursement and hold the balance until the provider completes or fails it; failed withdrawals automatically refund the hold. Sandbox mode does not send a real phone prompt.
 
@@ -47,12 +47,15 @@ Players can set or securely generate their client seed in the in-game Provably F
 Local development defaults to `IOTEC_PAY_MODE=sandbox`, so the app runs without live credentials. For live payments set:
 
 ```powershell
+$env:DJANGO_DEBUG='False'
 $env:IOTEC_PAY_MODE='live'
 $env:IOTEC_PAY_CLIENT_ID='your-client-id'
 $env:IOTEC_PAY_CLIENT_SECRET='your-client-secret'
 $env:IOTEC_PAY_WALLET_ID='your-wallet-id'
 $env:IOTEC_PAY_CALLBACK_TOKEN='shared-callback-token'
 ```
+
+Use the production credentials and wallet ID issued by ioTec Pay, and set `IOTEC_PAY_MODE=live`; changing API keys alone does not leave sandbox mode. In the ioTec Pay portal, configure both collection and disbursement callbacks to `https://your-domain.com/api/payments/callback/` with the security header `X-IOTEC-Webhook-Token` set to the same value as `IOTEC_PAY_CALLBACK_TOKEN`. Keep the callback URL on HTTPS. Live withdrawals remain held and queued until the scheduled `process_queued_withdrawals` command is running and the ioTec wallet has sufficient UGX available balance.
 
 ## Environment configuration
 

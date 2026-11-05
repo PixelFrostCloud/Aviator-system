@@ -13,9 +13,9 @@ function escapeHtml(value) {
   return element.innerHTML;
 }
 
-// Match the server's measured 0.10x-per-second round pace. At this rate 1.70x
-// takes roughly seven seconds, giving players a usable cash-out window.
-const FLIGHT_INCREMENT = 0.01;
+// Match the server's 0.16x-per-second round pace. At this rate 1.70x
+// takes roughly four seconds, giving players a usable cash-out window.
+const FLIGHT_INCREMENT = 0.016;
 const FLIGHT_TICK_MS = 100;
 
 function calculateMaskedFlightProgress(tick) {

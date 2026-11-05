@@ -183,7 +183,9 @@ CHANNEL_LAYERS = {
     }
 }
 
-IOTEC_PAY_MODE = os.getenv('IOTEC_PAY_MODE', 'sandbox')
+IOTEC_PAY_MODE = os.getenv('IOTEC_PAY_MODE', 'sandbox').strip().lower()
+if IOTEC_PAY_MODE not in {'sandbox', 'live'}:
+    raise ImproperlyConfigured('IOTEC_PAY_MODE must be either "sandbox" or "live".')
 IOTEC_PAY_API_BASE_URL = os.getenv('IOTEC_PAY_API_BASE_URL', 'https://pay.iotec.io')
 IOTEC_PAY_TOKEN_URL = os.getenv('IOTEC_PAY_TOKEN_URL', 'https://id.iotec.io/connect/token')
 IOTEC_PAY_CLIENT_ID = os.getenv('IOTEC_PAY_CLIENT_ID', '')
@@ -194,3 +196,22 @@ IOTEC_PAY_CHANNEL = os.getenv('IOTEC_PAY_CHANNEL', 'Api')
 IOTEC_PAY_CHARGE_CATEGORY = os.getenv('IOTEC_PAY_CHARGE_CATEGORY', 'ChargeCustomer')
 IOTEC_PAY_TIMEOUT_SECONDS = int(os.getenv('IOTEC_PAY_TIMEOUT_SECONDS', '20'))
 IOTEC_PAY_CALLBACK_TOKEN = os.getenv('IOTEC_PAY_CALLBACK_TOKEN', '')
+
+if IOTEC_PAY_MODE == 'live':
+    if DEBUG:
+        raise ImproperlyConfigured('Live ioTec Pay transactions require DJANGO_DEBUG=False.')
+    missing_iotec_settings = [
+        name for name, value in (
+            ('IOTEC_PAY_CLIENT_ID', IOTEC_PAY_CLIENT_ID),
+            ('IOTEC_PAY_CLIENT_SECRET', IOTEC_PAY_CLIENT_SECRET),
+            ('IOTEC_PAY_WALLET_ID', IOTEC_PAY_WALLET_ID),
+            ('IOTEC_PAY_CALLBACK_TOKEN', IOTEC_PAY_CALLBACK_TOKEN),
+        )
+        if not value
+    ]
+    if missing_iotec_settings:
+        raise ImproperlyConfigured(
+            'Live ioTec Pay transactions require: ' + ', '.join(missing_iotec_settings) + '.'
+        )
+    if not IOTEC_PAY_API_BASE_URL.startswith('https://') or not IOTEC_PAY_TOKEN_URL.startswith('https://'):
+        raise ImproperlyConfigured('Live ioTec Pay API and token URLs must use HTTPS.')

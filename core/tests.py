@@ -1,26 +1,26 @@
 import json
 from io import BytesIO
 from datetime import timedelta
-from decimal import Decimal
-from unittest.mock import patch
+from decimal import Decimal, ROUND_DOWN
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth.models import User
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import Sum
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 from PIL import Image
 
 from .forms import PhoneNumberAuthenticationForm, PlatformBrandingForm, ProfileComplianceForm, WalletForm
 from .models import AuditLog, ChatMessage, ChatModerationTerm, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GamePresence, GameRound, GameSession, PaymentRequest, PlatformSettings, Profile, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, SharedGameState, Transaction
-from .payment_gateway import IotecPayGateway, PaymentGatewayError
+from .payment_gateway import IotecPayGateway, PaymentGatewayError, PaymentGatewayResult
 from .payment_services import initiate_deposit, initiate_withdrawal
 from .reward_services import claim_reward
 from .admin_profiles import admin_player_profile
-from .utils import MAX_CRASH_POINT, LEGACY_MAX_CRASH_POINT, calculate_crash_point, can_deposit, generate_financial_report, hash_server_seed, verify_game_round
-from .views import _recent_chat_messages, _start_shared_betting_round, admin_console_section, admin_dashboard, admin_live_round_state
+from .utils import CRASH_DISTRIBUTION_POWER, MAX_CRASH_POINT, LEGACY_MAX_CRASH_POINT, RTP_FACTOR, calculate_crash_point, can_deposit, generate_financial_report, hash_server_seed, verify_game_round
+from .views import _recent_chat_messages, _start_shared_betting_round, admin_console_section, admin_dashboard, admin_live_round_state, wallet
 
 
 class AuthenticationTests(TestCase):
@@ -99,6 +99,43 @@ class AuthenticationTests(TestCase):
 
 
 class IotecGatewayRequestTests(TestCase):
+    @override_settings(
+        IOTEC_PAY_CLIENT_ID='test-client-id',
+        IOTEC_PAY_CLIENT_SECRET='test-client-secret',
+    )
+    @patch('core.payment_gateway.request.urlopen')
+    def test_oauth_client_credentials_token_is_used_for_api_request(self, urlopen):
+        token_response = MagicMock()
+        token_response.__enter__.return_value.read.return_value = (
+            b'{"access_token":"unit-test-token","expires_in":300}'
+        )
+        api_response = MagicMock()
+        api_response.__enter__.return_value.read.return_value = b'{}'
+        urlopen.side_effect = [token_response, api_response]
+        gateway = IotecPayGateway()
+        gateway.token_cache = {'access_token': '', 'expires_at': 0}
+
+        gateway._get('/api/wallet-balance/wallet-001')
+
+        token_request, api_request = (call.args[0] for call in urlopen.call_args_list)
+        self.assertIn(b'grant_type=client_credentials', token_request.data)
+        self.assertIsNone(token_request.get_header('Authorization'))
+        self.assertEqual(api_request.get_header('Authorization'), 'Bearer unit-test-token')
+
+    @patch('core.payment_gateway.request.urlopen')
+    def test_authenticated_requests_use_cached_bearer_access_token(self, urlopen):
+        urlopen.return_value.__enter__.return_value.read.return_value = b'{}'
+        gateway = IotecPayGateway()
+        gateway.token_cache = {
+            'access_token': 'live-access-token',
+            'expires_at': 9999999999,
+        }
+
+        gateway._get('/api/wallet-balance/wallet-001')
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header('Authorization'), 'Bearer live-access-token')
+
     @patch('core.payment_gateway.request.urlopen', side_effect=TimeoutError('timed out'))
     def test_socket_timeout_is_retryable(self, urlopen):
         gateway = IotecPayGateway()
@@ -183,6 +220,21 @@ class IotecGatewayRequestTests(TestCase):
 
 
 class ProvablyFairTests(TestCase):
+    def test_new_crash_distribution_targets_five_percent_at_ten_x(self):
+        survival_at_10x = (RTP_FACTOR / Decimal('10')) ** (
+            Decimal('1') / CRASH_DISTRIBUTION_POWER
+        )
+        survival_at_20x = (RTP_FACTOR / Decimal('20')) ** (
+            Decimal('1') / CRASH_DISTRIBUTION_POWER
+        )
+        survival_at_50x = (RTP_FACTOR / Decimal('50')) ** (
+            Decimal('1') / CRASH_DISTRIBUTION_POWER
+        )
+
+        self.assertAlmostEqual(float(survival_at_10x), 0.05, places=10)
+        self.assertAlmostEqual(float(survival_at_20x), 0.0203715, places=7)
+        self.assertAlmostEqual(float(survival_at_50x), 0.0062164, places=7)
+
     def test_crash_point_is_deterministic_and_verifiable(self):
         server_seed = 'server-seed-for-test'
         client_seed = 'client-seed-for-test'
@@ -223,6 +275,22 @@ class ProvablyFairTests(TestCase):
         )
 
         self.assertGreater(legacy_crash_point, MAX_CRASH_POINT)
+        self.assertTrue(verify_game_round(
+            'server-seed',
+            'client-seed',
+            hash_server_seed('server-seed'),
+            legacy_crash_point,
+        ))
+
+    @patch('core.utils.hmac.new')
+    def test_rounds_using_previous_distribution_remain_verifiable(self, mocked_hmac):
+        mocked_hmac.return_value.hexdigest.return_value = '8' * 64
+        uniform = Decimal(int('8' * 13, 16)) / Decimal(16 ** 13)
+        legacy_crash_point = (
+            (RTP_FACTOR / (Decimal('1.0000') - uniform))
+            .quantize(Decimal('0.01'), rounding=ROUND_DOWN)
+        )
+
         self.assertTrue(verify_game_round(
             'server-seed',
             'client-seed',
@@ -299,9 +367,9 @@ class PlayEndpointTests(TestCase):
         with patch('core.views.timezone.now', return_value=now + timedelta(seconds=4)):
             second_response = self.client.post('/play/', {'action': 'state'}).json()
 
-        self.assertEqual(first_response['multiplier_rate'], 0.1)
+        self.assertEqual(first_response['multiplier_rate'], 0.16)
         self.assertEqual(first_response['max_crash_point'], 286.0)
-        self.assertEqual(first_response['current_multiplier'], 1.2)
+        self.assertEqual(first_response['current_multiplier'], 1.32)
         self.assertGreater(second_response['current_multiplier'], first_response['current_multiplier'])
         self.assertIn(
             {'round_id': completed_round.public_id, 'crash_point': 2.34},
@@ -684,7 +752,7 @@ class PlayEndpointTests(TestCase):
             Decimal('1000000000.00'),
         )
 
-    def test_chat_rain_debits_sender_and_credits_recent_chat_player(self):
+    def test_chat_rain_debits_sender_and_credits_active_player(self):
         recipient = User.objects.create_user(
             username='rain-recipient',
             email='rain-recipient@example.com',
@@ -692,6 +760,11 @@ class PlayEndpointTests(TestCase):
         )
         recipient_profile = Profile.objects.create(user=recipient, balance=Decimal('20.00'))
         ChatMessage.objects.create(user=recipient, message='ready for rain')
+        GamePresence.objects.create(
+            user=recipient,
+            presence_key='rain-recipient-presence',
+            last_seen=timezone.now(),
+        )
 
         response = self.client.post('/play/', {
             'action': 'chat_rain',
@@ -718,6 +791,55 @@ class PlayEndpointTests(TestCase):
         self.assertEqual(reward_wallet.available_balance, Decimal('100.00'))
         self.assertEqual(RewardTransaction.objects.get(event=rain.reward_event, wallet=reward_wallet).amount, Decimal('100.00'))
 
+    def test_chat_rain_credits_requested_number_of_random_active_players(self):
+        active_recipients = []
+        for index in range(3):
+            user = User.objects.create_user(
+                username=f'rain-active-{index}',
+                email=f'rain-active-{index}@example.com',
+                password='strong-test-pass',
+            )
+            profile = Profile.objects.create(user=user, balance=Decimal('20.00'))
+            GamePresence.objects.create(
+                user=user,
+                presence_key=f'rain-active-presence-{index}',
+                last_seen=timezone.now(),
+            )
+            active_recipients.append((user, profile))
+
+        inactive_user = User.objects.create_user(
+            username='rain-inactive',
+            email='rain-inactive@example.com',
+            password='strong-test-pass',
+        )
+        inactive_profile = Profile.objects.create(user=inactive_user, balance=Decimal('20.00'))
+        ChatMessage.objects.create(user=inactive_user, message='chat history is not presence')
+
+        response = self.client.post('/play/', {
+            'action': 'chat_rain',
+            'total_amount': '100.00',
+            'players': '2',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        rain = ChatRain.objects.get(sender=self.user)
+        recipients = list(ChatRainRecipient.objects.filter(rain=rain))
+        self.assertEqual(len(recipients), 2)
+        self.assertEqual(len({recipient.user_id for recipient in recipients}), 2)
+        self.assertTrue({recipient.user_id for recipient in recipients}.issubset(
+            {user.id for user, _ in active_recipients}
+        ))
+        self.assertEqual(
+            sum((recipient.amount for recipient in recipients), Decimal('0.00')),
+            Decimal('100.00'),
+        )
+        for user, profile in active_recipients:
+            profile.refresh_from_db()
+            was_selected = any(recipient.user_id == user.id for recipient in recipients)
+            self.assertEqual(profile.balance, Decimal('70.00') if was_selected else Decimal('20.00'))
+        inactive_profile.refresh_from_db()
+        self.assertEqual(inactive_profile.balance, Decimal('20.00'))
+
     def test_chat_rain_rejects_insufficient_wallet_balance(self):
         recipient = User.objects.create_user(
             username='rain-balance-recipient',
@@ -726,6 +848,11 @@ class PlayEndpointTests(TestCase):
         )
         Profile.objects.create(user=recipient, balance=Decimal('20.00'))
         ChatMessage.objects.create(user=recipient, message='ready for rain')
+        GamePresence.objects.create(
+            user=recipient,
+            presence_key='rain-balance-recipient-presence',
+            last_seen=timezone.now(),
+        )
 
         response = self.client.post('/play/', {
             'action': 'chat_rain',
@@ -1923,6 +2050,76 @@ class WalletComplianceTests(TestCase):
         self.assertEqual(payment.status, 'completed')
         self.assertEqual(payment.phone_number, '256700000000')
         self.assertEqual(Transaction.objects.get(reference=payment.external_reference).transaction_type, 'deposit')
+
+    def test_wallet_forms_render_distinct_payment_idempotency_keys(self):
+        with patch('core.views.render', return_value=HttpResponse('')) as render:
+            response = self.client.get('/wallet/')
+
+        self.assertEqual(response.status_code, 200)
+        context = render.call_args.args[2]
+        deposit_key = context['deposit_idempotency_key']
+        withdraw_key = context['withdraw_idempotency_key']
+        self.assertEqual(len(deposit_key), 32)
+        self.assertEqual(len(withdraw_key), 32)
+        self.assertNotEqual(deposit_key, withdraw_key)
+
+    @patch('core.payment_services.IotecPayGateway.collect_mobile_money')
+    def test_repeated_deposit_submission_does_not_repeat_provider_request(self, collect):
+        collect.return_value = PaymentGatewayResult(
+            provider_reference='provider-pending-001',
+            status='Pending',
+        )
+        self.profile.daily_deposit_limit = Decimal('10000000.00')
+        self.profile.save(update_fields=['daily_deposit_limit'])
+        post_data = {
+            'action': 'deposit',
+            'deposit-idempotency_key': 'a' * 32,
+            'deposit-amount': '500',
+            'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '256',
+            'deposit-phone_number': '256700000000',
+        }
+
+        first_response = self._submit_wallet_post(post_data)
+        self.assertEqual(first_response.status_code, 302)
+        second_response = self._submit_wallet_post(post_data)
+        self.assertEqual(second_response.status_code, 302)
+
+        payment = PaymentRequest.objects.get(user=self.user, payment_type='deposit')
+        self.assertEqual(payment.idempotency_key, 'a' * 32)
+        self.assertEqual(PaymentRequest.objects.filter(user=self.user, payment_type='deposit').count(), 1)
+        collect.assert_called_once()
+
+    @patch('core.payment_services.IotecPayGateway.disburse_mobile_money')
+    def test_repeated_withdrawal_submission_holds_balance_only_once(self, disburse):
+        disburse.return_value = PaymentGatewayResult(
+            provider_reference='provider-pending-002',
+            status='Pending',
+        )
+        post_data = {
+            'action': 'withdraw',
+            'withdraw-idempotency_key': 'b' * 32,
+            'withdraw-amount': '500',
+            'withdraw-provider': 'airtel_money',
+            'withdraw-phone_number': self.profile.phone_number,
+        }
+
+        self._submit_wallet_post(post_data)
+        self._submit_wallet_post(post_data)
+
+        payment = PaymentRequest.objects.get(user=self.user, payment_type='withdraw')
+        self.profile.refresh_from_db()
+        self.assertEqual(payment.idempotency_key, 'b' * 32)
+        self.assertEqual(PaymentRequest.objects.filter(user=self.user, payment_type='withdraw').count(), 1)
+        self.assertEqual(self.profile.balance, Decimal('500.00'))
+        disburse.assert_called_once()
+
+    def _submit_wallet_post(self, post_data):
+        request = RequestFactory().post('/wallet/', data=post_data)
+        request.user = self.user
+        request.session = self.client.session
+        request._messages = FallbackStorage(request)
+        return wallet(request)
 
     def test_deposit_form_accepts_amounts_up_to_ten_million(self):
         form = WalletForm(data={

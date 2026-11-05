@@ -102,7 +102,7 @@ from .utils import (
 )
 
 
-ROUND_MULTIPLIER_RATE = Decimal('0.10')
+ROUND_MULTIPLIER_RATE = Decimal('0.16')
 ROUND_BETTING_SECONDS = 4
 ROUND_CRASH_DISPLAY_SECONDS = 3
 
@@ -1327,6 +1327,8 @@ def wallet(request):
     initial_phone = {'phone_number': profile.phone_number}
     deposit_form = WalletForm(prefix='deposit', initial=initial_phone)
     withdraw_form = WalletForm(prefix='withdraw', initial=initial_phone)
+    deposit_idempotency_key = request.POST.get('deposit-idempotency_key') or uuid.uuid4().hex
+    withdraw_idempotency_key = request.POST.get('withdraw-idempotency_key') or uuid.uuid4().hex
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -1347,6 +1349,7 @@ def wallet(request):
                         provider=provider,
                         phone_number=phone_number,
                         redirect_url=request.build_absolute_uri('/wallet/'),
+                        idempotency_key=deposit_idempotency_key,
                     )
                     log_audit(request.user, 'deposit', f'Requested deposit {amount:.2f} {profile.currency}', request, {
                         'provider': provider,
@@ -1385,6 +1388,7 @@ def wallet(request):
                     amount=amount,
                     provider=provider,
                     phone_number=phone_number,
+                    idempotency_key=withdraw_idempotency_key,
                 )
                 if error:
                     if payment:
@@ -1423,6 +1427,8 @@ def wallet(request):
         'transactions': transactions,
         'payment_requests': payment_requests,
         'payment_mode': payment_mode,
+        'deposit_idempotency_key': deposit_idempotency_key,
+        'withdraw_idempotency_key': withdraw_idempotency_key,
     })
 
 

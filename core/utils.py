@@ -20,6 +20,9 @@ RTP_FACTOR = Decimal('1.0000') - HOUSE_EDGE
 MAX_CRASH_POINT = Decimal('286.00')
 LEGACY_MAX_CRASH_POINT = Decimal('100000.00')
 URA_GGR_TAX_RATE = Decimal('0.15')
+CRASH_DISTRIBUTION_POWER = Decimal(
+    '0.77197667136788194627885903771674245161378281073295'
+)
 
 
 def log_audit(user, action_type, description, request=None, data=None):
@@ -91,7 +94,29 @@ def calculate_crash_point(
         return Decimal('1.00')
 
     rtp_factor = Decimal('1.0000') - Decimal(house_edge)
-    crash = (rtp_factor / (Decimal('1.0000') - uniform)).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
+    crash = (
+        rtp_factor / (Decimal('1.0000') - uniform) ** CRASH_DISTRIBUTION_POWER
+    ).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
+    return min(max(crash, Decimal('1.00')), max_crash_point)
+
+
+def _calculate_legacy_crash_point(server_seed, client_seed, house_edge, max_crash_point):
+    digest = hmac.new(
+        server_seed.encode('utf-8'),
+        client_seed.encode('utf-8'),
+        hashlib.sha256,
+    ).hexdigest()
+    random_int = int(digest[:13], 16)
+    uniform = Decimal(random_int) / Decimal(16 ** 13)
+
+    if uniform <= 0:
+        return Decimal('1.00')
+
+    rtp_factor = Decimal('1.0000') - Decimal(house_edge)
+    crash = (rtp_factor / (Decimal('1.0000') - uniform)).quantize(
+        Decimal('0.01'),
+        rounding=ROUND_DOWN,
+    )
     return min(max(crash, Decimal('1.00')), max_crash_point)
 
 
@@ -140,6 +165,16 @@ def verify_game_round(server_seed, client_seed, expected_hash, expected_crash_po
         client_seed,
         house_edge,
     ) == expected_crash_point or calculate_crash_point(
+        server_seed,
+        client_seed,
+        house_edge,
+        LEGACY_MAX_CRASH_POINT,
+    ) == expected_crash_point or _calculate_legacy_crash_point(
+        server_seed,
+        client_seed,
+        house_edge,
+        MAX_CRASH_POINT,
+    ) == expected_crash_point or _calculate_legacy_crash_point(
         server_seed,
         client_seed,
         house_edge,
