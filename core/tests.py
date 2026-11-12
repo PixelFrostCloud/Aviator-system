@@ -15,8 +15,8 @@ from PIL import Image
 
 from .forms import PhoneNumberAuthenticationForm, PlatformBrandingForm, ProfileComplianceForm, WalletForm
 from .models import AuditLog, ChatMessage, ChatModerationTerm, ChatReaction, ChatRain, ChatRainRecipient, FinancialReport, GamePresence, GameRound, GameSession, PaymentRequest, PlatformSettings, Profile, RewardClaim, RewardEvent, RewardTransaction, RewardWallet, RiskAlert, Room, RoomPlayer, SelfExclusion, SharedGameState, Transaction
-from .payment_gateway import IotecPayGateway, PaymentGatewayError, PaymentGatewayResult
-from .payment_services import initiate_deposit, initiate_withdrawal
+from .payment_gateway import IotecPayGateway, OpayPesaGateway, PaymentGatewayError, PaymentGatewayResult
+from .payment_services import apply_provider_result, initiate_deposit, initiate_withdrawal, sync_payment
 from .reward_services import claim_reward
 from .admin_profiles import admin_player_profile
 from .utils import CRASH_DISTRIBUTION_POWER, MAX_CRASH_POINT, LEGACY_MAX_CRASH_POINT, RTP_FACTOR, calculate_crash_point, can_deposit, generate_financial_report, hash_server_seed, verify_game_round
@@ -217,6 +217,92 @@ class IotecGatewayRequestTests(TestCase):
             'payeeNote': 'Pakabet withdrawal',
             'channel': 'Api',
         })
+
+
+class OpayPesaGatewayRequestTests(TestCase):
+    @override_settings(OPAYPESA_API_KEY='opaypesa_sbox_test-key')
+    @patch('core.payment_gateway.request.urlopen')
+    def test_collection_uses_api_key_and_payment_intent_contract(self, urlopen):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = (
+            b'{"transaction_id":123,"external_reference":"OP-123","status":"pending"}'
+        )
+        urlopen.return_value = response
+
+        result = OpayPesaGateway().collect_mobile_money(
+            external_id='DEP-001',
+            amount=Decimal('500.00'),
+            currency='UGX',
+            payer='256700000001',
+            payer_name='Phone Player',
+        )
+
+        http_request = urlopen.call_args.args[0]
+        self.assertEqual(http_request.full_url, 'https://opaypesa.com/api/v1/checkout/payment-intents')
+        self.assertEqual(http_request.get_header('X-api-key'), 'opaypesa_sbox_test-key')
+        self.assertEqual(json.loads(http_request.data), {
+            'amount': 500.0,
+            'phone_number': '256700000001',
+            'idempotency_key': 'DEP-001',
+        })
+        self.assertEqual(result.provider_reference, '123')
+        self.assertEqual(result.local_status, 'pending')
+        self.assertEqual(result.gateway, 'opaypesa')
+
+    @override_settings(OPAYPESA_API_KEY='opaypesa_sbox_test-key')
+    @patch('core.payment_gateway.request.urlopen')
+    def test_disbursement_is_sent_as_a_single_idempotent_batch_item(self, urlopen):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = (
+            b'{"transactions":[{"transaction_id":456,"status":"pending"}]}'
+        )
+        urlopen.return_value = response
+
+        result = OpayPesaGateway().disburse_mobile_money(
+            external_id='WDR-001',
+            amount=Decimal('500.00'),
+            currency='UGX',
+            payee='256700000001',
+        )
+
+        http_request = urlopen.call_args.args[0]
+        self.assertEqual(http_request.full_url, 'https://opaypesa.com/api/v1/checkout/disbursements')
+        self.assertEqual(json.loads(http_request.data), {
+            'items': [{
+                'recipient_msisdn': '256700000001',
+                'amount': 500.0,
+                'idempotency_key': 'WDR-001',
+            }],
+        })
+        self.assertEqual(result.provider_reference, '456')
+
+    @override_settings(OPAYPESA_API_KEY='opaypesa_sbox_test-key')
+    @patch('core.payment_gateway.request.urlopen')
+    def test_status_sync_looks_up_transaction_id_and_maps_success(self, urlopen):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = (
+            b'{"transaction_id":789,"status":"successful"}'
+        )
+        urlopen.return_value = response
+
+        result = OpayPesaGateway().sync_collection('DEP-001', '789')
+
+        http_request = urlopen.call_args.args[0]
+        self.assertEqual(http_request.full_url, 'https://opaypesa.com/api/v1/transactions/789')
+        self.assertEqual(result.local_status, 'completed')
+
+    @override_settings(OPAYPESA_API_KEY='opaypesa_live_test-key')
+    def test_sandbox_rejects_live_api_key_before_sending_request(self):
+        with patch('core.payment_gateway.request.urlopen') as urlopen:
+            with self.assertRaises(PaymentGatewayError):
+                OpayPesaGateway().collect_mobile_money(
+                    external_id='DEP-001',
+                    amount=Decimal('500.00'),
+                    currency='UGX',
+                    payer='256700000001',
+                )
+
+        urlopen.assert_not_called()
 
 
 class ProvablyFairTests(TestCase):
@@ -2017,6 +2103,7 @@ class RoomEndpointTests(TestCase):
         self.assertFalse(RoomPlayer.objects.filter(room=room, user=self.user).exists())
 
 
+@override_settings(PAYMENT_GATEWAY='iotec_pay')
 class WalletComplianceTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -2454,6 +2541,290 @@ class WalletComplianceTests(TestCase):
         self.assertEqual(stale_response.json()['status'], 'completed')
         self.assertEqual(payment.status, 'completed')
         self.assertEqual(self.profile.balance, Decimal('1250.00'))
+
+
+@override_settings(
+    PAYMENT_GATEWAY='opaypesa',
+    OPAYPESA_MODE='sandbox',
+    OPAYPESA_API_KEY='opaypesa_sbox_test-key',
+)
+class OpayPesaWalletTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='opay-player',
+            email='opay@example.com',
+            password='strong-test-pass',
+        )
+        self.profile = Profile.objects.create(
+            user=self.user,
+            balance=Decimal('1000.00'),
+            phone_number='256750000000',
+        )
+        self.client.login(username='opay-player', password='strong-test-pass')
+
+    @patch('core.payment_services.OpayPesaGateway.collect_mobile_money')
+    def test_pending_collection_returns_wallet_response_without_crediting_balance(self, collect):
+        collect.return_value = PaymentGatewayResult(
+            provider_reference='opay-pending-001',
+            status='pending',
+            gateway='opaypesa',
+        )
+
+        response = self.client.post('/wallet/', {
+            'action': 'deposit',
+            'deposit-amount': '500',
+            'deposit-provider': 'mtn_momo',
+            'deposit-country_code': '256',
+            'deposit-phone_number': '256700000001',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, '/wallet/')
+        payment = PaymentRequest.objects.get(user=self.user, payment_type='deposit')
+        self.profile.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        self.assertEqual(
+            Transaction.objects.get(reference=payment.external_reference).status,
+            'pending',
+        )
+
+    @patch('core.payment_services.OpayPesaGateway.collect_mobile_money')
+    def test_pending_collection_is_recorded_without_crediting_wallet(self, collect):
+        collect.return_value = PaymentGatewayResult(
+            provider_reference='opay-tx-001',
+            status='pending',
+            gateway='opaypesa',
+        )
+
+        payment, result, error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='256700000001',
+            idempotency_key='c' * 32,
+        )
+
+        self.profile.refresh_from_db()
+        self.assertFalse(error)
+        self.assertEqual(result.status, 'pending')
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(payment.provider_reference, 'opay-tx-001')
+        self.assertEqual(payment.metadata['gateway'], 'opaypesa')
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        self.assertEqual(collect.call_args.kwargs['idempotency_key'], payment.external_reference)
+
+    @patch('core.payment_services.OpayPesaGateway.collect_mobile_money')
+    def test_collection_timeout_requires_reconciliation_without_resubmitting(self, collect):
+        collect.side_effect = PaymentGatewayError('request timed out', retryable=True)
+
+        payment, _, error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='256700000001',
+            idempotency_key='e' * 32,
+        )
+        self.assertTrue(error)
+        self.assertEqual(payment.status, 'pending')
+        self.assertFalse(payment.provider_reference)
+
+        with self.assertRaises(PaymentGatewayError) as raised:
+            sync_payment(payment)
+
+        self.assertIn('Reconcile this request with the provider', str(raised.exception))
+        self.assertEqual(collect.call_count, 1)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertTrue(payment.metadata['response_uncertain'])
+
+        blocked_payment, _, blocked_error = initiate_deposit(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='mtn_momo',
+            phone_number='256700000001',
+            idempotency_key='8' * 32,
+        )
+        self.assertIsNone(blocked_payment)
+        self.assertIn('Contact support to reconcile', blocked_error)
+        collect.assert_called_once()
+
+    @patch(
+        'core.payment_services.OpayPesaGateway.disburse_mobile_money',
+        side_effect=PaymentGatewayError('request timed out', retryable=True),
+    )
+    def test_disbursement_timeout_keeps_hold_and_does_not_resubmit(self, disburse):
+        payment, _, error = initiate_withdrawal(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='airtel_money',
+            phone_number=self.profile.phone_number,
+            idempotency_key='9' * 32,
+        )
+
+        self.assertTrue(error)
+        self.assertEqual(payment.status, 'pending')
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('500.00'))
+        self.assertTrue(payment.metadata['response_uncertain'])
+
+        with self.assertRaises(PaymentGatewayError):
+            sync_payment(payment)
+
+        disburse.assert_called_once()
+        payment.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(self.profile.balance, Decimal('500.00'))
+        blocked_payment, _, blocked_error = initiate_withdrawal(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='airtel_money',
+            phone_number=self.profile.phone_number,
+            idempotency_key='7' * 32,
+        )
+        self.assertIsNone(blocked_payment)
+        self.assertIn('Contact support to reconcile', blocked_error)
+        disburse.assert_called_once()
+
+    @patch('core.payment_services.OpayPesaGateway.disburse_mobile_money')
+    def test_opaypesa_withdrawal_is_submitted_without_iotec_queue(self, disburse):
+        disburse.return_value = PaymentGatewayResult(
+            provider_reference='opay-payout-001',
+            status='pending',
+            gateway='opaypesa',
+        )
+
+        payment, result, error = initiate_withdrawal(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='airtel_money',
+            phone_number=self.profile.phone_number,
+            idempotency_key='d' * 32,
+        )
+
+        self.profile.refresh_from_db()
+        self.assertFalse(error)
+        self.assertEqual(result.status, 'pending')
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(payment.metadata['gateway'], 'opaypesa')
+        self.assertEqual(self.profile.balance, Decimal('500.00'))
+        disburse.assert_called_once()
+
+    @patch('core.payment_services.OpayPesaGateway.disburse_mobile_money')
+    def test_refreshing_failed_withdrawal_does_not_resubmit_refunded_payout(self, disburse):
+        disburse.return_value = PaymentGatewayResult(
+            provider_reference='',
+            status='pending',
+            gateway='opaypesa',
+        )
+
+        payment, _, error = initiate_withdrawal(
+            user=self.user,
+            amount=Decimal('500.00'),
+            provider='airtel_money',
+            phone_number=self.profile.phone_number,
+            idempotency_key='f' * 32,
+        )
+
+        self.assertFalse(error)
+        stale_payment = PaymentRequest.objects.get(pk=payment.pk)
+        apply_provider_result(payment, PaymentGatewayResult(
+            provider_reference='',
+            status='failed',
+            status_message='Provider rejected payout.',
+            gateway='opaypesa',
+        ))
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
+        withdrawal = Transaction.objects.get(
+            reference=payment.external_reference,
+            transaction_type='withdraw',
+        )
+        refund = Transaction.objects.get(
+            reference=payment.external_reference,
+            transaction_type='refund',
+        )
+        self.assertEqual(withdrawal.status, 'failed')
+        self.assertEqual(refund.status, 'completed')
+        self.assertEqual(refund.amount, Decimal('500.00'))
+        self.assertIn('refunded', refund.description.lower())
+
+        apply_provider_result(payment, PaymentGatewayResult(
+            provider_reference='',
+            status='failed',
+            status_message='Provider rejected payout.',
+            gateway='opaypesa',
+        ))
+
+        refreshed_payment = sync_payment(stale_payment)
+
+        self.assertEqual(refreshed_payment.status, 'failed')
+        self.assertEqual(
+            Transaction.objects.filter(
+                reference=payment.external_reference,
+                transaction_type='refund',
+            ).count(),
+            1,
+        )
+        refund.refresh_from_db()
+        self.assertEqual(refund.status, 'completed')
+        self.assertIn('refunded', refund.description.lower())
+        disburse.assert_called_once()
+
+    @patch('core.payment_services.OpayPesaGateway.sync_collection')
+    def test_payment_sync_uses_opaypesa_transaction_id(self, sync_collection):
+        payment = PaymentRequest.objects.create(
+            user=self.user,
+            payment_type='deposit',
+            provider='mtn_momo',
+            amount=Decimal('500.00'),
+            phone_number='256700000001',
+            external_reference='DEP-OPAY-SYNC',
+            provider_reference='opay-tx-sync',
+            status='pending',
+            metadata={'gateway': 'opaypesa'},
+        )
+        sync_collection.return_value = PaymentGatewayResult(
+            provider_reference='opay-tx-sync',
+            status='successful',
+            gateway='opaypesa',
+        )
+
+        payment = sync_payment(payment)
+
+        self.profile.refresh_from_db()
+        self.assertEqual(payment.status, 'completed')
+        self.assertEqual(self.profile.balance, Decimal('1500.00'))
+        sync_collection.assert_called_once_with('DEP-OPAY-SYNC', 'opay-tx-sync')
+
+    def test_opaypesa_callback_cannot_credit_wallet_without_documented_verification(self):
+        payment = PaymentRequest.objects.create(
+            user=self.user,
+            payment_type='deposit',
+            provider='mtn_momo',
+            amount=Decimal('500.00'),
+            phone_number='256700000001',
+            external_reference='DEP-OPAY-CALLBACK',
+            status='pending',
+            metadata={'gateway': 'opaypesa'},
+        )
+
+        response = self.client.post(
+            '/api/payments/callback/',
+            data=json.dumps({
+                'external_reference': payment.external_reference,
+                'transaction_id': 123,
+                'status': 'successful',
+            }),
+            content_type='application/json',
+        )
+
+        self.profile.refresh_from_db()
+        payment.refresh_from_db()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(self.profile.balance, Decimal('1000.00'))
 
 
 class RewardDistributionTests(TestCase):

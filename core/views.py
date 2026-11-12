@@ -1324,6 +1324,8 @@ def play(request):
 @login_required
 def wallet(request):
     profile = get_object_or_404(Profile, user=request.user)
+    payment_gateway = getattr(settings, 'PAYMENT_GATEWAY', 'opaypesa')
+    payment_gateway_label = 'Opaypesa' if payment_gateway == 'opaypesa' else 'ioTec Pay'
     initial_phone = {'phone_number': profile.phone_number}
     deposit_form = WalletForm(prefix='deposit', initial=initial_phone)
     withdraw_form = WalletForm(prefix='withdraw', initial=initial_phone)
@@ -1374,7 +1376,7 @@ def wallet(request):
                     else:
                         message = f'{amount:.2f} {profile.currency} deposit sent to {payment.get_provider_display()}. Status: {payment.get_status_display()}.'
                         if payment.status in ['pending', 'processing']:
-                            message += ' Check your phone and approve the ioTec Pay prompt with your PIN.'
+                            message += f' Check your phone and approve the {payment_gateway_label} prompt with your Mobile Money PIN.'
                         messages.info(request, message)
                         return redirect('wallet')
         elif action == 'withdraw':
@@ -1419,13 +1421,18 @@ def wallet(request):
 
     transactions = Transaction.objects.filter(user=request.user)
     payment_requests = PaymentRequest.objects.filter(user=request.user)[:10]
-    payment_mode = getattr(settings, 'IOTEC_PAY_MODE', 'sandbox').lower()
+    payment_mode = (
+        getattr(settings, 'OPAYPESA_MODE', 'sandbox')
+        if payment_gateway == 'opaypesa'
+        else getattr(settings, 'IOTEC_PAY_MODE', 'sandbox')
+    ).lower()
     return render(request, 'core/wallet.html', {
         'profile': profile,
         'deposit_form': deposit_form,
         'withdraw_form': withdraw_form,
         'transactions': transactions,
         'payment_requests': payment_requests,
+        'payment_gateway_label': payment_gateway_label,
         'payment_mode': payment_mode,
         'deposit_idempotency_key': deposit_idempotency_key,
         'withdraw_idempotency_key': withdraw_idempotency_key,
@@ -1448,6 +1455,8 @@ def payment_callback(request):
         return JsonResponse({'success': False, 'message': 'Missing externalId.'}, status=400)
 
     payment = get_object_or_404(PaymentRequest, external_reference=external_reference)
+    if (payment.metadata or {}).get('gateway') != 'iotec_pay':
+        return JsonResponse({'success': False, 'message': 'This payment provider does not accept callbacks here.'}, status=403)
     result = PaymentGatewayResult(
         provider_reference=str(payload.get('id') or payload.get('transactionId') or payment.provider_reference or external_reference),
         status=payload.get('status') or 'Pending',
@@ -1455,6 +1464,7 @@ def payment_callback(request):
         status_message=payload.get('statusMessage') or '',
         redirect_url=payload.get('redirectUrl') or '',
         raw=payload,
+        gateway='iotec_pay',
     )
     payment = apply_provider_result(payment, result)
     return JsonResponse({'success': True, 'reference': external_reference, 'status': payment.status})

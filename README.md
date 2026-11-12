@@ -1,13 +1,13 @@
 # Pakabet (Django)
 
-Professional Django web application built with Django, HTML, CSS, JavaScript, and ioTec Pay wallet funding.
+Professional Django web application built with Django, HTML, CSS, JavaScript, and Opaypesa wallet funding.
 
 ## Features
 
 - **User Authentication**: Registration and login plus one-time, expiring email password-reset links
 - **Pakabet Crash Game**: Interactive betting interface with real-time multiplier animation and cash-out functionality
 - **Custom chat moderation**: Admin-managed abusive-word and phrase filters block messages before saving and create review alerts in the custom operations dashboard
-- **Wallet Management**: ioTec Pay collections, disbursements, callback settlement, and transaction history
+- **Wallet Management**: Opaypesa collections, disbursements, status checks, and transaction history
 - **Referral Programme**: Personal invite links automatically attribute new registrations; inviters receive a platform-funded, withdrawable 5% of each referred player's first successful deposit
 - **Admin Analytics Dashboard**: Comprehensive platform monitoring and user statistics
 - **Multiplayer Rooms**: Real-time room support with WebSocket synchronization
@@ -16,16 +16,20 @@ Professional Django web application built with Django, HTML, CSS, JavaScript, an
 
 ## Payment Integration
 
-The app reads the ioTec Pay OpenAPI files from `Payment APIs/` and integrates the main production rails:
+New wallet requests use Opaypesa by default. The integration uses:
 
-- Mobile money collections: `/api/collections/collect`
-- Mobile money disbursements: `/api/disbursements/disburse`
-- Status lookup by external ID
-- Provider callbacks at `/api/payments/callback/`
+- Mobile money collections: `POST /api/v1/checkout/payment-intents`
+- Mobile money disbursements: `POST /api/v1/checkout/disbursements`
+- Transaction status lookup: `GET /api/v1/transactions/{transaction_id}`
+- Server-to-server authentication with `X-API-Key`
 
 The wallet accepts only MTN Mobile Money and Airtel Money in Uganda. Deposits must be between 500 and 10,000,000 UGX per transaction. Withdrawals start at 500 UGX and are limited by the player's available balance. Self-exclusion blocks deposits and new bets for the selected period.
 
-In live mode, a deposit calls ioTec's mobile-money collection endpoint and the customer receives the network prompt on the submitted phone. The wallet is credited only after ioTec reports `Success` through the callback or a status sync. Withdrawals create a mobile-money disbursement and hold the balance until the provider completes or fails it; failed withdrawals automatically refund the hold. Sandbox mode does not send a real phone prompt.
+Deposits send a mobile-money prompt to the submitted phone. A request is not treated as paid until Opaypesa returns `successful` from a status check; `pending` requests remain uncredited. Withdrawals are submitted as a one-item disbursement batch, and the amount stays on hold until a final provider status is confirmed. Failed or cancelled withdrawals automatically refund the hold, with a separate refund ledger row. Opaypesa status refresh is available from the wallet payment history; sandbox outcomes must first be simulated through Opaypesa's documented sandbox flow. If a submission times out before Opaypesa returns a transaction ID, the app does not resubmit it on refresh or allow another same-type request; support must reconcile it with Opaypesa to avoid duplicate charges or payouts. The integration does not currently accept Opaypesa callbacks: the published guide does not specify their signature-verification format, so wallet balances are updated only from authenticated server-side status lookups. A provider-reported reversal after a payment was already completed requires manual reconciliation; the app does not automatically debit a player's wallet.
+
+Use an Opaypesa sandbox API key (`opaypesa_sbox_…`) for initial testing. Sandbox requests do not move real funds. Set `PAYMENT_GATEWAY=opaypesa`, `OPAYPESA_MODE=sandbox`, and `OPAYPESA_API_KEY` in the private `.env`. For production, use an approved live key (`opaypesa_live_…`), set `OPAYPESA_MODE=live`, and run with `DJANGO_DEBUG=False`, PostgreSQL, and `DJANGO_SECURE_SSL_REDIRECT=True`. Live Opaypesa mode refuses to start with SQLite or without HTTPS redirects because wallet balance locking and session security are required for real-money transfers. The app rejects mismatched key prefixes and requires HTTPS for Opaypesa API requests.
+
+ioTec Pay's integration and configuration are retained for a future migration, but are not used for new payments while `PAYMENT_GATEWAY=opaypesa`. The ioTec API specifications remain in `Payment APIs/`.
 
 Referral links are attributed when opened and remain available for registration for 30 days. A referral reward is credited once, after the referred player's first successful deposit is confirmed. It is funded by Pakabet, added to the inviter's normal withdrawable wallet balance, and never deducted from the referred player's deposit.
 
@@ -44,18 +48,30 @@ $env:DEFAULT_FROM_EMAIL='Pakabet <no-reply@yourdomain.com>'
 
 Players can set or securely generate their client seed in the in-game Provably Fair settings. The saved seed is used for future rounds only; every round stores its own client seed and server-seed hash before play. Newly generated shared-game rounds are capped at 286.00x. The server seed is revealed after the round ends, and the Provably Fair page independently checks the commitment hash and crash-point calculation for each of the player's rounds; older rounds retain compatibility with the previous uncapped calculation.
 
-Local development defaults to `IOTEC_PAY_MODE=sandbox`, so the app runs without live credentials. For live payments set:
+## Payment environment
 
-```powershell
-$env:DJANGO_DEBUG='False'
-$env:IOTEC_PAY_MODE='live'
-$env:IOTEC_PAY_CLIENT_ID='your-client-id'
-$env:IOTEC_PAY_CLIENT_SECRET='your-client-secret'
-$env:IOTEC_PAY_WALLET_ID='your-wallet-id'
-$env:IOTEC_PAY_CALLBACK_TOKEN='shared-callback-token'
+To test Opaypesa, add your sandbox key to `.env`:
+
+```dotenv
+PAYMENT_GATEWAY=opaypesa
+OPAYPESA_MODE=sandbox
+OPAYPESA_API_KEY=opaypesa_sbox_your_key
 ```
 
-Use the production credentials and wallet ID issued by ioTec Pay, and set `IOTEC_PAY_MODE=live`; changing API keys alone does not leave sandbox mode. In the ioTec Pay portal, configure both collection and disbursement callbacks to `https://your-domain.com/api/payments/callback/` with the security header `X-IOTEC-Webhook-Token` set to the same value as `IOTEC_PAY_CALLBACK_TOKEN`. Keep the callback URL on HTTPS. Live withdrawals remain held and queued until the scheduled `process_queued_withdrawals` command is running and the ioTec wallet has sufficient UGX available balance.
+For live Opaypesa transactions after sandbox testing and merchant approval:
+
+```dotenv
+PAYMENT_GATEWAY=opaypesa
+OPAYPESA_MODE=live
+OPAYPESA_API_KEY=opaypesa_live_your_key
+DJANGO_DEBUG=False
+DJANGO_SECURE_SSL_REDIRECT=True
+DATABASE_URL=postgresql://...
+```
+
+Keep the Opaypesa API key private. Do not configure Opaypesa webhooks to settle wallet requests until their signature format has been confirmed and implemented. The existing `/api/payments/callback/` endpoint is retained for ioTec Pay only.
+
+To switch back to ioTec in the future, set `PAYMENT_GATEWAY=iotec_pay` and provide its configured credentials. Live ioTec withdrawals remain queued until the scheduled `process_queued_withdrawals` command is running and the ioTec wallet has sufficient UGX available balance.
 
 ## Environment configuration
 
@@ -71,7 +87,7 @@ Generate a unique key and replace the example value of `DJANGO_SECRET_KEY` in `.
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 ```
 
-Keep `.env` private; it is excluded from Git. Put email credentials and ioTec Pay API credentials in `.env` rather than source code or shell history.
+Keep `.env` private; it is excluded from Git. Put email and payment credentials in `.env` rather than source code or shell history.
 
 ## Security monitoring and incident response
 
@@ -96,8 +112,9 @@ IP attribution uses the direct connection peer address to avoid trusting spoofab
 ### Credential revocation
 
 - **Django signing key:** Generate a new `DJANGO_SECRET_KEY`, update the deployment secret store, and restart all application instances. Treat the old key as compromised; replacing it invalidates data signed with that key, including existing password-reset links.
+- **Opaypesa API key:** Revoke the exposed key in the Opaypesa merchant portal, create a replacement key for the same environment, update `OPAYPESA_API_KEY` in the secret store, and restart application instances.
 - **ioTec Pay API credentials:** Revoke or rotate the client credentials with the provider, update `IOTEC_PAY_CLIENT_ID` and `IOTEC_PAY_CLIENT_SECRET` in the secret store, then restart application instances. Contact ioTec if provider-side transactions may have been affected.
-- **Payment callback token:** Generate a new high-entropy `IOTEC_PAY_CALLBACK_TOKEN`, update the app and the provider callback configuration together, and confirm callbacks with the new token succeed. Until both ends match, callbacks are rejected; use the authenticated payment status-sync flow to reconcile pending requests.
+- **ioTec Pay callback token:** Generate a new high-entropy `IOTEC_PAY_CALLBACK_TOKEN`, update the app and ioTec callback configuration together, and confirm callbacks with the new token succeed. Until both ends match, callbacks are rejected; use the authenticated payment status-sync flow to reconcile pending requests.
 - **Email credentials:** Revoke the SMTP credential at the email provider, replace `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD`, and verify a test alert reaches the configured `DJANGO_ADMINS`.
 - **Database credentials:** Rotate the database user credential with the database provider, update `DATABASE_URL`, restart all instances, and review database access logs.
 - **Compromised user or operator account:** Use the custom staff console to lock or revoke access, then reset credentials through account recovery when a verified email is available or through a trusted server-side operation. To invalidate every active web session after a wider compromise, run `python manage.py shell -c "from django.contrib.sessions.models import Session; Session.objects.all().delete()"`.
@@ -107,8 +124,8 @@ IP attribution uses the direct connection peer address to avoid trusting spoofab
 1. Acknowledge the alert and preserve the relevant audit records and restricted host/provider logs before making changes. Record the time, affected accounts, source addresses, and actions taken; do not copy passwords, tokens, or full payment details into an incident ticket.
 2. Confirm whether the configuration change was authorized. If not, restore known-good security settings, revoke and rotate the affected credentials, restart all application instances, and invalidate active sessions if account or signing-key access may be compromised.
 3. For repeated login failures, inspect the security audit events, check for successful logins and sensitive account activity around the same time, disable or reset affected accounts as appropriate, and notify impacted users when required.
-4. For suspected payment abuse, contact ioTec Pay, pause affected payment credentials or callback delivery if needed, reconcile pending and completed transactions using provider records, and do not credit a wallet based solely on an unverified notification.
-5. Verify that `DEBUG=False`, production hosts and HTTPS settings are correct, callback authentication is configured, and test security alerts and payment reconciliation. Document the root cause, recovery, and any follow-up controls.
+4. For suspected payment abuse, contact the active payment provider, pause affected credentials if needed, reconcile pending and completed transactions using provider records, and do not credit a wallet based solely on an unverified notification.
+5. Verify that `DEBUG=False`, production hosts and HTTPS settings are correct, and test security alerts and payment status reconciliation. Document the root cause, recovery, and any follow-up controls.
 
 Local development continues to use the existing SQLite database unless `DATABASE_URL` is set. To prepare for PostgreSQL, configure `DATABASE_URL` with the private connection URL supplied by your database provider. PostgreSQL support and its driver are included, but SQLite remains the default until that variable is explicitly configured.
 
@@ -174,7 +191,7 @@ python manage.py runserver
 - **Register**: `http://127.0.0.1:8000/register/`
 - **Login**: `http://127.0.0.1:8000/login/`
 - **Play Game**: `http://127.0.0.1:8000/play/` (after login)
-- **Payment Callback**: `http://127.0.0.1:8000/api/payments/callback/`
+- **Legacy ioTec Callback**: `http://127.0.0.1:8000/api/payments/callback/` (Opaypesa uses status polling)
 - **Staff Operations Console**: `http://127.0.0.1:8000/admin-analytics/` (custom staff-only console; sign in with the phone number on the staff account's profile)
 - **Account management**: `/admin-analytics/users/` (lock, ban, revoke sessions, or anonymize player identity while retaining financial/game records)
 - **Round players and wallet refunds**: `/admin-analytics/players/` (view bet activity for a selected round; eligible lost-bet refunds credit the internal wallet only)
@@ -191,13 +208,11 @@ Set the following values in your deployment environment or private production `.
 - `DJANGO_ALLOWED_HOSTS=yourdomain.com`
 - `DJANGO_SECURE_SSL_REDIRECT=True`
 - `DATABASE_URL=postgresql://...`
-- `IOTEC_PAY_MODE=live`
-- `IOTEC_PAY_CLIENT_ID`
-- `IOTEC_PAY_CLIENT_SECRET`
-- `IOTEC_PAY_WALLET_ID`
-- `IOTEC_PAY_CALLBACK_TOKEN`
+- `PAYMENT_GATEWAY=opaypesa`
+- `OPAYPESA_MODE=live`
+- `OPAYPESA_API_KEY`
 
-Configure and test PostgreSQL before switching production traffic; local development remains on SQLite when `DATABASE_URL` is empty. Then collect static files:
+Configure and test PostgreSQL before switching production traffic; local development remains on SQLite when `DATABASE_URL` is empty. Live Opaypesa mode requires `DJANGO_DEBUG=False` and an `opaypesa_live_…` API key. Then collect static files:
 
 ```powershell
 python manage.py collectstatic
@@ -205,6 +220,6 @@ python manage.py collectstatic
 
 ### Queued withdrawals
 
-In live mode, withdrawal requests are recorded with a unique provider reference and the player's funds are held before payout submission. A scheduled worker checks ioTec Pay's `availableBalance` and submits queued payouts only when sufficient funds are confirmed; it reuses the original external reference for idempotent provider processing. Unavailable or invalid balance data leaves the withdrawal queued and held.
+The withdrawal worker is for ioTec Pay requests only. Opaypesa withdrawals are submitted directly to its disbursement endpoint and can be refreshed from the wallet using the returned transaction ID.
 
 Schedule `python manage.py process_queued_withdrawals --batch-size 20` to run every minute (or at your chosen operational cadence). Configure the scheduler to prevent overlapping invocations on a host; the database lock also serializes workers across hosts. Monitor command failures and queued requests in the staff operations console. Do not manually resubmit queued requests or clear their holds; use the documented provider-reconciliation procedure for any payment exception.

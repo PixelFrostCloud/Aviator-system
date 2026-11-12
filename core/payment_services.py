@@ -12,6 +12,7 @@ from .constants import MAXIMUM_DEPOSIT_AMOUNT, MINIMUM_MOBILE_MONEY_AMOUNT
 from .models import PaymentDispatchLock, PaymentRequest, Profile, Transaction
 from .payment_gateway import (
     IotecPayGateway,
+    OpayPesaGateway,
     PaymentGatewayConfigurationError,
     PaymentGatewayError,
     PaymentGatewayResult,
@@ -22,6 +23,17 @@ from .utils import can_deposit, generate_payment_reference
 
 MOBILE_MONEY_PROVIDERS = {'mtn_momo', 'airtel_money'}
 IOTEC_MINIMUM_AMOUNT = MINIMUM_MOBILE_MONEY_AMOUNT
+
+
+def get_payment_gateway(provider=None):
+    provider = provider or getattr(settings, 'PAYMENT_GATEWAY', 'opaypesa')
+    if provider == 'opaypesa':
+        return OpayPesaGateway()
+    if provider == 'iotec_pay':
+        return IotecPayGateway()
+    raise PaymentGatewayConfigurationError('The configured payment gateway is not supported.')
+
+
 MOBILE_MONEY_COUNTRY_CHOICES = [
     ('256', 'Uganda (+256)'),
     ('254', 'Kenya (+254)'),
@@ -123,7 +135,7 @@ def initiate_deposit(
     idempotency_key='',
 ):
     if amount < IOTEC_MINIMUM_AMOUNT:
-        return None, None, 'ioTec Pay mobile-money transactions must be at least 500 UGX.'
+        return None, None, 'Mobile-money transactions must be at least 500 UGX.'
     if amount > MAXIMUM_DEPOSIT_AMOUNT:
         return None, None, 'Deposits cannot exceed 10,000,000 UGX per transaction.'
     if provider not in MOBILE_MONEY_PROVIDERS:
@@ -136,7 +148,7 @@ def initiate_deposit(
     if availability_error:
         return None, None, availability_error
 
-    gateway = IotecPayGateway()
+    gateway = get_payment_gateway()
     idempotency_key, error = _validated_idempotency_key(idempotency_key)
     if error:
         return None, None, error
@@ -157,6 +169,12 @@ def initiate_deposit(
                 return None, None, 'This payment request key was already used with different details.'
             return existing, None, ''
 
+        if _has_uncertain_opaypesa_payment(user, 'deposit'):
+            return None, None, (
+                'A previous deposit has no provider transaction ID and may still have been processed. '
+                'Contact support to reconcile it before creating another deposit.'
+            )
+
         allowed, reason = can_deposit(locked_profile, amount)
         if not allowed:
             return None, None, reason
@@ -169,7 +187,7 @@ def initiate_deposit(
             external_reference=external_reference,
             idempotency_key=idempotency_key,
             status='pending',
-            metadata={'gateway': 'iotec_pay', 'mode': gateway.mode},
+            metadata={'gateway': gateway.provider_name, 'mode': gateway.mode},
         )
 
     try:
@@ -180,14 +198,21 @@ def initiate_deposit(
             payer=phone_number,
             payer_name=user.get_full_name() or user.username,
             redirect_url=redirect_url,
+            **({'idempotency_key': external_reference} if gateway.provider_name == 'opaypesa' else {}),
         )
     except PaymentGatewayError as exc:
         payment = apply_provider_result(payment, PaymentGatewayResult(
-            provider_reference=payment.provider_reference or external_reference,
+            provider_reference=payment.provider_reference or (
+                external_reference if gateway.provider_name == 'iotec_pay' else ''
+            ),
             status='Pending' if exc.retryable else 'Failed',
             status_code='gateway_error',
             status_message='Provider response is delayed.' if exc.retryable else 'Provider rejected the request.',
-            raw={'gateway_error_code': exc.provider_code or 'gateway_error'},
+            raw={
+                'gateway_error_code': exc.provider_code or 'gateway_error',
+                'response_uncertain': exc.retryable,
+            },
+            gateway=gateway.provider_name,
         ))
         return payment, None, str(exc)
 
@@ -205,7 +230,7 @@ def initiate_withdrawal(
     idempotency_key='',
 ):
     if amount < IOTEC_MINIMUM_AMOUNT:
-        return None, None, 'ioTec Pay mobile-money transactions must be at least 500 UGX.'
+        return None, None, 'Mobile-money transactions must be at least 500 UGX.'
     if provider not in MOBILE_MONEY_PROVIDERS:
         return None, None, 'Withdrawals are currently available for MTN Mobile Money and Airtel Money.'
     try:
@@ -216,7 +241,7 @@ def initiate_withdrawal(
     if availability_error:
         return None, None, availability_error
 
-    gateway = IotecPayGateway()
+    gateway = get_payment_gateway()
     idempotency_key, error = _validated_idempotency_key(idempotency_key)
     if error:
         return None, None, error
@@ -244,10 +269,16 @@ def initiate_withdrawal(
                 return None, None, 'This payment request key was already used with different details.'
             return existing, None, ''
 
+        if _has_uncertain_opaypesa_payment(user, 'withdraw'):
+            return None, None, (
+                'A previous withdrawal has no provider transaction ID and may still have been processed. '
+                'Contact support to reconcile it before creating another withdrawal.'
+            )
+
         if amount > locked_profile.balance:
             return None, None, 'Insufficient balance for withdrawal.'
 
-        queued = not gateway.is_sandbox
+        queued = gateway.provider_name == 'iotec_pay' and not gateway.is_sandbox
         payment = PaymentRequest.objects.create(
             user=user,
             payment_type='withdraw',
@@ -262,7 +293,7 @@ def initiate_withdrawal(
                 if queued else ''
             ),
             metadata={
-                'gateway': 'iotec_pay',
+                'gateway': gateway.provider_name,
                 'mode': gateway.mode,
                 'wallet_debited': True,
                 'dispatch_state': 'queued' if queued else 'submitting',
@@ -298,11 +329,17 @@ def initiate_withdrawal(
     except PaymentGatewayError as exc:
         payment.refresh_from_db()
         result = PaymentGatewayResult(
-            provider_reference=payment.provider_reference or external_reference,
+            provider_reference=payment.provider_reference or (
+                external_reference if gateway.provider_name == 'iotec_pay' else ''
+            ),
             status='Pending' if exc.retryable else 'Failed',
             status_code='gateway_error',
             status_message='Provider response is delayed.' if exc.retryable else 'Provider rejected the request.',
-            raw={'gateway_error_code': exc.provider_code or 'gateway_error'},
+            raw={
+                'gateway_error_code': exc.provider_code or 'gateway_error',
+                'response_uncertain': exc.retryable,
+            },
+            gateway=gateway.provider_name,
         )
         payment = apply_provider_result(payment, result)
         return payment, None, str(exc)
@@ -348,7 +385,7 @@ def process_next_queued_withdrawal():
             payment.metadata = metadata
             payment.save(update_fields=['status', 'failure_reason', 'metadata', 'updated_at'])
 
-        gateway = IotecPayGateway()
+        gateway = get_payment_gateway((payment.metadata or {}).get('gateway'))
         try:
             wallet_balance = gateway.provider_wallet_balance()
         except PaymentGatewayConfigurationError:
@@ -445,6 +482,7 @@ def process_next_queued_withdrawal():
                     'gateway_error_code': exc.provider_code or 'gateway_error',
                     'response_uncertain': exc.retryable,
                 },
+                gateway=gateway.provider_name,
             )
 
         apply_provider_result(payment, result)
@@ -486,6 +524,17 @@ def _validated_idempotency_key(key):
     return key, ''
 
 
+def _has_uncertain_opaypesa_payment(user, payment_type):
+    return PaymentRequest.objects.filter(
+        user=user,
+        payment_type=payment_type,
+        status__in=['pending', 'processing'],
+        provider_reference='',
+        metadata__gateway='opaypesa',
+        metadata__response_uncertain=True,
+    ).exists()
+
+
 def apply_provider_result(payment, result):
     next_status = result.local_status
 
@@ -496,10 +545,12 @@ def apply_provider_result(payment, result):
         if previous_status in terminal_statuses and next_status != previous_status:
             return locked_payment
         metadata = dict(locked_payment.metadata or {})
-        metadata['gateway'] = 'iotec_pay'
+        metadata['gateway'] = result.gateway or metadata.get('gateway') or 'iotec_pay'
         metadata['provider_status'] = result.status
         metadata['provider_status_code'] = result.status_code
         metadata['provider_response'] = result.raw or {}
+        if result.raw and 'response_uncertain' in result.raw:
+            metadata['response_uncertain'] = bool(result.raw['response_uncertain'])
         if locked_payment.payment_type == 'withdraw':
             metadata['dispatch_state'] = 'submitted'
         if result.redirect_url:
@@ -532,6 +583,9 @@ def apply_provider_result(payment, result):
 
 
 def sync_payment(payment):
+    payment.refresh_from_db(fields=['status', 'provider_reference', 'metadata'])
+    if payment.status in {'completed', 'failed', 'cancelled'}:
+        return payment
     if payment.payment_type == 'withdraw' and (
         payment.status == 'queued'
         or (
@@ -542,11 +596,25 @@ def sync_payment(payment):
         raise PaymentGatewayError(
             'This withdrawal has not been submitted to the provider yet.',
         )
-    gateway = IotecPayGateway()
+    gateway = get_payment_gateway((payment.metadata or {}).get('gateway'))
     if payment.payment_type == 'deposit':
-        result = gateway.sync_collection(payment.external_reference)
+        if gateway.provider_name == 'opaypesa':
+            if not payment.provider_reference:
+                raise PaymentGatewayError(
+                    'Opaypesa did not return a transaction ID. Reconcile this request with the provider before retrying it.'
+                )
+            result = gateway.sync_collection(payment.external_reference, payment.provider_reference)
+        else:
+            result = gateway.sync_collection(payment.external_reference)
     else:
-        result = gateway.sync_disbursement(payment.external_reference)
+        if gateway.provider_name == 'opaypesa':
+            if not payment.provider_reference:
+                raise PaymentGatewayError(
+                    'Opaypesa did not return a transaction ID. Reconcile this request with the provider before retrying it.'
+                )
+            result = gateway.sync_disbursement(payment.external_reference, payment.provider_reference)
+        else:
+            result = gateway.sync_disbursement(payment.external_reference)
     return apply_provider_result(payment, result)
 
 
@@ -578,7 +646,11 @@ def _apply_deposit_result(payment, previous_status):
 
 
 def _apply_withdrawal_result(payment, previous_status):
-    Transaction.objects.filter(reference=payment.external_reference, user=payment.user).update(
+    Transaction.objects.filter(
+        reference=payment.external_reference,
+        user=payment.user,
+        transaction_type='withdraw',
+    ).update(
         status=_transaction_status(payment.status),
         description=f'{payment.get_provider_display()} withdrawal request',
     )
@@ -607,4 +679,8 @@ def _transaction_status(payment_status):
 
 def _currency(user):
     profile = Profile.objects.get(user=user)
-    return profile.currency or getattr(settings, 'IOTEC_PAY_CURRENCY', 'UGX')
+    if profile.currency:
+        return profile.currency
+    if getattr(settings, 'PAYMENT_GATEWAY', 'opaypesa') == 'opaypesa':
+        return 'UGX'
+    return getattr(settings, 'IOTEC_PAY_CURRENCY', 'UGX')

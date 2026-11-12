@@ -118,7 +118,13 @@ def _security_configuration():
         'hsts_preload': settings.SECURE_HSTS_PRELOAD,
         'content_type_nosniff': settings.SECURE_CONTENT_TYPE_NOSNIFF,
         'frame_options': settings.X_FRAME_OPTIONS,
-        'payment_mode': settings.IOTEC_PAY_MODE,
+        'payment_gateway': settings.PAYMENT_GATEWAY,
+        'payment_mode': (
+            settings.OPAYPESA_MODE
+            if settings.PAYMENT_GATEWAY == 'opaypesa'
+            else settings.IOTEC_PAY_MODE
+        ),
+        'opaypesa_api_key_configured': bool(settings.OPAYPESA_API_KEY),
         'payment_client_id_configured': bool(settings.IOTEC_PAY_CLIENT_ID),
         'payment_client_secret_configured': bool(settings.IOTEC_PAY_CLIENT_SECRET),
         'payment_wallet_id_configured': bool(settings.IOTEC_PAY_WALLET_ID),

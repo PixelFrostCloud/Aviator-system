@@ -3,6 +3,7 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 from urllib import error, parse, request
+from urllib.parse import quote
 
 from django.conf import settings
 
@@ -23,9 +24,18 @@ PAYMENT_STATUS_MAP = {
     'Scheduled': 'processing',
 }
 
+OPAYPESA_STATUS_MAP = {
+    'successful': 'completed',
+    'failed': 'failed',
+    'cancelled': 'cancelled',
+    'timeout': 'cancelled',
+    'reversed': 'failed',
+    'pending': 'pending',
+}
+
 
 class PaymentGatewayError(Exception):
-    """Raised when ioTec Pay rejects a request or cannot be reached."""
+    """Raised when a payment provider rejects a request or cannot be reached."""
 
     def __init__(
         self,
@@ -42,7 +52,7 @@ class PaymentGatewayError(Exception):
 
 
 class PaymentGatewayConfigurationError(PaymentGatewayError):
-    """Raised when live credentials are required but missing."""
+    """Raised when required provider configuration is missing."""
 
 
 @dataclass(frozen=True)
@@ -53,21 +63,207 @@ class PaymentGatewayResult:
     status_message: str = ''
     redirect_url: str = ''
     raw: dict | None = None
+    gateway: str = 'iotec_pay'
 
     @property
     def local_status(self):
-        return PAYMENT_STATUS_MAP.get(self.status, 'pending')
+        return PAYMENT_STATUS_MAP.get(
+            self.status,
+            OPAYPESA_STATUS_MAP.get(str(self.status).lower(), 'pending'),
+        )
 
     @property
     def is_completed(self):
-        return self.status in SUCCESS_STATUSES
+        return self.status in SUCCESS_STATUSES or str(self.status).lower() == 'successful'
 
     @property
     def is_failed(self):
-        return self.status in FAILED_STATUSES
+        return self.status in FAILED_STATUSES or str(self.status).lower() in {
+            'failed',
+            'cancelled',
+            'timeout',
+            'reversed',
+        }
+
+
+class OpayPesaGateway:
+    provider_name = 'opaypesa'
+
+    def __init__(self):
+        self.mode = getattr(settings, 'OPAYPESA_MODE', 'sandbox').lower()
+        self.api_base_url = getattr(
+            settings,
+            'OPAYPESA_API_BASE_URL',
+            'https://opaypesa.com/api/v1',
+        ).rstrip('/')
+        self.api_key = getattr(settings, 'OPAYPESA_API_KEY', '').strip()
+        self.timeout = int(getattr(settings, 'OPAYPESA_TIMEOUT_SECONDS', 20))
+
+    @property
+    def is_sandbox(self):
+        return self.mode == 'sandbox'
+
+    def collect_mobile_money(
+        self,
+        *,
+        external_id,
+        amount,
+        currency,
+        payer,
+        idempotency_key='',
+        payer_name='',
+        redirect_url='',
+    ):
+        self._validate_credentials()
+        if currency.upper() != 'UGX':
+            raise PaymentGatewayConfigurationError('Opaypesa collections are configured for UGX only.')
+        payload = self._post('/checkout/payment-intents', {
+            'amount': self._amount(amount),
+            'phone_number': payer,
+            'idempotency_key': idempotency_key or external_id,
+        })
+        return self._result_from_payload(payload)
+
+    def disburse_mobile_money(
+        self,
+        *,
+        external_id,
+        amount,
+        currency,
+        payee,
+        payee_name='',
+        payee_email='',
+    ):
+        self._validate_credentials()
+        if currency.upper() != 'UGX':
+            raise PaymentGatewayConfigurationError('Opaypesa disbursements are configured for UGX only.')
+        payload = self._post('/checkout/disbursements', {
+            'items': [{
+                'recipient_msisdn': payee,
+                'amount': self._amount(amount),
+                'idempotency_key': external_id,
+            }],
+        })
+        return self._result_from_payload(payload)
+
+    def sync_collection(self, _external_id, provider_reference=''):
+        return self._sync_transaction(provider_reference)
+
+    def sync_disbursement(self, _external_id, provider_reference=''):
+        return self._sync_transaction(provider_reference)
+
+    def _validate_credentials(self):
+        if not self.api_key:
+            raise PaymentGatewayConfigurationError('OPAYPESA_API_KEY is required for Opaypesa payments.')
+        expected_prefix = 'opaypesa_sbox_' if self.is_sandbox else 'opaypesa_live_'
+        if not self.api_key.startswith(expected_prefix):
+            raise PaymentGatewayConfigurationError(
+                f'OPAYPESA_API_KEY must start with {expected_prefix} for {self.mode} mode.'
+            )
+
+    def _sync_transaction(self, provider_reference):
+        self._validate_credentials()
+        if not provider_reference:
+            raise PaymentGatewayError(
+                'Opaypesa has not returned a transaction ID for this request yet.',
+                retryable=True,
+            )
+        payload = self._get(f'/transactions/{quote(str(provider_reference), safe="")}')
+        return self._result_from_payload(payload)
+
+    def _post(self, path, body):
+        return self._json_request(
+            f'{self.api_base_url}{path}',
+            data=json.dumps(body).encode(),
+            method='POST',
+        )
+
+    def _get(self, path):
+        return self._json_request(f'{self.api_base_url}{path}', data=None, method='GET')
+
+    def _json_request(self, url, *, data, method):
+        http_request = request.Request(
+            url,
+            data=data,
+            headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-API-Key': self.api_key,
+            },
+            method=method,
+        )
+        try:
+            with request.urlopen(http_request, timeout=self.timeout) as response:
+                raw = response.read().decode() or '{}'
+        except TimeoutError as exc:
+            raise PaymentGatewayError(
+                'Could not confirm the Opaypesa request before the timeout.',
+                retryable=True,
+            ) from exc
+        except error.HTTPError as exc:
+            retryable = exc.code >= 500 or exc.code in {408, 409, 429}
+            raise PaymentGatewayError(
+                f'Opaypesa returned HTTP {exc.code}.',
+                retryable=retryable,
+                provider_code=str(exc.code),
+            ) from exc
+        except error.URLError as exc:
+            raise PaymentGatewayError(
+                f'Could not reach Opaypesa: {exc.reason}',
+                retryable=True,
+            ) from exc
+
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise PaymentGatewayError(
+                'Opaypesa returned an invalid JSON response.',
+                retryable=True,
+            ) from exc
+        if not isinstance(payload, (dict, list)):
+            raise PaymentGatewayError(
+                'Opaypesa returned an unexpected response.',
+                retryable=True,
+            )
+        return payload
+
+    def _result_from_payload(self, payload):
+        transaction = payload
+        if isinstance(payload, list):
+            transaction = payload[0] if payload else {}
+        if isinstance(transaction, dict):
+            transactions = transaction.get('transactions') or transaction.get('items')
+            if isinstance(transactions, list) and transactions:
+                transaction = transactions[0]
+        if not isinstance(transaction, dict):
+            raise PaymentGatewayError(
+                'Opaypesa returned an unexpected transaction response.',
+                retryable=True,
+            )
+
+        transaction_id = transaction.get('transaction_id') or transaction.get('id')
+        if transaction_id in (None, ''):
+            raise PaymentGatewayError(
+                'Opaypesa did not return a transaction ID.',
+                retryable=True,
+            )
+        status = str(transaction.get('status') or 'pending')
+        return PaymentGatewayResult(
+            provider_reference=str(transaction_id),
+            status=status,
+            status_code=status.lower(),
+            status_message=str(transaction.get('message') or ''),
+            raw=payload if isinstance(payload, dict) else {'transactions': payload},
+            gateway=self.provider_name,
+        )
+
+    @staticmethod
+    def _amount(amount):
+        return float(Decimal(amount).quantize(Decimal('0.01')))
 
 
 class IotecPayGateway:
+    provider_name = 'iotec_pay'
     token_cache = {'access_token': '', 'expires_at': 0}
 
     def __init__(self):

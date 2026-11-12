@@ -183,6 +183,35 @@ CHANNEL_LAYERS = {
     }
 }
 
+PAYMENT_GATEWAY = os.getenv('PAYMENT_GATEWAY', 'opaypesa').strip().lower()
+if PAYMENT_GATEWAY not in {'opaypesa', 'iotec_pay'}:
+    raise ImproperlyConfigured('PAYMENT_GATEWAY must be either "opaypesa" or "iotec_pay".')
+
+OPAYPESA_MODE = os.getenv('OPAYPESA_MODE', 'sandbox').strip().lower()
+if OPAYPESA_MODE not in {'sandbox', 'live'}:
+    raise ImproperlyConfigured('OPAYPESA_MODE must be either "sandbox" or "live".')
+OPAYPESA_API_BASE_URL = os.getenv('OPAYPESA_API_BASE_URL', 'https://opaypesa.com/api/v1').rstrip('/')
+OPAYPESA_API_KEY = os.getenv('OPAYPESA_API_KEY', '')
+OPAYPESA_TIMEOUT_SECONDS = int(os.getenv('OPAYPESA_TIMEOUT_SECONDS', '20'))
+if PAYMENT_GATEWAY == 'opaypesa' and not OPAYPESA_API_BASE_URL.startswith('https://'):
+    raise ImproperlyConfigured('Opaypesa API URL must use HTTPS.')
+
+if PAYMENT_GATEWAY == 'opaypesa' and OPAYPESA_MODE == 'live':
+    if DEBUG:
+        raise ImproperlyConfigured('Live Opaypesa transactions require DJANGO_DEBUG=False.')
+    if not OPAYPESA_API_KEY.startswith('opaypesa_live_'):
+        raise ImproperlyConfigured(
+            'Live Opaypesa transactions require an OPAYPESA_API_KEY beginning with "opaypesa_live_".'
+        )
+    if DATABASES['default']['ENGINE'] != 'django.db.backends.postgresql':
+        raise ImproperlyConfigured(
+            'Live Opaypesa transactions require PostgreSQL for safe wallet balance locking.'
+        )
+    if not SECURE_SSL_REDIRECT:
+        raise ImproperlyConfigured(
+            'Live Opaypesa transactions require DJANGO_SECURE_SSL_REDIRECT=True.'
+        )
+
 IOTEC_PAY_MODE = os.getenv('IOTEC_PAY_MODE', 'sandbox').strip().lower()
 if IOTEC_PAY_MODE not in {'sandbox', 'live'}:
     raise ImproperlyConfigured('IOTEC_PAY_MODE must be either "sandbox" or "live".')
@@ -197,7 +226,7 @@ IOTEC_PAY_CHARGE_CATEGORY = os.getenv('IOTEC_PAY_CHARGE_CATEGORY', 'ChargeCustom
 IOTEC_PAY_TIMEOUT_SECONDS = int(os.getenv('IOTEC_PAY_TIMEOUT_SECONDS', '20'))
 IOTEC_PAY_CALLBACK_TOKEN = os.getenv('IOTEC_PAY_CALLBACK_TOKEN', '')
 
-if IOTEC_PAY_MODE == 'live':
+if PAYMENT_GATEWAY == 'iotec_pay' and IOTEC_PAY_MODE == 'live':
     if DEBUG:
         raise ImproperlyConfigured('Live ioTec Pay transactions require DJANGO_DEBUG=False.')
     missing_iotec_settings = [
